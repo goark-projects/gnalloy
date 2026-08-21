@@ -227,6 +227,12 @@ func (c *CompositeByteBuf) Slice(index int, length int) (ByteBuf, error) {
 	if index < c.readerIndex || length < 0 || index+length > c.writerIndex {
 		return nil, ErrInvalidIndex
 	}
+	if length == 0 {
+		return NewHeapBuffer(0), nil
+	}
+	if comp := c.singleComponent(index, index+length); comp != nil {
+		return comp.buf.Slice(comp.buf.ReaderIndex()+index-comp.start, length)
+	}
 	out := NewCompositeByteBuf()
 	end := index + length
 	for i := range c.components {
@@ -298,13 +304,21 @@ func (c *CompositeByteBuf) DiscardReadComponents() {
 	drop := 0
 	for drop < len(c.components) && c.components[drop].end <= c.readerIndex {
 		c.components[drop].buf.Release()
+		c.components[drop] = component{}
 		drop++
 	}
 	if drop == 0 {
 		return
 	}
-	c.components = c.components[drop:]
 	base := c.readerIndex
+	if drop == len(c.components) {
+		c.components = c.components[:0]
+	} else {
+		copy(c.components, c.components[drop:])
+		keep := len(c.components) - drop
+		clear(c.components[keep:])
+		c.components = c.components[:keep]
+	}
 	for i := range c.components {
 		c.components[i].start -= base
 		c.components[i].end -= base
@@ -317,6 +331,16 @@ func (c *CompositeByteBuf) findComponent(index int) *component {
 	for i := range c.components {
 		if index >= c.components[i].start && index < c.components[i].end {
 			return &c.components[i]
+		}
+	}
+	return nil
+}
+
+func (c *CompositeByteBuf) singleComponent(start int, end int) *component {
+	for i := range c.components {
+		comp := &c.components[i]
+		if start >= comp.start && end <= comp.end {
+			return comp
 		}
 	}
 	return nil

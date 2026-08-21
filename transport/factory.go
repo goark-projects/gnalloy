@@ -1,8 +1,8 @@
 package transport
 
 import (
-	"github.com/goark-projects/gnalloy/transport/poller"
-	"github.com/goark-projects/gnalloy/transport/poller/memory"
+	"goark.dev/gnalloy/transport/poller"
+	"goark.dev/gnalloy/transport/poller/memory"
 )
 
 func NewPoller(cfg Config) (Poller, error) {

@@ -1,8 +1,8 @@
 package channel
 
 import (
-	"github.com/goark-projects/gnalloy/buffer"
-	"github.com/goark-projects/gnalloy/transport"
+	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/transport"
 )
 
 // Channel 是业务层看到的连接抽象，不暴露 fd、CQE 等平台细节。
@@ -10,6 +10,10 @@ type Channel interface {
 	ID() transport.ChannelID
 	Pipeline() *Pipeline
 	Allocator() buffer.Allocator
+	Write(msg any) error
+	Flush() error
+	WriteAndFlush(msg any) error
+	IsWritable() bool
 }
 
 // OutboundSink 是出站事件穿过 Pipeline 后的最终写出端。
@@ -17,6 +21,10 @@ type OutboundSink interface {
 	Write(msg any) error
 	Flush() error
 	Close() error
+}
+
+type WritabilitySink interface {
+	IsWritable() bool
 }
 
 type LocalChannel struct {
@@ -41,4 +49,26 @@ func (c *LocalChannel) Pipeline() *Pipeline {
 
 func (c *LocalChannel) Allocator() buffer.Allocator {
 	return c.alloc
+}
+
+func (c *LocalChannel) Write(msg any) error {
+	return c.pipeline.Write(msg)
+}
+
+func (c *LocalChannel) Flush() error {
+	return c.pipeline.Flush()
+}
+
+func (c *LocalChannel) WriteAndFlush(msg any) error {
+	if err := c.Write(msg); err != nil {
+		return err
+	}
+	return c.Flush()
+}
+
+func (c *LocalChannel) IsWritable() bool {
+	if sink, ok := c.pipeline.sink.(WritabilitySink); ok {
+		return sink.IsWritable()
+	}
+	return false
 }

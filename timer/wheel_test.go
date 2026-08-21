@@ -44,3 +44,18 @@ func TestWheelCancel(t *testing.T) {
 		t.Fatalf("cancelled timer fired")
 	}
 }
+
+func BenchmarkWheelScheduleAdvance(b *testing.B) {
+	w, err := NewWheel(10, 1024, 0)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cb := CallbackFunc(func(Context, *Task) {})
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := w.Schedule(10, cb); err != nil {
+			b.Fatal(err)
+		}
+		w.Advance(int64((i+1)*10), 0)
+	}
+}

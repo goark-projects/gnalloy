@@ -3,8 +3,8 @@ package codec
 import (
 	"testing"
 
-	"github.com/goark-projects/gnalloy/buffer"
-	"github.com/goark-projects/gnalloy/channel"
+	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/channel"
 )
 
 type frameCollector struct {
@@ -93,11 +93,35 @@ func (c *frameCollector) release() {
 	for _, frame := range c.frames {
 		frame.Release()
 	}
-	c.frames = nil
+	c.frames = c.frames[:0]
 }
 
 func testBuf(data []byte) buffer.ByteBuf {
 	buf := buffer.NewHeapBuffer(len(data))
 	_, _ = buf.WriteBytes(data)
 	return buf
+}
+
+func BenchmarkLengthFieldDecoder(b *testing.B) {
+	decoder, err := NewLengthFieldBasedFrameDecoder(1024, 0, 4, 0, 4, buffer.BigEndian)
+	if err != nil {
+		b.Fatal(err)
+	}
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	payload := []byte{0, 0, 0, 5, 'h', 'e', 'l', 'l', 'o'}
+	alloc := buffer.NewHeapAllocator()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		buf, err := alloc.Acquire(len(payload))
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, _ = buf.WriteBytes(payload)
+		ch.Pipeline().FireChannelRead(buf)
+		collector.release()
+	}
 }

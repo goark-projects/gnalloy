@@ -1,12 +1,14 @@
 package transport
 
-import "github.com/goark-projects/gnalloy/transport/poller"
+import "goark.dev/gnalloy/transport/poller"
 
 var (
-	ErrUnsupportedPoller = poller.ErrUnsupportedPoller
-	ErrClosedPoller      = poller.ErrClosedPoller
-	ErrInvalidFD         = poller.ErrInvalidFD
-	ErrInvalidIORequest  = poller.ErrInvalidIORequest
+	ErrUnsupportedPoller       = poller.ErrUnsupportedPoller
+	ErrClosedPoller            = poller.ErrClosedPoller
+	ErrInvalidFD               = poller.ErrInvalidFD
+	ErrInvalidIORequest        = poller.ErrInvalidIORequest
+	ErrSubmissionQueueFull     = poller.ErrSubmissionQueueFull
+	ErrCompletionQueueOverflow = poller.ErrCompletionQueueOverflow
 )
 
 type EventLoopID = poller.EventLoopID

@@ -3,9 +3,9 @@
 package transport
 
 import (
-	"github.com/goark-projects/gnalloy/transport/poller"
-	"github.com/goark-projects/gnalloy/transport/poller/epoll"
-	"github.com/goark-projects/gnalloy/transport/poller/iouring"
+	"goark.dev/gnalloy/transport/poller"
+	"goark.dev/gnalloy/transport/poller/epoll"
+	"goark.dev/gnalloy/transport/poller/iouring"
 )
 
 func newNativePoller(cfg poller.Config) (Poller, error) {
@@ -13,7 +13,14 @@ func newNativePoller(cfg poller.Config) (Poller, error) {
 	case BackendEpoll:
 		return epoll.New()
 	case BackendIOUring:
-		return iouring.New()
+		return iouring.NewWithConfig(iouring.Config{
+			Entries:          cfg.Entries,
+			SQPoll:           cfg.SQPoll,
+			SQPollAffinity:   cfg.SQPollAffinity,
+			SQPollCPU:        cfg.SQPollCPU,
+			SQPollIdleMillis: cfg.SQPollIdleMillis,
+			MultishotAccept:  cfg.MultishotAccept,
+		})
 	default:
 		return nil, ErrUnsupportedPoller
 	}

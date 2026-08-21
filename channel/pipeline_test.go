@@ -3,7 +3,7 @@ package channel
 import (
 	"testing"
 
-	"github.com/goark-projects/gnalloy/buffer"
+	"goark.dev/gnalloy/buffer"
 )
 
 type captureInbound struct {
@@ -80,5 +80,19 @@ func TestPipelineTailReleasesByteBuf(t *testing.T) {
 	ch.Pipeline().FireChannelRead(buf)
 	if buf.RefCnt() != 0 {
 		t.Fatalf("ref=%d, want 0", buf.RefCnt())
+	}
+}
+
+func BenchmarkPipelineInboundNoop(b *testing.B) {
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureSink{})
+	if err := ch.Pipeline().AddLast("forward", forwardingInbound{}); err != nil {
+		b.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("capture", &captureInbound{}); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ch.Pipeline().FireChannelRead("msg")
 	}
 }

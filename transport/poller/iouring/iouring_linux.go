@@ -7,24 +7,38 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/goark-projects/gnalloy/transport/poller"
+	"goark.dev/gnalloy/transport/poller"
 	"golang.org/x/sys/unix"
 )
 
 const (
 	defaultEntries = 256
+	defaultSQIdle  = 2000
 
 	offSqRing = 0
 	offCqRing = 0x8000000
 	offSqes   = 0x10000000
 
-	enterGetEvents = 1
+	enterGetEvents  = 1
+	setupSQPoll     = 1 << 1
+	setupSQAffinity = 1 << 2
 
 	featSingleMmap = 1
 
-	opNop   = 0
-	opRead  = 22
-	opWrite = 23
+	registerBuffers   = 0
+	unregisterBuffers = 1
+
+	cqeFMore = 1 << 1
+
+	acceptMultishot = 1 << 0
+
+	opNop        = 0
+	opReadFixed  = 4
+	opWriteFixed = 5
+	opAccept     = 13
+	opClose      = 19
+	opRead       = 22
+	opWrite      = 23
 )
 
 type sqringOffsets struct {
@@ -94,6 +108,7 @@ type sq struct {
 	tail        *uint32
 	ringMask    *uint32
 	ringEntries *uint32
+	dropped     *uint32
 	array       *uint32
 }
 
@@ -102,7 +117,13 @@ type cq struct {
 	head     *uint32
 	tail     *uint32
 	ringMask *uint32
+	overflow *uint32
 	cqes     *cqe
+}
+
+type iovec struct {
+	base uintptr
+	len  uintptr
 }
 
 type Poller struct {
@@ -116,21 +137,55 @@ type Poller struct {
 	pending map[uint64]poller.IORequest
 	nextID  uint64
 	closed  bool
+
+	multishotAccept   bool
+	registeredBuffers bool
+	cqOverflowSeen    uint32
+}
+
+type Config struct {
+	Entries          uint32
+	SQPoll           bool
+	SQPollAffinity   bool
+	SQPollCPU        int
+	SQPollIdleMillis uint32
+	MultishotAccept  bool
+}
+
+type Stats struct {
+	Pending           int
+	SQAvailable       uint32
+	SQDropped         uint32
+	CQOverflow        uint32
+	RegisteredBuffers bool
+	MultishotAccept   bool
 }
 
 func New() (poller.Poller, error) {
-	return NewWithEntries(defaultEntries)
+	return NewWithConfig(Config{})
 }
 
 func NewWithEntries(entries uint32) (poller.Poller, error) {
+	return NewWithConfig(Config{Entries: entries})
+}
+
+func NewWithConfig(cfg Config) (poller.Poller, error) {
+	if cfg.SQPollAffinity && !cfg.SQPoll {
+		return nil, poller.ErrInvalidIORequest
+	}
+	if cfg.SQPollAffinity && cfg.SQPollCPU < 0 {
+		return nil, poller.ErrInvalidIORequest
+	}
+	entries := cfg.Entries
 	if entries == 0 {
 		entries = defaultEntries
 	}
 	p := &Poller{
-		entries: make(map[poller.FDRef]poller.ChannelID, entries),
-		pending: make(map[uint64]poller.IORequest, entries),
+		entries:         make(map[poller.FDRef]poller.ChannelID, entries),
+		pending:         make(map[uint64]poller.IORequest, entries),
+		multishotAccept: cfg.MultishotAccept,
 	}
-	if err := p.setup(entries); err != nil {
+	if err := p.setup(entries, cfg); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -142,6 +197,71 @@ func (p *Poller) Model() poller.Model {
 
 func (p *Poller) Backend() poller.BackendKind {
 	return poller.BackendIOUring
+}
+
+func (p *Poller) RegisterBuffers(buffers [][]byte) error {
+	if p.closed {
+		return poller.ErrClosedPoller
+	}
+	if len(buffers) == 0 {
+		return poller.ErrInvalidIORequest
+	}
+	iovecs := make([]iovec, len(buffers))
+	for i := range buffers {
+		if len(buffers[i]) == 0 {
+			return poller.ErrInvalidIORequest
+		}
+		iovecs[i] = iovec{
+			base: uintptr(unsafe.Pointer(&buffers[i][0])),
+			len:  uintptr(len(buffers[i])),
+		}
+	}
+	if err := p.register(registerBuffers, unsafe.Pointer(&iovecs[0]), uint32(len(iovecs))); err != nil {
+		return err
+	}
+	p.registeredBuffers = true
+	return nil
+}
+
+func (p *Poller) UnregisterBuffers() error {
+	if p.closed {
+		return poller.ErrClosedPoller
+	}
+	if !p.registeredBuffers {
+		return nil
+	}
+	if err := p.register(unregisterBuffers, nil, 0); err != nil {
+		return err
+	}
+	p.registeredBuffers = false
+	return nil
+}
+
+func (p *Poller) Stats() Stats {
+	head := atomic.LoadUint32(p.sq.head)
+	tail := atomic.LoadUint32(p.sq.tail)
+	entries := atomic.LoadUint32(p.sq.ringEntries)
+	used := tail - head
+	available := uint32(0)
+	if entries > used {
+		available = entries - used
+	}
+	var dropped uint32
+	if p.sq.dropped != nil {
+		dropped = atomic.LoadUint32(p.sq.dropped)
+	}
+	var overflow uint32
+	if p.cq.overflow != nil {
+		overflow = atomic.LoadUint32(p.cq.overflow)
+	}
+	return Stats{
+		Pending:           len(p.pending),
+		SQAvailable:       available,
+		SQDropped:         dropped,
+		CQOverflow:        overflow,
+		RegisteredBuffers: p.registeredBuffers,
+		MultishotAccept:   p.multishotAccept,
+	}
 }
 
 func (p *Poller) Register(fd poller.FDRef, ch poller.ChannelID, _ poller.ReadyMask) error {
@@ -174,7 +294,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	if p.closed {
 		return poller.ErrClosedPoller
 	}
-	if req.Op != poller.OpWakeup && (!req.FD.Valid() || req.Buf == nil) {
+	if !validRequest(req) {
 		return poller.ErrInvalidIORequest
 	}
 	id := req.OpID
@@ -192,7 +312,14 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		return err
 	}
 	p.pending[uint64(id)] = req
-	return p.enter(1, 0, 0)
+	if err := p.enter(1, 0, 0); err != nil {
+		delete(p.pending, uint64(id))
+		if req.Buf != nil {
+			req.Buf.Release()
+		}
+		return err
+	}
+	return nil
 }
 
 func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
@@ -205,6 +332,9 @@ func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
 	n := p.reap(dst)
 	if n > 0 || timeoutMillis == 0 {
 		return n, nil
+	}
+	if p.completionOverflowed() {
+		return 0, poller.ErrCompletionQueueOverflow
 	}
 	if timeoutMillis > 0 {
 		pollfd := []unix.PollFd{{Fd: int32(p.fd), Events: unix.POLLIN}}
@@ -224,7 +354,11 @@ func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
 		}
 		return 0, err
 	}
-	return p.reap(dst), nil
+	n = p.reap(dst)
+	if n == 0 && p.completionOverflowed() {
+		return 0, poller.ErrCompletionQueueOverflow
+	}
+	return n, nil
 }
 
 func (p *Poller) Wakeup() error {
@@ -236,6 +370,10 @@ func (p *Poller) Close() error {
 		return nil
 	}
 	p.closed = true
+	if p.registeredBuffers {
+		_ = p.register(unregisterBuffers, nil, 0)
+		p.registeredBuffers = false
+	}
 	for _, req := range p.pending {
 		if req.Buf != nil {
 			req.Buf.Release()
@@ -261,7 +399,20 @@ func (p *Poller) Close() error {
 	return err4
 }
 
-func (p *Poller) setup(entries uint32) error {
+func (p *Poller) setup(entries uint32, cfg Config) error {
+	if cfg.SQPoll {
+		p.params.flags |= setupSQPoll
+		idle := cfg.SQPollIdleMillis
+		if idle == 0 {
+			idle = defaultSQIdle
+		}
+		p.params.sqThreadIdle = idle
+	}
+	if cfg.SQPollAffinity {
+		p.params.flags |= setupSQAffinity
+		p.params.sqThreadCPU = uint32(cfg.SQPollCPU)
+	}
+
 	fd, _, errno := unix.Syscall(unix.SYS_IO_URING_SETUP, uintptr(entries), uintptr(unsafe.Pointer(&p.params)), 0)
 	if errno != 0 {
 		return errno
@@ -306,6 +457,7 @@ func (p *Poller) setup(entries uint32) error {
 		tail:        uint32Ptr(sqRing, p.params.sqOff.tail),
 		ringMask:    uint32Ptr(sqRing, p.params.sqOff.ringMask),
 		ringEntries: uint32Ptr(sqRing, p.params.sqOff.ringEntries),
+		dropped:     uint32Ptr(sqRing, p.params.sqOff.dropped),
 		array:       uint32Ptr(sqRing, p.params.sqOff.array),
 	}
 	p.cq = cq{
@@ -313,6 +465,7 @@ func (p *Poller) setup(entries uint32) error {
 		head:     uint32Ptr(cqRing, p.params.cqOff.head),
 		tail:     uint32Ptr(cqRing, p.params.cqOff.tail),
 		ringMask: uint32Ptr(cqRing, p.params.cqOff.ringMask),
+		overflow: uint32Ptr(cqRing, p.params.cqOff.overflow),
 		cqes:     (*cqe)(unsafe.Pointer(&cqRing[p.params.cqOff.cqes])),
 	}
 	return nil
@@ -322,7 +475,7 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 	head := atomic.LoadUint32(p.sq.head)
 	tail := atomic.LoadUint32(p.sq.tail)
 	if tail-head >= atomic.LoadUint32(p.sq.ringEntries) {
-		return poller.ErrInvalidIORequest
+		return poller.ErrSubmissionQueueFull
 	}
 	index := tail & atomic.LoadUint32(p.sq.ringMask)
 	entry := p.sqe(index)
@@ -332,12 +485,24 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 	switch req.Op {
 	case poller.OpWakeup:
 		entry.opcode = opNop
+	case poller.OpAccept:
+		entry.opcode = opAccept
+		entry.fd = int32(req.FD.FD)
+		entry.rwFlags = unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC
+		if p.multishotAccept {
+			entry.ioprio |= acceptMultishot
+		}
 	case poller.OpRead:
 		view := req.Buf.WritableBytesView()
 		if len(view) == 0 {
 			return poller.ErrInvalidIORequest
 		}
-		entry.opcode = opRead
+		if req.UseFixedBuffer {
+			entry.opcode = opReadFixed
+			entry.bufIndex = req.FixedBufferIndex
+		} else {
+			entry.opcode = opRead
+		}
 		entry.fd = int32(req.FD.FD)
 		entry.addr = uint64(uintptr(unsafe.Pointer(&view[0])))
 		entry.len = uint32(len(view))
@@ -346,10 +511,18 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 		if len(data) == 0 {
 			return poller.ErrInvalidIORequest
 		}
-		entry.opcode = opWrite
+		if req.UseFixedBuffer {
+			entry.opcode = opWriteFixed
+			entry.bufIndex = req.FixedBufferIndex
+		} else {
+			entry.opcode = opWrite
+		}
 		entry.fd = int32(req.FD.FD)
 		entry.addr = uint64(uintptr(unsafe.Pointer(&data[0])))
 		entry.len = uint32(len(data))
+	case poller.OpClose:
+		entry.opcode = opClose
+		entry.fd = int32(req.FD.FD)
 	default:
 		return poller.ErrInvalidIORequest
 	}
@@ -368,7 +541,10 @@ func (p *Poller) reap(dst []poller.Event) int {
 		index := head & atomic.LoadUint32(p.cq.ringMask)
 		cqe := p.cqe(index)
 		req := p.pending[cqe.userData]
-		delete(p.pending, cqe.userData)
+		more := cqe.flags&cqeFMore != 0
+		if !more {
+			delete(p.pending, cqe.userData)
+		}
 
 		n := int(cqe.res)
 		var err error
@@ -381,16 +557,22 @@ func (p *Poller) reap(dst []poller.Event) int {
 				err = advErr
 			}
 		}
+		acceptedFD := req.AcceptedFD
+		if req.Op == poller.OpAccept && err == nil {
+			acceptedFD = poller.FDRef{FD: n}
+		}
 		dst[out] = poller.Event{
-			Model:     poller.Completion,
-			Op:        req.Op,
-			Ready:     poller.CompletionReady(req.Op),
-			FD:        req.FD,
-			ChannelID: req.ChannelID,
-			OpID:      req.OpID,
-			Buf:       req.Buf,
-			N:         n,
-			Err:       err,
+			Model:      poller.Completion,
+			Op:         req.Op,
+			Ready:      poller.CompletionReady(req.Op),
+			FD:         req.FD,
+			AcceptedFD: acceptedFD,
+			ChannelID:  req.ChannelID,
+			OpID:       req.OpID,
+			Buf:        req.Buf,
+			N:          n,
+			Err:        err,
+			More:       more,
 		}
 		out++
 		head++
@@ -399,12 +581,45 @@ func (p *Poller) reap(dst []poller.Event) int {
 	return out
 }
 
+func validRequest(req poller.IORequest) bool {
+	switch req.Op {
+	case poller.OpWakeup:
+		return true
+	case poller.OpAccept, poller.OpClose:
+		return req.FD.Valid()
+	case poller.OpRead, poller.OpWrite:
+		return req.FD.Valid() && req.Buf != nil
+	default:
+		return false
+	}
+}
+
 func (p *Poller) enter(toSubmit uint32, minComplete uint32, flags uint32) error {
 	_, _, errno := unix.Syscall6(unix.SYS_IO_URING_ENTER, uintptr(p.fd), uintptr(toSubmit), uintptr(minComplete), uintptr(flags), 0, 0)
 	if errno != 0 {
 		return errno
 	}
 	return nil
+}
+
+func (p *Poller) register(op uint32, arg unsafe.Pointer, nrArgs uint32) error {
+	_, _, errno := unix.Syscall6(unix.SYS_IO_URING_REGISTER, uintptr(p.fd), uintptr(op), uintptr(arg), uintptr(nrArgs), 0, 0)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+func (p *Poller) completionOverflowed() bool {
+	if p.cq.overflow == nil {
+		return false
+	}
+	current := atomic.LoadUint32(p.cq.overflow)
+	if current == p.cqOverflowSeen {
+		return false
+	}
+	p.cqOverflowSeen = current
+	return true
 }
 
 func (p *Poller) nextUserData() uint64 {

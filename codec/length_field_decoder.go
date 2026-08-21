@@ -1,8 +1,8 @@
 package codec
 
 import (
-	"github.com/goark-projects/gnalloy/buffer"
-	"github.com/goark-projects/gnalloy/channel"
+	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/channel"
 )
 
 type LengthFieldBasedFrameDecoder struct {

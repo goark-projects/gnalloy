@@ -5,7 +5,7 @@ package kqueue
 import (
 	"errors"
 
-	"github.com/goark-projects/gnalloy/transport/poller"
+	"goark.dev/gnalloy/transport/poller"
 	"golang.org/x/sys/unix"
 )
 

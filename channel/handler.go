@@ -15,6 +15,10 @@ type ChannelInactiveHandler interface {
 	ChannelInactive(ctx *HandlerContext)
 }
 
+type ChannelWritabilityChangedHandler interface {
+	ChannelWritabilityChanged(ctx *HandlerContext)
+}
+
 type ExceptionCaughtHandler interface {
 	ExceptionCaught(ctx *HandlerContext, err error)
 }

@@ -1,4 +1,4 @@
-module github.com/goark-projects/gnalloy
+module goark.dev/gnalloy
 
 go 1.25.0
 

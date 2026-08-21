@@ -3,8 +3,8 @@
 package transport
 
 import (
-	"github.com/goark-projects/gnalloy/transport/poller"
-	"github.com/goark-projects/gnalloy/transport/poller/iocp"
+	"goark.dev/gnalloy/transport/poller"
+	"goark.dev/gnalloy/transport/poller/iocp"
 )
 
 func newNativePoller(cfg poller.Config) (Poller, error) {

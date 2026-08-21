@@ -2,7 +2,7 @@
 
 package transport
 
-import "github.com/goark-projects/gnalloy/transport/poller"
+import "goark.dev/gnalloy/transport/poller"
 
 func newNativePoller(poller.Config) (Poller, error) {
 	return nil, ErrUnsupportedPoller

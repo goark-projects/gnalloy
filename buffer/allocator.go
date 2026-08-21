@@ -9,6 +9,23 @@ type Allocator interface {
 	Close() error
 }
 
+// AllocatorStats 暴露 allocator 的容量与泄漏观测信息。
+// OffHeap 为 true 表示 payload 不在 Go heap 上，适合 io_uring 共享内存场景。
+type AllocatorStats struct {
+	BlockSize int
+	Blocks    int
+	InUse     int
+	Free      int
+	Closed    bool
+	OffHeap   bool
+}
+
+// StatAllocator 是可观测 allocator 的可选接口，不影响热路径分配契约。
+type StatAllocator interface {
+	Allocator
+	Stats() AllocatorStats
+}
+
 // HeapAllocator 是跨平台的基础分配器，用于测试、调试和通用场景。
 type HeapAllocator struct {
 	pool sync.Pool
@@ -55,6 +72,10 @@ func (a *HeapAllocator) releaseDirect(buf *DirectByteBuf) {
 
 func (a *HeapAllocator) Close() error {
 	return nil
+}
+
+func (a *HeapAllocator) Stats() AllocatorStats {
+	return AllocatorStats{OffHeap: false}
 }
 
 // MmapAllocatorConfig 描述 Linux mmap allocator 的静态容量配置。

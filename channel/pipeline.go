@@ -1,6 +1,6 @@
 package channel
 
-import "github.com/goark-projects/gnalloy/buffer"
+import "goark.dev/gnalloy/buffer"
 
 type Pipeline struct {
 	ch    Channel
@@ -89,6 +89,10 @@ func (p *Pipeline) FireChannelRead(msg any) {
 
 func (p *Pipeline) FireChannelInactive() {
 	p.head.FireChannelInactive()
+}
+
+func (p *Pipeline) FireChannelWritabilityChanged() {
+	p.head.FireChannelWritabilityChanged()
 }
 
 func (p *Pipeline) FireExceptionCaught(err error) {

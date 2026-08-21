@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/goark-projects/gnalloy/queue"
-	"github.com/goark-projects/gnalloy/timer"
+	"goark.dev/gnalloy/queue"
+	"goark.dev/gnalloy/timer"
 )
 
 var (
@@ -23,6 +23,11 @@ type EventHandler interface {
 	Close() error
 }
 
+type registrationAware interface {
+	MarkRegistered()
+	MarkDeregistered()
+}
+
 type EventLoopConfig struct {
 	ID              EventLoopID
 	Poller          Poller
@@ -31,14 +36,18 @@ type EventLoopConfig struct {
 	TimerWheelSize  uint64
 	StartMillis     int64
 	EventBatchSize  int
+	CPUAffinity     int
+	PinCPU          bool
 }
 
 type EventLoop struct {
-	id     EventLoopID
-	poller Poller
-	tasks  *queue.MPSC[Task]
-	timer  *timer.Wheel
-	events []PollEvent
+	id          EventLoopID
+	poller      Poller
+	tasks       *queue.MPSC[Task]
+	timer       *timer.Wheel
+	events      []PollEvent
+	cpuAffinity int
+	pinCPU      bool
 
 	channels map[ChannelID]EventHandler
 	closed   atomic.Bool
@@ -69,12 +78,14 @@ func NewEventLoop(cfg EventLoopConfig) (*EventLoop, error) {
 		return nil, err
 	}
 	return &EventLoop{
-		id:       cfg.ID,
-		poller:   cfg.Poller,
-		tasks:    queue.NewMPSC[Task](taskQueueSize),
-		timer:    tw,
-		events:   make([]PollEvent, eventBatchSize),
-		channels: make(map[ChannelID]EventHandler, 1024),
+		id:          cfg.ID,
+		poller:      cfg.Poller,
+		tasks:       queue.NewMPSC[Task](taskQueueSize),
+		timer:       tw,
+		events:      make([]PollEvent, eventBatchSize),
+		cpuAffinity: cfg.CPUAffinity,
+		pinCPU:      cfg.PinCPU,
+		channels:    make(map[ChannelID]EventHandler, 1024),
 	}, nil
 }
 
@@ -101,6 +112,9 @@ func (l *EventLoop) Register(ch EventHandler, interest ReadyMask) error {
 		return err
 	}
 	l.channels[ch.ID()] = ch
+	if aware, ok := ch.(registrationAware); ok {
+		aware.MarkRegistered()
+	}
 	return nil
 }
 
@@ -110,6 +124,9 @@ func (l *EventLoop) Deregister(chID ChannelID) error {
 		return nil
 	}
 	delete(l.channels, chID)
+	if aware, ok := ch.(registrationAware); ok {
+		aware.MarkDeregistered()
+	}
 	return l.poller.Deregister(ch.FD())
 }
 
@@ -126,7 +143,37 @@ func (l *EventLoop) Submit(task Task) error {
 	return l.poller.Wakeup()
 }
 
+// Invoke 将控制面任务投递到 EventLoop 并等待执行结果。
+// 它用于启动、注册、测试等低频路径，不参与 I/O 热路径。
+func (l *EventLoop) Invoke(ctx context.Context, task func() error) error {
+	if task == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := make(chan error, 1)
+	if err := l.Submit(func() {
+		done <- task()
+	}); err != nil {
+		return err
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (l *EventLoop) Run(ctx context.Context, nowMillis func() int64) error {
+	if l.pinCPU {
+		unlock, err := bindOSThreadToCPU(l.cpuAffinity)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	if nowMillis == nil {
 		nowMillis = func() int64 { return 0 }
 	}
@@ -176,6 +223,9 @@ func (l *EventLoop) Close() error {
 	}
 	for id, ch := range l.channels {
 		delete(l.channels, id)
+		if aware, ok := ch.(registrationAware); ok {
+			aware.MarkDeregistered()
+		}
 		_ = ch.Close()
 	}
 	l.timer.Close()

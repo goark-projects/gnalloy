@@ -4,12 +4,16 @@ package buffer
 
 import "golang.org/x/sys/unix"
 
+const maxInt = int(^uint(0) >> 1)
+
 type mmapAllocator struct {
 	data      []byte
 	blockSize int
 	buffers   []DirectByteBuf
 	freeList  []uint32
+	inUse     []bool
 	freeTop   int
+	inUseCnt  int
 	closed    bool
 }
 
@@ -17,6 +21,9 @@ type mmapAllocator struct {
 // 该分配器面向单 EventLoop 使用，payload 来自 mmap，分配路径无锁、无 make。
 func NewMmapAllocator(cfg MmapAllocatorConfig) (Allocator, error) {
 	if cfg.BlockSize <= 0 || cfg.Blocks <= 0 {
+		return nil, ErrInvalidSize
+	}
+	if cfg.BlockSize > maxInt/cfg.Blocks {
 		return nil, ErrInvalidSize
 	}
 	data, err := unix.Mmap(-1, 0, cfg.BlockSize*cfg.Blocks, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_PRIVATE)
@@ -28,6 +35,7 @@ func NewMmapAllocator(cfg MmapAllocatorConfig) (Allocator, error) {
 		blockSize: cfg.BlockSize,
 		buffers:   make([]DirectByteBuf, cfg.Blocks),
 		freeList:  make([]uint32, cfg.Blocks),
+		inUse:     make([]bool, cfg.Blocks),
 		freeTop:   cfg.Blocks - 1,
 	}
 	for i := 0; i < cfg.Blocks; i++ {
@@ -52,6 +60,8 @@ func (a *mmapAllocator) Acquire(size int) (ByteBuf, error) {
 	}
 	idx := a.freeList[a.freeTop]
 	a.freeTop--
+	a.inUse[idx] = true
+	a.inUseCnt++
 	buf := &a.buffers[idx]
 	buf.reset(buf.data[:a.blockSize], a)
 	buf.ownerIndex = idx
@@ -66,9 +76,18 @@ func (a *mmapAllocator) Release(buf *DirectByteBuf) {
 	if int(idx) >= len(a.buffers) || &a.buffers[idx] != buf {
 		return
 	}
+	if !a.inUse[idx] {
+		return
+	}
 	buf.readerIndex = 0
 	buf.writerIndex = 0
+	a.inUse[idx] = false
+	a.inUseCnt--
 	a.freeTop++
+	if a.freeTop >= len(a.freeList) {
+		a.freeTop = len(a.freeList) - 1
+		return
+	}
 	a.freeList[a.freeTop] = idx
 }
 
@@ -76,15 +95,34 @@ func (a *mmapAllocator) releaseDirect(buf *DirectByteBuf) {
 	a.Release(buf)
 }
 
+func (a *mmapAllocator) Stats() AllocatorStats {
+	free := 0
+	if a.freeTop >= 0 {
+		free = a.freeTop + 1
+	}
+	return AllocatorStats{
+		BlockSize: a.blockSize,
+		Blocks:    len(a.buffers),
+		InUse:     a.inUseCnt,
+		Free:      free,
+		Closed:    a.closed,
+		OffHeap:   true,
+	}
+}
+
 func (a *mmapAllocator) Close() error {
 	if a.data == nil {
 		return nil
+	}
+	if a.inUseCnt > 0 {
+		return ErrAllocatorInUse
 	}
 	a.closed = true
 	err := unix.Munmap(a.data)
 	a.data = nil
 	a.buffers = nil
 	a.freeList = nil
+	a.inUse = nil
 	a.freeTop = -1
 	return err
 }

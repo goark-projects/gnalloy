@@ -1,0 +1,44 @@
+//go:build windows
+
+package iocp
+
+import (
+	"errors"
+	"testing"
+
+	"goark.dev/gnalloy/transport/poller"
+	"golang.org/x/sys/windows"
+)
+
+func TestSubmitAcceptClosesAcceptedSocketOnImmediateFailure(t *testing.T) {
+	if err := ensureWSAStartup(); err != nil {
+		t.Fatal(err)
+	}
+	p, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	accepted, err := windows.WSASocket(windows.AF_INET, windows.SOCK_STREAM, windows.IPPROTO_TCP, nil, 0, windows.WSA_FLAG_OVERLAPPED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = p.Submit(poller.IORequest{
+		Op:         poller.OpAccept,
+		FD:         poller.FDRef{FD: 1},
+		AcceptedFD: poller.FDRef{FD: int(accepted)},
+	})
+	if err == nil {
+		_ = windows.Closesocket(accepted)
+		t.Fatal("Submit unexpectedly succeeded")
+	}
+	if closeErr := windows.Closesocket(accepted); !errors.Is(closeErr, windows.WSAENOTSOCK) {
+		t.Fatalf("accepted socket was not closed, close err=%v", closeErr)
+	}
+}
+
+func ensureWSAStartup() error {
+	var data windows.WSAData
+	return windows.WSAStartup(0x202, &data)
+}

@@ -63,3 +63,16 @@ func TestMPSCMultipleProducers(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkMPSCOfferPoll(b *testing.B) {
+	q := NewMPSC[int](1024)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if !q.Offer(i) {
+			b.Fatal("offer failed")
+		}
+		if got, ok := q.Poll(); !ok || got != i {
+			b.Fatalf("poll got (%d,%v), want (%d,true)", got, ok, i)
+		}
+	}
+}

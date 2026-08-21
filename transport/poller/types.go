@@ -3,14 +3,16 @@ package poller
 import (
 	"errors"
 
-	"github.com/goark-projects/gnalloy/buffer"
+	"goark.dev/gnalloy/buffer"
 )
 
 var (
-	ErrUnsupportedPoller = errors.New("gnalloy/transport/poller: unsupported poller")
-	ErrClosedPoller      = errors.New("gnalloy/transport/poller: poller closed")
-	ErrInvalidFD         = errors.New("gnalloy/transport/poller: invalid file descriptor")
-	ErrInvalidIORequest  = errors.New("gnalloy/transport/poller: invalid io request")
+	ErrUnsupportedPoller       = errors.New("gnalloy/transport/poller: unsupported poller")
+	ErrClosedPoller            = errors.New("gnalloy/transport/poller: poller closed")
+	ErrInvalidFD               = errors.New("gnalloy/transport/poller: invalid file descriptor")
+	ErrInvalidIORequest        = errors.New("gnalloy/transport/poller: invalid io request")
+	ErrSubmissionQueueFull     = errors.New("gnalloy/transport/poller: submission queue full")
+	ErrCompletionQueueOverflow = errors.New("gnalloy/transport/poller: completion queue overflow")
 )
 
 type EventLoopID uint32
@@ -68,24 +70,31 @@ const (
 )
 
 type Event struct {
-	Model     Model
-	Op        IOOp
-	Ready     ReadyMask
-	FD        FDRef
-	ChannelID ChannelID
-	OpID      OpID
-	Buf       buffer.ByteBuf
-	N         int
-	Err       error
+	Model      Model
+	Op         IOOp
+	Ready      ReadyMask
+	FD         FDRef
+	AcceptedFD FDRef
+	ChannelID  ChannelID
+	OpID       OpID
+	Buf        buffer.ByteBuf
+	N          int
+	Err        error
+	More       bool
 }
 
 type IORequest struct {
-	Op        IOOp
-	FD        FDRef
-	ChannelID ChannelID
-	OpID      OpID
-	Buf       buffer.ByteBuf
-	Ready     ReadyMask
+	Op         IOOp
+	FD         FDRef
+	AcceptedFD FDRef
+	ChannelID  ChannelID
+	OpID       OpID
+	Buf        buffer.ByteBuf
+	Ready      ReadyMask
+
+	// UseFixedBuffer 仅对支持 registered buffers 的 completion 后端生效。
+	UseFixedBuffer   bool
+	FixedBufferIndex uint16
 }
 
 // Poller 是所有平台 I/O 后端必须实现的最小契约。
@@ -104,6 +113,22 @@ type Poller interface {
 
 type Config struct {
 	Backend BackendKind
+
+	// Entries 控制 completion 后端的 ring 深度，0 表示使用后端默认值。
+	Entries uint32
+
+	// SQPoll 仅对 Linux io_uring 生效，会让内核线程轮询提交队列。
+	SQPoll bool
+
+	// SQPollAffinity 为 true 时把 SQPOLL 内核线程绑定到 SQPollCPU。
+	SQPollAffinity bool
+	SQPollCPU      int
+
+	// SQPollIdleMillis 控制 SQPOLL 空闲退出时间，0 表示后端默认值。
+	SQPollIdleMillis uint32
+
+	// MultishotAccept 仅对 Linux io_uring 生效，一个 accept SQE 可产生多个 CQE。
+	MultishotAccept bool
 }
 
 func CompletionReady(op IOOp) ReadyMask {

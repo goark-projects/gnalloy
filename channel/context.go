@@ -51,6 +51,15 @@ func (c *HandlerContext) FireChannelInactive() {
 	}
 }
 
+func (c *HandlerContext) FireChannelWritabilityChanged() {
+	for n := c.next; n != nil; n = n.next {
+		if h, ok := n.handler.(ChannelWritabilityChangedHandler); ok {
+			h.ChannelWritabilityChanged(n)
+			return
+		}
+	}
+}
+
 func (c *HandlerContext) FireExceptionCaught(err error) {
 	for n := c.next; n != nil; n = n.next {
 		if h, ok := n.handler.(ExceptionCaughtHandler); ok {

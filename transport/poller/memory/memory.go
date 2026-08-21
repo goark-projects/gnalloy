@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/goark-projects/gnalloy/transport/poller"
+	"goark.dev/gnalloy/transport/poller"
 )
 
 // Poller 是测试用 completion 后端，不接触操作系统 fd。
@@ -72,13 +72,14 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		req.Buf.Retain()
 	}
 	p.events = append(p.events, poller.Event{
-		Model:     poller.Completion,
-		Op:        req.Op,
-		Ready:     req.Ready,
-		FD:        req.FD,
-		ChannelID: req.ChannelID,
-		OpID:      req.OpID,
-		Buf:       req.Buf,
+		Model:      poller.Completion,
+		Op:         req.Op,
+		Ready:      req.Ready,
+		FD:         req.FD,
+		AcceptedFD: req.AcceptedFD,
+		ChannelID:  req.ChannelID,
+		OpID:       req.OpID,
+		Buf:        req.Buf,
 	})
 	p.cond.Signal()
 	return nil

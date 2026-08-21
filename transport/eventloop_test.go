@@ -3,7 +3,7 @@ package transport
 import (
 	"testing"
 
-	"github.com/goark-projects/gnalloy/transport/poller/memory"
+	"goark.dev/gnalloy/transport/poller/memory"
 )
 
 type testEventHandler struct {

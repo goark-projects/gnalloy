@@ -2,8 +2,11 @@ package buffer
 
 import (
 	"io"
+	"sync"
 	"sync/atomic"
 )
+
+var slicedByteBufPool sync.Pool
 
 type slicedByteBuf struct {
 	parent ByteBuf
@@ -15,12 +18,15 @@ type slicedByteBuf struct {
 	refs atomic.Int32
 }
 
-func newSlicedByteBuf(parent *DirectByteBuf, index int, length int) *slicedByteBuf {
-	s := &slicedByteBuf{
-		parent:      parent,
-		data:        parent.data[index : index+length],
-		writerIndex: length,
+func newSlicedByteBuf(parent ByteBuf, data []byte) *slicedByteBuf {
+	s, _ := slicedByteBufPool.Get().(*slicedByteBuf)
+	if s == nil {
+		s = &slicedByteBuf{}
 	}
+	s.parent = parent
+	s.data = data
+	s.readerIndex = 0
+	s.writerIndex = len(data)
 	s.refs.Store(1)
 	return s
 }
@@ -199,13 +205,7 @@ func (b *slicedByteBuf) Slice(index int, length int) (ByteBuf, error) {
 		return nil, ErrInvalidIndex
 	}
 	b.Retain()
-	s := &slicedByteBuf{
-		parent:      b,
-		data:        b.data[index : index+length],
-		writerIndex: length,
-	}
-	s.refs.Store(1)
-	return s, nil
+	return newSlicedByteBuf(b, b.data[index:index+length]), nil
 }
 
 func (b *slicedByteBuf) Copy() (ByteBuf, error) {
@@ -242,6 +242,11 @@ func (b *slicedByteBuf) Release() bool {
 		panic(ErrReleasedBuffer)
 	}
 	b.parent.Release()
+	b.parent = nil
+	b.data = nil
+	b.readerIndex = 0
+	b.writerIndex = 0
+	slicedByteBufPool.Put(b)
 	return true
 }
 

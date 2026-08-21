@@ -264,7 +264,7 @@ func (b *DirectByteBuf) Slice(index int, length int) (ByteBuf, error) {
 		return nil, ErrInvalidIndex
 	}
 	b.Retain()
-	return newSlicedByteBuf(b, index, length), nil
+	return newSlicedByteBuf(b, b.data[index:index+length]), nil
 }
 
 func (b *DirectByteBuf) Copy() (ByteBuf, error) {
