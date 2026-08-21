@@ -1,0 +1,193 @@
+package transport
+
+import (
+	"context"
+	"errors"
+	"sync/atomic"
+
+	"github.com/goark-projects/gnalloy/queue"
+	"github.com/goark-projects/gnalloy/timer"
+)
+
+var (
+	ErrEventLoopClosed = errors.New("gnalloy/transport: event loop closed")
+	ErrTaskQueueFull   = errors.New("gnalloy/transport: task queue full")
+)
+
+type Task func()
+
+type EventHandler interface {
+	ID() ChannelID
+	FD() FDRef
+	HandleEvent(ev PollEvent)
+	Close() error
+}
+
+type EventLoopConfig struct {
+	ID              EventLoopID
+	Poller          Poller
+	TaskQueueSize   uint64
+	TimerTickMillis int64
+	TimerWheelSize  uint64
+	StartMillis     int64
+	EventBatchSize  int
+}
+
+type EventLoop struct {
+	id     EventLoopID
+	poller Poller
+	tasks  *queue.MPSC[Task]
+	timer  *timer.Wheel
+	events []PollEvent
+
+	channels map[ChannelID]EventHandler
+	closed   atomic.Bool
+}
+
+func NewEventLoop(cfg EventLoopConfig) (*EventLoop, error) {
+	if cfg.Poller == nil {
+		return nil, ErrUnsupportedPoller
+	}
+	taskQueueSize := cfg.TaskQueueSize
+	if taskQueueSize == 0 {
+		taskQueueSize = 1024
+	}
+	eventBatchSize := cfg.EventBatchSize
+	if eventBatchSize <= 0 {
+		eventBatchSize = 1024
+	}
+	tickMillis := cfg.TimerTickMillis
+	if tickMillis <= 0 {
+		tickMillis = 100
+	}
+	wheelSize := cfg.TimerWheelSize
+	if wheelSize == 0 {
+		wheelSize = 1024
+	}
+	tw, err := timer.NewWheel(tickMillis, wheelSize, cfg.StartMillis)
+	if err != nil {
+		return nil, err
+	}
+	return &EventLoop{
+		id:       cfg.ID,
+		poller:   cfg.Poller,
+		tasks:    queue.NewMPSC[Task](taskQueueSize),
+		timer:    tw,
+		events:   make([]PollEvent, eventBatchSize),
+		channels: make(map[ChannelID]EventHandler, 1024),
+	}, nil
+}
+
+func (l *EventLoop) ID() EventLoopID {
+	return l.id
+}
+
+func (l *EventLoop) Poller() Poller {
+	return l.poller
+}
+
+func (l *EventLoop) Timer() *timer.Wheel {
+	return l.timer
+}
+
+func (l *EventLoop) Register(ch EventHandler, interest ReadyMask) error {
+	if l.closed.Load() {
+		return ErrEventLoopClosed
+	}
+	if ch == nil {
+		return ErrInvalidIORequest
+	}
+	if err := l.poller.Register(ch.FD(), ch.ID(), interest); err != nil {
+		return err
+	}
+	l.channels[ch.ID()] = ch
+	return nil
+}
+
+func (l *EventLoop) Deregister(chID ChannelID) error {
+	ch := l.channels[chID]
+	if ch == nil {
+		return nil
+	}
+	delete(l.channels, chID)
+	return l.poller.Deregister(ch.FD())
+}
+
+func (l *EventLoop) Submit(task Task) error {
+	if task == nil {
+		return nil
+	}
+	if l.closed.Load() {
+		return ErrEventLoopClosed
+	}
+	if !l.tasks.Offer(task) {
+		return ErrTaskQueueFull
+	}
+	return l.poller.Wakeup()
+}
+
+func (l *EventLoop) Run(ctx context.Context, nowMillis func() int64) error {
+	if nowMillis == nil {
+		nowMillis = func() int64 { return 0 }
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := l.RunOnce(nowMillis()); err != nil && !errors.Is(err, ErrClosedPoller) {
+			return err
+		}
+		if l.closed.Load() {
+			return ErrEventLoopClosed
+		}
+	}
+}
+
+func (l *EventLoop) RunOnce(nowMillis int64) error {
+	if l.closed.Load() {
+		return ErrEventLoopClosed
+	}
+	l.drainTasks()
+	l.timer.Advance(nowMillis, 0)
+	timeout := l.timer.NextDelayMillis(nowMillis)
+	n, err := l.poller.Poll(l.events, timeout)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		ev := l.events[i]
+		if ev.Op == OpWakeup {
+			l.drainTasks()
+			continue
+		}
+		if ch := l.channels[ev.ChannelID]; ch != nil {
+			ch.HandleEvent(ev)
+		}
+	}
+	l.drainTasks()
+	return nil
+}
+
+func (l *EventLoop) Close() error {
+	if l.closed.Swap(true) {
+		return nil
+	}
+	for id, ch := range l.channels {
+		delete(l.channels, id)
+		_ = ch.Close()
+	}
+	l.timer.Close()
+	return l.poller.Close()
+}
+
+func (l *EventLoop) drainTasks() {
+	for {
+		task, ok := l.tasks.Poll()
+		if !ok {
+			return
+		}
+		task()
+	}
+}
