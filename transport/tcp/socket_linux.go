@@ -46,6 +46,35 @@ func acceptTCP(fd transport.FDRef) (transport.FDRef, bool, error) {
 	return transport.FDRef{FD: nfd}, false, nil
 }
 
+func dialTCP(address string, opts socketOptions) (transport.FDRef, error) {
+	addr, err := parseTCPAddress(address)
+	if err != nil {
+		return transport.FDRef{}, err
+	}
+	family, sa, err := makeUnixSockaddr(addr)
+	if err != nil {
+		return transport.FDRef{}, err
+	}
+	fd, err := unix.Socket(family, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
+	if err != nil {
+		return transport.FDRef{}, err
+	}
+	if err := unix.Connect(fd, sa); err != nil {
+		_ = unix.Close(fd)
+		return transport.FDRef{}, err
+	}
+	if err := unix.SetNonblock(fd, true); err != nil {
+		_ = unix.Close(fd)
+		return transport.FDRef{}, err
+	}
+	ref := transport.FDRef{FD: fd}
+	if err := setAcceptedOptions(ref, opts); err != nil {
+		_ = closeFD(ref)
+		return transport.FDRef{}, err
+	}
+	return ref, nil
+}
+
 func prepareAcceptRequest(req transport.IORequest, _ int) (transport.IORequest, error) {
 	return req, nil
 }

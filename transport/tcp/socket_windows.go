@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"goark.dev/gnalloy/channel"
@@ -107,6 +108,35 @@ func listenTCP(address string, opts socketOptions) (listenSocket, error) {
 
 func acceptTCP(transport.FDRef) (transport.FDRef, bool, error) {
 	return transport.FDRef{}, false, ErrUnsupportedCompletionAccept
+}
+
+func dialTCP(address string, opts socketOptions) (transport.FDRef, error) {
+	if err := ensureWSAStartup(); err != nil {
+		return transport.FDRef{}, err
+	}
+	addr, err := parseTCPAddress(address)
+	if err != nil {
+		return transport.FDRef{}, err
+	}
+	family, sa := makeWindowsSockaddr(addr)
+	fd, err := windows.WSASocket(int32(family), windows.SOCK_STREAM, windows.IPPROTO_TCP, nil, 0, windows.WSA_FLAG_OVERLAPPED)
+	if err != nil {
+		return transport.FDRef{}, err
+	}
+	if err := windows.Connect(fd, sa); err != nil {
+		_ = windows.Closesocket(fd)
+		return transport.FDRef{}, err
+	}
+	if err := syscall.SetNonblock(syscall.Handle(fd), true); err != nil {
+		_ = windows.Closesocket(fd)
+		return transport.FDRef{}, err
+	}
+	ref := transport.FDRef{FD: int(fd)}
+	if err := setAcceptedOptions(ref, opts); err != nil {
+		_ = closeFD(ref)
+		return transport.FDRef{}, err
+	}
+	return ref, nil
 }
 
 func setAcceptedOptions(fd transport.FDRef, opts socketOptions) error {

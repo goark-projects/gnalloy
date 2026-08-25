@@ -15,6 +15,10 @@ func acceptTCP(transport.FDRef) (transport.FDRef, bool, error) {
 	return transport.FDRef{}, false, ErrUnsupportedTCP
 }
 
+func dialTCP(string, socketOptions) (transport.FDRef, error) {
+	return transport.FDRef{}, ErrUnsupportedTCP
+}
+
 func setAcceptedOptions(transport.FDRef, socketOptions) error {
 	return ErrUnsupportedTCP
 }
