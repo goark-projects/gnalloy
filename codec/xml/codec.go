@@ -5,6 +5,7 @@ import (
 	stdxml "encoding/xml"
 	"errors"
 	"io"
+	"strings"
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
@@ -32,8 +33,7 @@ func (d *FrameDecoder) Decode(_ *channel.HandlerContext, in *buffer.CompositeByt
 	if in.ReadableBytes() > d.maxFrameLength {
 		return nil, codec.ErrFrameTooLong
 	}
-	data := in.Bytes()
-	offset, ok, err := completeDocumentLength(data)
+	offset, ok, err := completeDocumentLengthFromBuffer(in)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func (d *TokenDecoder) AcceptInboundMessage(msg any) bool {
 
 func (d *TokenDecoder) Decode(_ *channel.HandlerContext, msg any, out *codec.MessageList) error {
 	buf := msg.(buffer.ByteBuf)
-	decoder := stdxml.NewDecoder(bytes.NewReader(buf.Bytes()))
+	decoder := stdxml.NewDecoder(newReadableBytesReader(buf))
 	for {
 		token, err := decoder.Token()
 		if errors.Is(err, io.EOF) {
@@ -79,7 +79,16 @@ func (d *TokenDecoder) Decode(_ *channel.HandlerContext, msg any, out *codec.Mes
 }
 
 func completeDocumentLength(data []byte) (int, bool, error) {
-	decoder := stdxml.NewDecoder(bytes.NewReader(data))
+	return completeDocumentLengthFromReader(bytes.NewReader(data))
+}
+
+// completeDocumentLengthFromBuffer 使用 ByteBuf 可读切片做流式扫描，避免 composite 累积区整块复制。
+func completeDocumentLengthFromBuffer(buf *buffer.CompositeByteBuf) (int, bool, error) {
+	return completeDocumentLengthFromReader(newReadableBytesReader(buf))
+}
+
+func completeDocumentLengthFromReader(r io.Reader) (int, bool, error) {
+	decoder := stdxml.NewDecoder(r)
 	depth := 0
 	started := false
 	for {
@@ -109,8 +118,51 @@ func completeDocumentLength(data []byte) (int, bool, error) {
 	}
 }
 
+func newReadableBytesReader(buf buffer.ByteBuf) io.Reader {
+	var scratch [8][]byte
+	slices := buf.ReadableSlices(scratch[:0])
+	switch len(slices) {
+	case 0:
+		return bytes.NewReader(nil)
+	case 1:
+		return bytes.NewReader(slices[0])
+	default:
+		return &byteSlicesReader{slices: slices}
+	}
+}
+
+// byteSlicesReader 把多个连续逻辑切片适配为 io.Reader，不推进 ByteBuf 的 reader index。
+type byteSlicesReader struct {
+	slices [][]byte
+	index  int
+	offset int
+}
+
+func (r *byteSlicesReader) Read(p []byte) (int, error) {
+	written := 0
+	for len(p) > written && r.index < len(r.slices) {
+		current := r.slices[r.index]
+		if r.offset >= len(current) {
+			r.index++
+			r.offset = 0
+			continue
+		}
+		n := copy(p[written:], current[r.offset:])
+		written += n
+		r.offset += n
+	}
+	if written > 0 {
+		return written, nil
+	}
+	return 0, io.EOF
+}
+
 func isUnexpectedEOF(err error) bool {
-	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF)
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+		return true
+	}
+	var syntaxErr *stdxml.SyntaxError
+	return errors.As(err, &syntaxErr) && strings.Contains(syntaxErr.Msg, "unexpected EOF")
 }
 
 func convertToken(token stdxml.Token) any {
