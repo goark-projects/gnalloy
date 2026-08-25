@@ -405,7 +405,7 @@ func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 			}
 			return writeLastChunk(ctx, nil)
 		}
-		return ctx.Write(req.Body)
+		return codec.WriteOutboundBuffer(ctx, req.Body)
 	}
 	return nil
 }
@@ -482,7 +482,7 @@ func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 			}
 			return writeLastChunk(ctx, nil)
 		}
-		return ctx.Write(resp.Body)
+		return codec.WriteOutboundBuffer(ctx, resp.Body)
 	}
 	return nil
 }

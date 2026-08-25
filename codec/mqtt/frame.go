@@ -102,7 +102,7 @@ func (p *FramePrepender) Write(ctx *channel.HandlerContext, msg any) error {
 	if frame.Payload == nil {
 		return nil
 	}
-	return ctx.Write(frame.Payload)
+	return codec.WriteOutboundBuffer(ctx, frame.Payload)
 }
 
 type Frame struct {

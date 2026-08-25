@@ -211,14 +211,14 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		return nil
 	}
 	if !frame.Masked {
-		return ctx.Write(frame.Payload)
+		return codec.WriteOutboundBuffer(ctx, frame.Payload)
 	}
 	masked, err := maskCopy(ctx, frame.Payload, frame.MaskKey)
 	frame.Payload.Release()
 	if err != nil {
 		return err
 	}
-	return ctx.Write(masked)
+	return codec.WriteOutboundBuffer(ctx, masked)
 }
 
 func unmask(in buffer.ByteBuf, key [4]byte) (buffer.ByteBuf, error) {
