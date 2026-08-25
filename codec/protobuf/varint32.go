@@ -96,7 +96,7 @@ func (p *Varint32LengthFieldPrepender) Write(ctx *channel.HandlerContext, msg an
 		in.Release()
 		return err
 	}
-	return ctx.Write(in)
+	return codec.WriteOutboundBuffer(ctx, in)
 }
 
 func readRawVarint32(in *buffer.CompositeByteBuf) (int, int, bool, error) {

@@ -128,7 +128,7 @@ func (e *Encoder) Write(ctx *channel.HandlerContext, msg any) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 func AppendHeader(dst []byte, msg Message) ([]byte, error) {

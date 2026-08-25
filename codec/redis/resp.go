@@ -90,7 +90,7 @@ func (e *CommandEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 			return err
 		}
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 func respFrameLength(in *buffer.CompositeByteBuf, index int) (int, bool, error) {

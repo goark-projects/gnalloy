@@ -364,7 +364,7 @@ func writeBytes(ctx *channel.HandlerContext, data []byte) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 func readVarInt(in *buffer.CompositeByteBuf, index int) (uint64, int, bool, error) {

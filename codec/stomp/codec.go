@@ -305,7 +305,7 @@ func writeSmall(ctx *channel.HandlerContext, data []byte) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 func unescape(src string) string {

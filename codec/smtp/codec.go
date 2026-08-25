@@ -135,7 +135,7 @@ func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 			return err
 		}
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 type DataEncoder struct{}
@@ -267,5 +267,5 @@ func writeString(ctx *channel.HandlerContext, text string) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }

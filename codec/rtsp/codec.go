@@ -214,7 +214,7 @@ func writeStartAndHeaders(ctx *channel.HandlerContext, start string, headers Hea
 		return err
 	}
 	if body != nil {
-		return ctx.Write(body)
+		return codec.WriteOutboundBuffer(ctx, body)
 	}
 	return nil
 }

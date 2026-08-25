@@ -50,7 +50,7 @@ func (e *MessageToByteEncoder) Write(ctx *channel.HandlerContext, msg any) error
 		out.Release()
 		return nil
 	}
-	return writeOutboundBuffer(ctx, out)
+	return WriteOutboundBuffer(ctx, out)
 }
 
 type byteEncoderFunc struct {

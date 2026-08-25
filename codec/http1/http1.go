@@ -575,7 +575,7 @@ func writeChunkedData(ctx *channel.HandlerContext, body buffer.ByteBuf) error {
 		tail.Release()
 		return err
 	}
-	return ctx.Write(tail)
+	return codec.WriteOutboundBuffer(ctx, tail)
 }
 
 func writeLastChunk(ctx *channel.HandlerContext, trailers Headers) error {
@@ -597,7 +597,7 @@ func writeLastChunk(ctx *channel.HandlerContext, trailers Headers) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 func findCRLF(in *buffer.CompositeByteBuf, start int) (int, bool) {

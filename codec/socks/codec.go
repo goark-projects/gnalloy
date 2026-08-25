@@ -70,7 +70,7 @@ func (e *GreetingEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 type MethodSelectionDecoder struct {
@@ -363,5 +363,5 @@ func writeBytes(ctx *channel.HandlerContext, data []byte) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }

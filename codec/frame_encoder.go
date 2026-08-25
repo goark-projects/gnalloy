@@ -73,7 +73,7 @@ func (e *FixedLengthFrameEncoder) Write(ctx *channel.HandlerContext, msg any) er
 			in.Release()
 			return ErrInvalidFrameLength
 		}
-		return ctx.Write(in)
+		return WriteOutboundBuffer(ctx, in)
 	case []byte:
 		if len(in) != e.frameLength {
 			return ErrInvalidFrameLength
@@ -140,7 +140,7 @@ func writeJoined(ctx *channel.HandlerContext, payload []byte, suffix []byte) err
 		out.Release()
 		return err
 	}
-	return writeOutboundBuffer(ctx, out)
+	return WriteOutboundBuffer(ctx, out)
 }
 
 func writeBytes(ctx *channel.HandlerContext, payload []byte) error {
@@ -155,5 +155,5 @@ func writeBytes(ctx *channel.HandlerContext, payload []byte) error {
 		out.Release()
 		return err
 	}
-	return writeOutboundBuffer(ctx, out)
+	return WriteOutboundBuffer(ctx, out)
 }

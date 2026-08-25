@@ -48,7 +48,7 @@ func (e *StringEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		out.Release()
 		return err
 	}
-	return writeOutboundBuffer(ctx, out)
+	return WriteOutboundBuffer(ctx, out)
 }
 
 func readOnlyStringBytes(s string) []byte {

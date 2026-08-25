@@ -266,5 +266,5 @@ func writeASCII(ctx *channel.HandlerContext, data string) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }

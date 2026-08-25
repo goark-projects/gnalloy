@@ -178,7 +178,11 @@ func (h *ControlFrameHandler) Write(ctx *channel.HandlerContext, msg any) error 
 			releaseFrame(frame)
 			return ErrCloseHandshakeInProgress
 		}
-		return ctx.Write(frame)
+		if err := ctx.Write(frame); err != nil {
+			releaseFrame(frame)
+			return err
+		}
+		return nil
 	}
 	return h.writeClose(ctx, frame, false)
 }
@@ -243,7 +247,11 @@ func (h *ControlFrameHandler) writeClose(ctx *channel.HandlerContext, frame Fram
 		releaseFrame(frame)
 		return ErrCloseHandshakeInProgress
 	}
-	return ctx.Write(frame)
+	if err := ctx.Write(frame); err != nil {
+		releaseFrame(frame)
+		return err
+	}
+	return nil
 }
 
 type CloseStatus struct {

@@ -500,7 +500,7 @@ func writeHeaderAndPayload(ctx *channel.HandlerContext, header []byte, payload b
 		}
 		return nil
 	}
-	return ctx.Write(payload)
+	return codec.WriteOutboundBuffer(ctx, payload)
 }
 
 func writeBytes(ctx *channel.HandlerContext, data []byte) error {
@@ -512,7 +512,7 @@ func writeBytes(ctx *channel.HandlerContext, data []byte) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return codec.WriteOutboundBuffer(ctx, out)
 }
 
 func slicePayload(in *buffer.CompositeByteBuf, index int, length int) (buffer.ByteBuf, error) {
