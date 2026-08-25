@@ -148,7 +148,6 @@ func (d *TypedFrameDecoder) Decode(_ *channel.HandlerContext, msg any, out *code
 	frame := msg.(Frame)
 	typed, err := DecodeTypedFrame(frame)
 	if err != nil {
-		frame.Release()
 		return err
 	}
 	out.Add(typed)
@@ -178,6 +177,9 @@ func DecodeTypedFrame(frame Frame) (TypedFrame, error) {
 	case FrameContinuation:
 		return decodeContinuationFrame(frame)
 	default:
+		if frame.Payload != nil {
+			frame.Payload.Retain()
+		}
 		return UnknownFrame{Frame: frame}, nil
 	}
 }

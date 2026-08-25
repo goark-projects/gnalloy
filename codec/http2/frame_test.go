@@ -119,6 +119,55 @@ func TestTypedFrameDecoderParsesHeadersWithPriority(t *testing.T) {
 	}
 }
 
+func TestTypedFrameDecoderRetainsUnknownFramePayload(t *testing.T) {
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("typed", NewTypedFrameDecoder()); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &frameRecorder{}
+	if err := ch.Pipeline().AddLast("recorder", recorder); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := buffer.NewHeapBuffer(3)
+	_, _ = payload.WriteBytes([]byte("raw"))
+	ch.Pipeline().FireChannelRead(Frame{Type: FrameType(0xff), Payload: payload})
+
+	frame, ok := recorder.msg.(UnknownFrame)
+	if !ok {
+		t.Fatalf("msg=%T, want UnknownFrame", recorder.msg)
+	}
+	if got := string(frame.Frame.Payload.Bytes()); got != "raw" {
+		t.Fatalf("payload=%q, want raw", got)
+	}
+	frame.Release()
+}
+
+func TestTypedFrameDecoderReleasesInvalidFrameOnce(t *testing.T) {
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("typed", NewTypedFrameDecoder()); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := buffer.NewHeapBuffer(1)
+	_, _ = payload.WriteBytes([]byte{0x00})
+	panicked := false
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		ch.Pipeline().FireChannelRead(Frame{Type: FrameSettings, StreamID: 1, Payload: payload})
+	}()
+	if panicked {
+		t.Fatal("invalid typed frame should be released by the decoder template exactly once")
+	}
+	if refs := payload.RefCnt(); refs != 0 {
+		t.Fatalf("payload refs=%d, want 0", refs)
+	}
+}
+
 func TestTypedFrameEncoderWritesSettingsFrame(t *testing.T) {
 	sink := &captureSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
