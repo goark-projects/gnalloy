@@ -87,6 +87,59 @@ func TestResourceHelpersRoundTripCommonRecords(t *testing.T) {
 	}
 }
 
+func TestDecodeMessageRejectsTrailingNameResourceData(t *testing.T) {
+	tests := []struct {
+		name  string
+		rtype uint16
+		rdata []byte
+	}{
+		{
+			name:  "cname",
+			rtype: TypeCNAME,
+			rdata: []byte{0x00, 0xff},
+		},
+		{
+			name:  "mx",
+			rtype: TypeMX,
+			rdata: []byte{0x00, 0x0a, 0x00, 0xff},
+		},
+		{
+			name:  "srv",
+			rtype: TypeSRV,
+			rdata: []byte{0x00, 0x01, 0x00, 0x02, 0x07, 0x5b, 0x00, 0xff},
+		},
+		{
+			name:  "soa",
+			rtype: TypeSOA,
+			rdata: []byte{
+				0x00, 0x00,
+				0x00, 0x00, 0x00, 0x01,
+				0x00, 0x00, 0x00, 0x02,
+				0x00, 0x00, 0x00, 0x03,
+				0x00, 0x00, 0x00, 0x04,
+				0x00, 0x00, 0x00, 0x05,
+				0xff,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte{
+				0x00, 0x01, 0x81, 0x80, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+				0x00,
+				byte(tt.rtype >> 8), byte(tt.rtype), 0x00, 0x01,
+				0x00, 0x00, 0x00, 0x3c,
+				byte(len(tt.rdata) >> 8), byte(len(tt.rdata)),
+			}
+			data = append(data, tt.rdata...)
+			_, err := ParseMessage(data)
+			if !errors.Is(err, ErrInvalidResource) {
+				t.Fatalf("err=%v, want %v", err, ErrInvalidResource)
+			}
+		})
+	}
+}
+
 func TestDecodeMessageRejectsPointerLoop(t *testing.T) {
 	data := []byte{
 		0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

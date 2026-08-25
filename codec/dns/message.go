@@ -470,9 +470,12 @@ func parseResources(data []byte, idx int, count int) ([]Resource, int, error) {
 func normalizeResourceData(packet []byte, rtype uint16, start int, length int) ([]byte, error) {
 	switch rtype {
 	case TypeNS, TypeCNAME, TypePTR:
-		name, _, err := readName(packet, start)
+		name, n, err := readName(packet, start)
 		if err != nil {
 			return nil, err
+		}
+		if n != length {
+			return nil, ErrInvalidResource
 		}
 		return appendName(nil, name)
 	case TypeMX:
@@ -480,9 +483,12 @@ func normalizeResourceData(packet []byte, rtype uint16, start int, length int) (
 			return nil, ErrInvalidResource
 		}
 		out := append([]byte(nil), packet[start:start+2]...)
-		name, _, err := readName(packet, start+2)
+		name, n, err := readName(packet, start+2)
 		if err != nil {
 			return nil, err
+		}
+		if n+2 != length {
+			return nil, ErrInvalidResource
 		}
 		return appendName(out, name)
 	case TypeSRV:
@@ -490,9 +496,12 @@ func normalizeResourceData(packet []byte, rtype uint16, start int, length int) (
 			return nil, ErrInvalidResource
 		}
 		out := append([]byte(nil), packet[start:start+6]...)
-		name, _, err := readName(packet, start+6)
+		name, n, err := readName(packet, start+6)
 		if err != nil {
 			return nil, err
+		}
+		if n+6 != length {
+			return nil, ErrInvalidResource
 		}
 		return appendName(out, name)
 	case TypeSOA:
@@ -500,12 +509,15 @@ func normalizeResourceData(packet []byte, rtype uint16, start int, length int) (
 		if err != nil {
 			return nil, err
 		}
+		if n >= length {
+			return nil, ErrInvalidResource
+		}
 		rName, m, err := readName(packet, start+n)
 		if err != nil {
 			return nil, err
 		}
 		numbers := start + n + m
-		if numbers+20 > start+length {
+		if numbers+20 != start+length {
 			return nil, ErrInvalidResource
 		}
 		out, err := appendName(nil, mName)
