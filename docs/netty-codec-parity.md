@@ -58,8 +58,9 @@
 | `ProtobufVarint32LengthFieldPrepender` | `codec/protobuf.ProtobufVarint32LengthFieldPrepender` | done | 出站 varint32 header + payload 零拷贝。 |
 | `HAProxyMessageDecoder/Encoder` | `codec/haproxy` | done | 支持 PROXY protocol v1/v2、TCP/UDP IPv4/IPv6、UNIX 地址和 TLV。 |
 | `SpdyFrameDecoder/Encoder` | `codec/spdy` | done | 支持 SPDY/3 data、SYN、RST、SETTINGS、PING、GOAWAY、HEADERS、WINDOW_UPDATE 和未知控制帧。 |
-| `HttpObjectDecoder/Encoder` | `codec/http1` | partial | 已有 HTTP/1.x 基础解析，完整聚合/分块后续扩展。 |
+| `HttpObjectDecoder/Encoder` | `codec/http1` | done | 支持请求/响应、Content-Length、chunked、trailers、聚合器、100-continue 和 chunked 出站。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | partial | 已有 frame 和握手基础，扩展压缩和控制帧策略后续补齐。 |
+| `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame；HPACK 保持独立边界。 |
 | `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE 和未知扩展帧。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧能力。 |
 | `MQTT` | `codec/mqtt` | done | 支持 MQTT 3.1.1/MQTT5 固定头、结构化包、属性、原因码、AUTH 和零拷贝 PUBLISH payload。 |

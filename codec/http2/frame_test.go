@@ -82,6 +82,101 @@ func TestSettingsAckHasNoPayload(t *testing.T) {
 	}
 }
 
+func TestTypedFrameDecoderParsesHeadersWithPriority(t *testing.T) {
+	decoder, err := NewFrameDecoder(DefaultMaxFrameSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("h2", decoder); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("typed", NewTypedFrameDecoder()); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &frameRecorder{}
+	if err := ch.Pipeline().AddLast("recorder", recorder); err != nil {
+		t.Fatal(err)
+	}
+
+	in, err := ch.Allocator().Acquire(FrameHeaderSize + 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendRawFrame(t, in, FrameHeader{Length: 8, Type: FrameHeaders, Flags: FlagEndHeaders | FlagPriority, StreamID: 1}, []byte{0x80, 0, 0, 3, 16, 'h', 'd', 'r'})
+	ch.Pipeline().FireChannelRead(in)
+
+	frame, ok := recorder.msg.(HeadersFrame)
+	if !ok {
+		t.Fatalf("msg=%T, want HeadersFrame", recorder.msg)
+	}
+	defer frame.Release()
+	if frame.StreamID != 1 || frame.Priority == nil || !frame.Priority.Exclusive || frame.Priority.StreamDependency != 3 || frame.Priority.Weight != 16 {
+		t.Fatalf("headers=%+v priority=%+v", frame, frame.Priority)
+	}
+	if string(frame.HeaderBlock.Bytes()) != "hdr" {
+		t.Fatalf("header block=%q", frame.HeaderBlock.Bytes())
+	}
+}
+
+func TestTypedFrameEncoderWritesSettingsFrame(t *testing.T) {
+	sink := &captureSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("frame", NewFrameEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("typed", NewTypedFrameEncoder()); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ch.Write(SettingsFrame{Settings: []Setting{{ID: 1, Value: 4096}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.messages) != 2 {
+		t.Fatalf("writes=%d, want header and payload", len(sink.messages))
+	}
+	header := sink.messages[0].(buffer.ByteBuf)
+	defer header.Release()
+	body := sink.messages[1].(buffer.ByteBuf)
+	defer body.Release()
+	decoded, err := ParseFrameHeader(header.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Length != 6 || decoded.Type != FrameSettings || decoded.StreamID != 0 {
+		t.Fatalf("header=%+v", decoded)
+	}
+	if got := body.Bytes(); string(got) != string([]byte{0, 1, 0, 0, 0x10, 0}) {
+		t.Fatalf("settings payload=%v", got)
+	}
+}
+
+func TestTypedFrameEncoderKeepsDataPayloadZeroCopy(t *testing.T) {
+	sink := &captureSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("frame", NewFrameEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("typed", NewTypedFrameEncoder()); err != nil {
+		t.Fatal(err)
+	}
+
+	body := buffer.NewHeapBuffer(4)
+	_, _ = body.WriteBytes([]byte("data"))
+	if err := ch.Write(DataFrame{StreamID: 1, Flags: FlagEndStream, Data: body}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.messages) != 2 {
+		t.Fatalf("writes=%d, want header and payload", len(sink.messages))
+	}
+	defer sink.messages[0].(buffer.ByteBuf).Release()
+	defer sink.messages[1].(buffer.ByteBuf).Release()
+	if sink.messages[1] != body {
+		t.Fatal("data payload should pass through without copy")
+	}
+}
+
 func TestStreamStateTransitions(t *testing.T) {
 	s := NewStream(1)
 	if !s.ID.ClientInitiated() || s.State != StreamIdle {
