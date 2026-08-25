@@ -57,6 +57,7 @@
 | `ProtobufVarint32FrameDecoder` | `codec/protobuf.ProtobufVarint32FrameDecoder` | done | 支持跨 buffer varint header、超长帧、非法 varint。 |
 | `ProtobufVarint32LengthFieldPrepender` | `codec/protobuf.ProtobufVarint32LengthFieldPrepender` | done | 出站 varint32 header + payload 零拷贝。 |
 | `HAProxyMessageDecoder/Encoder` | `codec/haproxy` | done | 支持 PROXY protocol v1/v2、TCP/UDP IPv4/IPv6、UNIX 地址和 TLV。 |
+| `SpdyFrameDecoder/Encoder` | `codec/spdy` | done | 支持 SPDY/3 data、SYN、RST、SETTINGS、PING、GOAWAY、HEADERS、WINDOW_UPDATE 和未知控制帧。 |
 | `HttpObjectDecoder/Encoder` | `codec/http1` | partial | 已有 HTTP/1.x 基础解析，完整聚合/分块后续扩展。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | partial | 已有 frame 和握手基础，扩展压缩和控制帧策略后续补齐。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧能力。 |
