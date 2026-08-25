@@ -62,6 +62,10 @@ blocks:
 - `transport/poller/kqueue`: macOS/BSD kqueue readiness backend.
 - `transport/poller/iocp`: Windows IOCP completion backend with
   AcceptEx/WSARecv/WSASend close completion support.
+- `transport/quic`: minimal QUIC packet engine over UDP, including packet
+  encode/decode, connection-ID routing, and frame dispatch boundaries. It does
+  not yet implement the full TLS 1.3, ACK, loss recovery, congestion control,
+  migration, flow-control, or stream-multiplexing state machines.
 
 Examples:
 

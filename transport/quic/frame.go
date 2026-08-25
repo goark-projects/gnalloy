@@ -102,8 +102,11 @@ type PacketContext struct {
 }
 
 type FrameEvent struct {
-	Packet PacketContext
-	Frame  any
+	Packet        PacketContext
+	Frame         any
+	Conn          *Connection
+	Remote        udp.Address
+	NewConnection bool
 }
 
 func (e FrameEvent) Release() {
@@ -246,6 +249,10 @@ func NewPacketFrameDecoder() *PacketFrameDecoder {
 }
 
 func (d *PacketFrameDecoder) ChannelRead(ctx *channel.HandlerContext, msg any) {
+	if event, ok := asPacketEvent(msg); ok {
+		d.decodePacketEvent(ctx, event)
+		return
+	}
 	if addressed, ok := asUDPAddressed(msg); ok {
 		d.decodeAddressed(ctx, addressed)
 		return
@@ -268,6 +275,14 @@ func (d *PacketFrameDecoder) decodeAddressed(ctx *channel.HandlerContext, addres
 }
 
 func (d *PacketFrameDecoder) decodePacket(ctx *channel.HandlerContext, packet Packet, addr *udp.Address) {
+	d.decodePacketWithMeta(ctx, packet, addr, nil, false)
+}
+
+func (d *PacketFrameDecoder) decodePacketEvent(ctx *channel.HandlerContext, event PacketEvent) {
+	d.decodePacketWithMeta(ctx, event.Packet, &event.Remote, event.Conn, event.NewConnection)
+}
+
+func (d *PacketFrameDecoder) decodePacketWithMeta(ctx *channel.HandlerContext, packet Packet, addr *udp.Address, conn *Connection, newConnection bool) {
 	if packet.Payload == nil || packet.Payload.ReadableBytes() == 0 {
 		packet.Release()
 		return
@@ -284,8 +299,9 @@ func (d *PacketFrameDecoder) decodePacket(ctx *channel.HandlerContext, packet Pa
 		if !ok {
 			break
 		}
-		event := FrameEvent{Packet: meta, Frame: frame}
+		event := FrameEvent{Packet: meta, Frame: frame, Conn: conn, NewConnection: newConnection}
 		if addr != nil {
+			event.Remote = *addr
 			ctx.FireChannelRead(udp.Addressed{Message: event, Addr: *addr})
 		} else {
 			ctx.FireChannelRead(event)
@@ -606,6 +622,20 @@ func asPacket(msg any) (Packet, bool) {
 		return *v, true
 	default:
 		return Packet{}, false
+	}
+}
+
+func asPacketEvent(msg any) (PacketEvent, bool) {
+	switch v := msg.(type) {
+	case PacketEvent:
+		return v, true
+	case *PacketEvent:
+		if v == nil {
+			return PacketEvent{}, false
+		}
+		return *v, true
+	default:
+		return PacketEvent{}, false
 	}
 }
 

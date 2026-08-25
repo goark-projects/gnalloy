@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"goark.dev/gnalloy/bootstrap"
 	"goark.dev/gnalloy/buffer"
@@ -61,6 +62,10 @@ func TestNormalizeConfigValidatesDefaultsAndBounds(t *testing.T) {
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Fatalf("err=%v, want %v", err, ErrInvalidConfig)
 	}
+	_, err = NormalizeConfig(Config{ShortDestinationIDLength: MaxConnectionIDLength + 1})
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, ErrInvalidConfig)
+	}
 }
 
 func TestPacketValidAndRelease(t *testing.T) {
@@ -82,7 +87,7 @@ func TestPacketValidAndRelease(t *testing.T) {
 	}
 }
 
-func TestTransportBindReturnsExplicitNotImplemented(t *testing.T) {
+func TestTransportBindInstallsPacketHandler(t *testing.T) {
 	group, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{
 		Size: 1,
 		PollerFactory: func(int) (transport.Poller, error) {
@@ -92,16 +97,37 @@ func TestTransportBindReturnsExplicitNotImplemented(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer group.Close()
+	defer shutdownQUICGroup(t, group)
 
-	_, err = NewTransport(DefaultConfig()).Bind(context.Background(), bootstrap.ServerConfig{
-		Address:     "127.0.0.1:4433",
-		WorkerGroup: group,
-		ChildInitializer: func(ch channel.Channel) error {
+	var initialized channel.Channel
+	server, err := bootstrap.NewServerBootstrap().
+		Group(group, group).
+		Transport(NewTransport(DefaultConfig())).
+		ChildInitializer(func(ch channel.Channel) error {
+			channel.OptionAutoRead.Set(ch.Options(), false)
+			initialized = ch
+			if _, ok := ch.Pipeline().Context(packetHandlerName); !ok {
+				t.Fatal("QUIC packet handler was not installed before user initializer")
+			}
 			return nil
-		},
-	})
-	if !errors.Is(err, ErrNotImplemented) {
-		t.Fatalf("err=%v, want %v", err, ErrNotImplemented)
+		}).
+		Bind("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initialized == nil {
+		t.Fatal("child initializer was not called")
+	}
+	if err := server.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func shutdownQUICGroup(t *testing.T, group *transport.EventLoopGroup) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := group.Shutdown(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

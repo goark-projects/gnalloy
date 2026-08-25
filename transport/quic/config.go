@@ -11,9 +11,10 @@ const (
 type Config struct {
 	Versions []Version
 
-	MaxDatagramSize         int
-	ActiveConnectionIDLimit int
-	IdleTimeoutMillis       int64
+	MaxDatagramSize          int
+	ActiveConnectionIDLimit  int
+	IdleTimeoutMillis        int64
+	ShortDestinationIDLength int
 
 	UDP udp.Config
 }
@@ -58,6 +59,9 @@ func NormalizeConfig(cfg Config) (Config, error) {
 		cfg.IdleTimeoutMillis = def.IdleTimeoutMillis
 	}
 	if cfg.IdleTimeoutMillis < 0 {
+		return Config{}, ErrInvalidConfig
+	}
+	if cfg.ShortDestinationIDLength < 0 || cfg.ShortDestinationIDLength > MaxConnectionIDLength {
 		return Config{}, ErrInvalidConfig
 	}
 	if cfg.UDP.ReadBufferSize == 0 {

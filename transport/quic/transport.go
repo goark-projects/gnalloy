@@ -4,10 +4,13 @@ import (
 	"context"
 
 	"goark.dev/gnalloy/bootstrap"
+	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/transport/udp"
 )
 
-// Transport 是 QUIC 协议引擎的 ServerBootstrap 入口。
-// 当前只固定公开契约，完整协议状态机在后续迭代实现。
+const packetHandlerName = "quicPacketHandler"
+
+// Transport 是 QUIC 最小包引擎的 ServerBootstrap 入口。
 type Transport struct {
 	cfg Config
 }
@@ -16,18 +19,32 @@ func NewTransport(cfg Config) *Transport {
 	return &Transport{cfg: cfg}
 }
 
-func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (bootstrap.Server, error) {
+func (t *Transport) Bind(ctx context.Context, serverCfg bootstrap.ServerConfig) (bootstrap.Server, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if cfg.WorkerGroup == nil {
+	if serverCfg.WorkerGroup == nil {
 		return nil, bootstrap.ErrMissingGroup
 	}
-	if cfg.ChildInitializer == nil {
+	if serverCfg.ChildInitializer == nil {
 		return nil, bootstrap.ErrMissingChildHandler
 	}
-	if _, err := NormalizeConfig(t.cfg); err != nil {
+	qcfg, err := NormalizeConfig(t.cfg)
+	if err != nil {
 		return nil, err
 	}
-	return nil, ErrNotImplemented
+	initializer := serverCfg.ChildInitializer
+	serverCfg.ChildInitializer = func(ch channel.Channel) error {
+		handler := NewPacketHandler(PacketHandlerConfig{
+			HeaderParseOptions: HeaderParseOptions{
+				ShortDestinationIDLength: qcfg.ShortDestinationIDLength,
+			},
+			Router: NewConnectionIDRouter(qcfg.ActiveConnectionIDLimit),
+		})
+		if err := ch.Pipeline().AddLast(packetHandlerName, handler); err != nil {
+			return err
+		}
+		return initializer(ch)
+	}
+	return udp.NewTransport(qcfg.UDP).Bind(ctx, serverCfg)
 }
