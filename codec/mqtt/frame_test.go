@@ -1,10 +1,13 @@
 package mqtt
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/codec"
 )
 
 type frameCollector struct {
@@ -27,6 +30,14 @@ func (c *mqttFrameCollector) ChannelRead(_ *channel.HandlerContext, msg any) {
 	}
 }
 
+type packetCollector struct {
+	packets []any
+}
+
+func (c *packetCollector) ChannelRead(_ *channel.HandlerContext, msg any) {
+	c.packets = append(c.packets, msg)
+}
+
 func TestFrameDecoder(t *testing.T) {
 	decoder, err := NewFrameDecoder(1024)
 	if err != nil {
@@ -43,6 +54,111 @@ func TestFrameDecoder(t *testing.T) {
 		t.Fatalf("frames=%v", collector.frames)
 	}
 	collector.frames[0].Release()
+}
+
+func TestPacketDecoderDecodesConnect(t *testing.T) {
+	collector := &packetCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("packet", NewPacketDecoder())
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	payload := testBuf([]byte{
+		0, 4, 'M', 'Q', 'T', 'T',
+		4, 2, 0, 30,
+		0, 3, 'c', 'i', 'd',
+	})
+	ch.Pipeline().FireChannelRead(NewFrame(PacketConnect, 0, payload))
+	if len(collector.packets) != 1 {
+		t.Fatalf("packets=%d, want 1", len(collector.packets))
+	}
+	packet, ok := collector.packets[0].(ConnectPacket)
+	if !ok {
+		t.Fatalf("packet type=%T, want ConnectPacket", collector.packets[0])
+	}
+	if packet.ProtocolName != "MQTT" || packet.ProtocolLevel != 4 || packet.ClientID != "cid" || !packet.CleanSession || packet.KeepAliveSeconds != 30 {
+		t.Fatalf("packet=%+v", packet)
+	}
+}
+
+func TestPacketDecoderDecodesPublishAndRetainsPayload(t *testing.T) {
+	collector := &packetCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("packet", NewPacketDecoder())
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	payload := testBuf([]byte{0, 1, 'a', 'b', 'c'})
+	ch.Pipeline().FireChannelRead(NewFrame(PacketPublish, 0, payload))
+	if len(collector.packets) != 1 {
+		t.Fatalf("packets=%d, want 1", len(collector.packets))
+	}
+	packet, ok := collector.packets[0].(PublishPacket)
+	if !ok {
+		t.Fatalf("packet type=%T, want PublishPacket", collector.packets[0])
+	}
+	defer packet.Release()
+	if packet.Topic != "a" || string(packet.Payload.Bytes()) != "bc" {
+		t.Fatalf("packet=%+v payload=%q", packet, packet.Payload.Bytes())
+	}
+}
+
+func TestPacketEncoderWritesPublishFrame(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("prepender", NewFramePrepender())
+	_ = ch.Pipeline().AddLast("packet", NewPacketEncoder())
+	defer sink.release()
+
+	if err := ch.Write(PublishPacket{Topic: "a", Payload: testBuf([]byte("bc"))}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want 2", len(sink.writes))
+	}
+	if string(sink.writes[0].Bytes()) != string([]byte{0x30, 0x05}) {
+		t.Fatalf("header=%v", sink.writes[0].Bytes())
+	}
+	if string(sink.writes[1].Bytes()) != string([]byte{0, 1, 'a', 'b', 'c'}) {
+		t.Fatalf("payload=%v", sink.writes[1].Bytes())
+	}
+}
+
+func TestPacketEncoderWritesSubscribeFrame(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("prepender", NewFramePrepender())
+	_ = ch.Pipeline().AddLast("packet", NewPacketEncoder())
+	defer sink.release()
+
+	err := ch.Write(SubscribePacket{
+		PacketID:      7,
+		Subscriptions: []Subscription{{Topic: "sensor/1", QoS: 1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want 2", len(sink.writes))
+	}
+	if string(sink.writes[0].Bytes()) != string([]byte{0x82, 0x0d}) {
+		t.Fatalf("header=%v", sink.writes[0].Bytes())
+	}
+	if string(sink.writes[1].Bytes()) != string([]byte{0, 7, 0, 8, 's', 'e', 'n', 's', 'o', 'r', '/', '1', 1}) {
+		t.Fatalf("payload=%v", sink.writes[1].Bytes())
+	}
+}
+
+func TestPacketEncoderRejectsOversizedPublishTopic(t *testing.T) {
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("packet", NewPacketEncoder())
+
+	payload := testBuf([]byte("x"))
+	err := ch.Write(PublishPacket{Topic: strings.Repeat("a", 65536), Payload: payload})
+	if !errors.Is(err, codec.ErrInvalidFrameLength) {
+		t.Fatalf("err=%v, want ErrInvalidFrameLength", err)
+	}
+	if payload.RefCnt() != 0 {
+		t.Fatalf("payload ref=%d, want released", payload.RefCnt())
+	}
 }
 
 func TestFramePrepender(t *testing.T) {

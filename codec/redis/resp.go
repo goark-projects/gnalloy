@@ -47,6 +47,18 @@ func NewCommandEncoder() *CommandEncoder {
 	return &CommandEncoder{}
 }
 
+func Command(args ...string) [][]byte {
+	out := make([][]byte, len(args))
+	for i, arg := range args {
+		out[i] = []byte(arg)
+	}
+	return out
+}
+
+func CommandBytes(args ...[]byte) [][]byte {
+	return args
+}
+
 func (e *CommandEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	args, ok := msg.([][]byte)
 	if !ok {
