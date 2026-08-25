@@ -116,7 +116,7 @@ func (a *acceptor) acceptChild(fd transport.FDRef) {
 			_ = unsafeCh.Close()
 			return
 		}
-		if err := worker.Register(unsafeCh, transport.ReadyRead); err != nil {
+		if err := worker.Register(unsafeCh, unsafeCh.InitialInterest()); err != nil {
 			ch.Pipeline().FireExceptionCaught(err)
 			_ = unsafeCh.Close()
 			return

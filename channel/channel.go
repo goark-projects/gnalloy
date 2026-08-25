@@ -20,6 +20,7 @@ type Channel interface {
 	FlushFuture() Future
 	WriteAndFlushFuture(msg any) Future
 	CloseFuture() Future
+	Read() error
 	IsWritable() bool
 	PendingOutboundBytes() int64
 	WriteBufferWatermark() transport.WriteBufferWatermark
@@ -42,6 +43,10 @@ type FutureOutboundSink interface {
 
 type WritabilitySink interface {
 	IsWritable() bool
+}
+
+type ReadSink interface {
+	Read() error
 }
 
 type OutboundBufferSink interface {
@@ -119,6 +124,13 @@ func (c *LocalChannel) WriteAndFlushFuture(msg any) Future {
 
 func (c *LocalChannel) CloseFuture() Future {
 	return c.pipeline.CloseFuture()
+}
+
+func (c *LocalChannel) Read() error {
+	if sink, ok := c.pipeline.sink.(ReadSink); ok {
+		return sink.Read()
+	}
+	return nil
 }
 
 func (c *LocalChannel) IsWritable() bool {

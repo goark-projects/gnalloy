@@ -59,6 +59,7 @@ type Unsafe struct {
 	outTail       *outboundEntry
 	outFree       *outboundEntry
 	outboundBytes atomic.Int64
+	readPending   bool
 	writePending  bool
 	writeInterest bool
 	writeBatch    []buffer.ByteBuf
@@ -254,10 +255,29 @@ func (u *Unsafe) CloseFuture() Future {
 }
 
 func (u *Unsafe) BeginRead() error {
+	if !u.AutoRead() {
+		return nil
+	}
+	return u.Read()
+}
+
+func (u *Unsafe) Read() error {
+	if u.closed {
+		return ErrPromiseFailed
+	}
 	if u.poller == nil || u.poller.Model() != transport.PollerCompletion {
+		u.readReady()
 		return nil
 	}
 	return u.submitRead()
+}
+
+func (u *Unsafe) AutoRead() bool {
+	return OptionAutoRead.Get(u.ch.Options())
+}
+
+func (u *Unsafe) InitialInterest() transport.ReadyMask {
+	return u.readInterest()
 }
 
 // Activate 在 Channel 归属 EventLoop 并注册到底层 Poller 后调用。
@@ -277,7 +297,9 @@ func (u *Unsafe) handleReadiness(ev transport.PollEvent) {
 		return
 	}
 	if ev.Ready&transport.ReadyRead != 0 {
-		u.readReady()
+		if u.AutoRead() {
+			u.readReady()
+		}
 	}
 	if ev.Ready&transport.ReadyWrite != 0 {
 		if err := u.flushOutbound(); err != nil {
@@ -289,6 +311,7 @@ func (u *Unsafe) handleReadiness(ev transport.PollEvent) {
 func (u *Unsafe) handleCompletion(ev transport.PollEvent) {
 	switch ev.Op {
 	case transport.OpRead:
+		u.readPending = false
 		if ev.Err != nil {
 			if ev.Buf != nil {
 				ev.Buf.Release()
@@ -310,7 +333,7 @@ func (u *Unsafe) handleCompletion(ev transport.PollEvent) {
 			_ = u.Close()
 			return
 		}
-		if !u.closed {
+		if !u.closed && u.AutoRead() {
 			if err := u.submitRead(); err != nil {
 				u.fail(err)
 			}
@@ -581,7 +604,7 @@ func (u *Unsafe) enableWriteInterest() error {
 		return nil
 	}
 	u.writeInterest = true
-	return u.poller.Modify(u.fd, transport.ReadyRead|transport.ReadyWrite)
+	return u.poller.Modify(u.fd, u.readInterest()|transport.ReadyWrite)
 }
 
 func (u *Unsafe) disableWriteInterest() error {
@@ -589,7 +612,14 @@ func (u *Unsafe) disableWriteInterest() error {
 		return nil
 	}
 	u.writeInterest = false
-	return u.poller.Modify(u.fd, transport.ReadyRead)
+	return u.poller.Modify(u.fd, u.readInterest())
+}
+
+func (u *Unsafe) readInterest() transport.ReadyMask {
+	if u.AutoRead() {
+		return transport.ReadyRead
+	}
+	return 0
 }
 
 func (u *Unsafe) releaseOutbound() {
@@ -615,6 +645,9 @@ func (u *Unsafe) releaseOutbound() {
 }
 
 func (u *Unsafe) submitRead() error {
+	if u.readPending {
+		return nil
+	}
 	buf, err := u.ch.Allocator().Acquire(u.readBufferSize)
 	if err != nil {
 		return err
@@ -625,8 +658,12 @@ func (u *Unsafe) submitRead() error {
 		ChannelID: u.ID(),
 		Buf:       buf,
 	})
+	u.readPending = true
 	err = u.poller.Submit(req)
 	buf.Release()
+	if err != nil {
+		u.readPending = false
+	}
 	return err
 }
 

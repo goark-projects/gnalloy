@@ -93,7 +93,9 @@ func (e *endpoint) HandleEvent(ev transport.PollEvent) {
 		return
 	}
 	if ev.Ready&transport.ReadyRead != 0 {
-		e.readReady()
+		if e.AutoRead() {
+			e.readReady()
+		}
 	}
 	if ev.Ready&transport.ReadyWrite != 0 {
 		if err := e.flushOutbound(); err != nil {
@@ -149,6 +151,28 @@ func (e *endpoint) Flush() error {
 		return e.submitWriteCompletion()
 	}
 	return e.flushOutbound()
+}
+
+func (e *endpoint) Read() error {
+	if e.closed {
+		return ErrServerClosed
+	}
+	if e.loop != nil && e.loop.Poller().Model() == transport.PollerCompletion {
+		return e.submitReadCompletion()
+	}
+	e.readReady()
+	return nil
+}
+
+func (e *endpoint) AutoRead() bool {
+	return e.ch == nil || channel.OptionAutoRead.Get(e.ch.Options())
+}
+
+func (e *endpoint) InitialInterest() transport.ReadyMask {
+	if e.AutoRead() {
+		return transport.ReadyRead
+	}
+	return 0
 }
 
 func (e *endpoint) IsWritable() bool {
@@ -254,7 +278,7 @@ func (e *endpoint) handleReadCompletion(ev transport.PollEvent) {
 	if read {
 		e.ch.Pipeline().FireChannelReadComplete()
 	}
-	if !e.closed {
+	if !e.closed && e.AutoRead() {
 		if err := e.submitReadCompletion(); err != nil {
 			e.fireException(err)
 			_ = e.Close()

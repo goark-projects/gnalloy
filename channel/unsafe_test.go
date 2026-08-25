@@ -124,6 +124,35 @@ func (rw *partialWriteRW) Close(transport.FDRef) error {
 	return nil
 }
 
+type readStep struct {
+	data  string
+	again bool
+}
+
+type scriptedReadRW struct {
+	steps []readStep
+	reads int
+}
+
+func (rw *scriptedReadRW) Read(_ transport.FDRef, dst []byte) (int, bool, error) {
+	rw.reads++
+	if len(rw.steps) == 0 {
+		return 0, true, nil
+	}
+	step := rw.steps[0]
+	rw.steps = rw.steps[1:]
+	n := copy(dst, step.data)
+	return n, step.again, nil
+}
+
+func (rw *scriptedReadRW) Write(transport.FDRef, []byte) (int, bool, error) {
+	return 0, true, nil
+}
+
+func (rw *scriptedReadRW) Close(transport.FDRef) error {
+	return nil
+}
+
 type vectorWriteRW struct {
 	n      int
 	again  bool
@@ -263,6 +292,35 @@ func TestUnsafeOutboundPartialWrite(t *testing.T) {
 	}
 }
 
+func TestUnsafeReadinessWriteInterestRespectsAutoReadFalse(t *testing.T) {
+	poller := &fakeReadyPoller{}
+	rw := &partialWriteRW{steps: []writeStep{{n: 1, again: true}, {n: 1}}}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     poller,
+		ReadWriter: rw,
+	})
+	OptionAutoRead.Set(ch.Options(), false)
+
+	buf := buffer.NewHeapBuffer(2)
+	if _, err := buf.WriteBytes([]byte("ab")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.WriteAndFlush(buf); err != nil {
+		t.Fatal(err)
+	}
+	if len(poller.modified) != 1 || poller.modified[0] != transport.ReadyWrite {
+		t.Fatalf("modified=%v, want write-only interest", poller.modified)
+	}
+
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
+	if len(poller.modified) != 2 || poller.modified[1] != 0 {
+		t.Fatalf("modified=%v, want no read interest after write drain", poller.modified)
+	}
+}
+
 func TestUnsafeReadinessUsesGatheringWrite(t *testing.T) {
 	rw := &vectorWriteRW{}
 	ch, _ := NewUnsafeChannel(UnsafeConfig{
@@ -395,6 +453,79 @@ func TestUnsafeCompletionReadKeepsPendingBufferAliveUntilEvent(t *testing.T) {
 	}
 	if buf.RefCnt() != 0 {
 		t.Fatalf("read buf ref=%d, want 0", buf.RefCnt())
+	}
+}
+
+func TestUnsafeCompletionAutoReadFalseRequiresManualRead(t *testing.T) {
+	poller := &fakeCompletionPoller{}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:             1,
+		FD:             transport.FDRef{FD: 1},
+		Allocator:      buffer.NewHeapAllocator(),
+		Poller:         poller,
+		ReadBufferSize: 4,
+	})
+	OptionAutoRead.Set(ch.Options(), false)
+	reader := &releaseReadHandler{}
+	if err := ch.Pipeline().AddLast("reader", reader); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := unsafeCh.Activate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(poller.submitted) != 0 {
+		t.Fatalf("submitted=%d, want 0 with AUTO_READ=false", len(poller.submitted))
+	}
+	if err := ch.Read(); err != nil {
+		t.Fatal(err)
+	}
+	if len(poller.submitted) != 1 {
+		t.Fatalf("submitted=%d, want 1 after manual read", len(poller.submitted))
+	}
+	buf := poller.submitted[0].Buf
+	if _, err := buf.WriteBytes([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	unsafeCh.HandleEvent(transport.PollEvent{
+		Model: transport.PollerCompletion,
+		Op:    transport.OpRead,
+		FD:    transport.FDRef{FD: 1},
+		Buf:   buf,
+		N:     4,
+	})
+	if reader.reads != 1 {
+		t.Fatalf("reads=%d, want 1", reader.reads)
+	}
+	if len(poller.submitted) != 1 {
+		t.Fatalf("submitted=%d, want no automatic follow-up read", len(poller.submitted))
+	}
+}
+
+func TestUnsafeReadinessAutoReadFalseIgnoresReadableEventUntilManualRead(t *testing.T) {
+	rw := &scriptedReadRW{steps: []readStep{{data: "ok", again: true}}}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     &fakeReadyPoller{},
+		ReadWriter: rw,
+	})
+	OptionAutoRead.Set(ch.Options(), false)
+	reader := &releaseReadHandler{}
+	if err := ch.Pipeline().AddLast("reader", reader); err != nil {
+		t.Fatal(err)
+	}
+
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyRead})
+	if rw.reads != 0 || reader.reads != 0 {
+		t.Fatalf("reads=%d handler=%d, want 0 before manual read", rw.reads, reader.reads)
+	}
+	if err := ch.Read(); err != nil {
+		t.Fatal(err)
+	}
+	if rw.reads != 1 || reader.reads != 1 {
+		t.Fatalf("reads=%d handler=%d, want 1 after manual read", rw.reads, reader.reads)
 	}
 }
 

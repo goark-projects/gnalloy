@@ -79,11 +79,11 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 			if err := server.childInitializer(ep.ch); err != nil {
 				return err
 			}
-			if err := loop.Register(ep, transport.ReadyRead); err != nil {
+			if err := loop.Register(ep, ep.InitialInterest()); err != nil {
 				return err
 			}
 			ep.ch.Pipeline().FireChannelActive()
-			if loop.Poller().Model() == transport.PollerCompletion {
+			if loop.Poller().Model() == transport.PollerCompletion && ep.AutoRead() {
 				return ep.submitReadCompletion()
 			}
 			return nil
