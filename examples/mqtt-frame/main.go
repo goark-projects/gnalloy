@@ -49,10 +49,16 @@ func main() {
 			if err := ch.Pipeline().AddLast("prepender", mqtt.NewFramePrepender()); err != nil {
 				return err
 			}
+			if err := ch.Pipeline().AddLast("packetEncoder", mqtt.NewPacketEncoder()); err != nil {
+				return err
+			}
 			if err := ch.Pipeline().AddLast("frame", frameDecoder); err != nil {
 				return err
 			}
-			if err := ch.Pipeline().AddLast("typed", mqtt.NewTypedFrameDecoder()); err != nil {
+			if err := ch.Pipeline().AddLast("typedFrame", mqtt.NewTypedFrameDecoder()); err != nil {
+				return err
+			}
+			if err := ch.Pipeline().AddLast("packetDecoder", mqtt.NewPacketDecoder()); err != nil {
 				return err
 			}
 			return ch.Pipeline().AddLast("handler", mqttFrameHandler{})
@@ -74,27 +80,26 @@ func main() {
 type mqttFrameHandler struct{}
 
 func (mqttFrameHandler) ChannelRead(ctx *channel.HandlerContext, msg any) {
-	frame, ok := msg.(mqtt.Frame)
-	if !ok {
-		ctx.FireChannelRead(msg)
-		return
-	}
-	switch frame.PacketType() {
-	case mqtt.PacketPingReq:
-		frame.Release()
-		if err := ctx.Channel().WriteAndFlush(mqtt.PingResp()); err != nil {
+	switch packet := msg.(type) {
+	case mqtt.ConnectPacket:
+		if err := ctx.Channel().WriteAndFlush(mqtt.ConnAckPacket{}); err != nil {
 			ctx.FireExceptionCaught(err)
 		}
-	case mqtt.PacketPublish:
-		if err := ctx.Channel().WriteAndFlush(frame); err != nil {
-			frame.Release()
+	case mqtt.PingReqPacket:
+		if err := ctx.Channel().WriteAndFlush(mqtt.PingRespPacket{}); err != nil {
 			ctx.FireExceptionCaught(err)
 		}
-	case mqtt.PacketDisconnect:
-		frame.Release()
+	case mqtt.PublishPacket:
+		if err := ctx.Channel().WriteAndFlush(packet); err != nil {
+			packet.Release()
+			ctx.FireExceptionCaught(err)
+		}
+	case mqtt.DisconnectPacket:
 		_ = ctx.Close()
 	default:
-		frame.Release()
+		if releasable, ok := msg.(interface{ Release() }); ok {
+			releasable.Release()
+		}
 	}
 }
 

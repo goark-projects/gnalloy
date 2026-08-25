@@ -5,6 +5,10 @@ param(
     [string]$UDPAddr = "127.0.0.1:19002",
     [string]$LineAddr = "127.0.0.1:19003",
     [string]$FixedAddr = "127.0.0.1:19004",
+    [string]$HTTP1Addr = "127.0.0.1:19005",
+    [string]$WebSocketAddr = "127.0.0.1:19006",
+    [string]$MQTTAddr = "127.0.0.1:19007",
+    [string]$RedisAddr = "127.0.0.1:19008",
     [string]$ICMPTarget = "127.0.0.1",
     [int]$Workers = 2,
     [int]$Count = 3,
@@ -67,6 +71,10 @@ try {
     $udpExe = Join-Path $tempDir "udp-echo.exe"
     $lineExe = Join-Path $tempDir "line-frame.exe"
     $fixedExe = Join-Path $tempDir "fixed-length.exe"
+    $http1Exe = Join-Path $tempDir "http1.exe"
+    $websocketExe = Join-Path $tempDir "websocket.exe"
+    $mqttExe = Join-Path $tempDir "mqtt-frame.exe"
+    $redisExe = Join-Path $tempDir "redis-resp.exe"
     $icmpExe = Join-Path $tempDir "icmp-ping.exe"
     $clientExe = Join-Path $tempDir "smoke-client.exe"
 
@@ -75,6 +83,10 @@ try {
     go build -o $udpExe ./examples/udp-echo
     go build -o $lineExe ./examples/line-frame
     go build -o $fixedExe ./examples/fixed-length
+    go build -o $http1Exe ./examples/http1
+    go build -o $websocketExe ./examples/websocket
+    go build -o $mqttExe ./examples/mqtt-frame
+    go build -o $redisExe ./examples/redis-resp
     if ($RunRaw) {
         go build -o $icmpExe ./examples/icmp-ping
     }
@@ -116,6 +128,22 @@ try {
     Invoke-SmokeServer $fixedExe `
         ($common + @("-addr", $FixedAddr, "-frame-length", "4")) `
         @("-addr", $FixedAddr, "-protocol", "fixed", "-message", "ping", "-count", "$Count")
+
+    Invoke-SmokeServer $http1Exe `
+        ($common + @("-addr", $HTTP1Addr)) `
+        @("-addr", $HTTP1Addr, "-protocol", "http1", "-message", "ping", "-count", "$Count")
+
+    Invoke-SmokeServer $websocketExe `
+        ($common + @("-addr", $WebSocketAddr)) `
+        @("-addr", $WebSocketAddr, "-protocol", "websocket", "-message", "ping", "-count", "$Count")
+
+    Invoke-SmokeServer $mqttExe `
+        ($common + @("-addr", $MQTTAddr)) `
+        @("-addr", $MQTTAddr, "-protocol", "mqtt", "-message", "ping", "-count", "$Count")
+
+    Invoke-SmokeServer $redisExe `
+        ($common + @("-addr", $RedisAddr)) `
+        @("-addr", $RedisAddr, "-protocol", "redis", "-message", "ping", "-count", "$Count")
 
     if ($RunRaw) {
         & $icmpExe @($common + @("-target", $ICMPTarget, "-timeout", "3s"))

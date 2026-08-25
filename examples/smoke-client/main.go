@@ -19,7 +19,7 @@ func main() {
 		timeout  time.Duration
 	)
 	flag.StringVar(&addr, "addr", "127.0.0.1:9000", "server address")
-	flag.StringVar(&protocol, "protocol", string(smokeclient.ProtocolRaw), "protocol: raw, length-field, udp, line, or fixed")
+	flag.StringVar(&protocol, "protocol", string(smokeclient.ProtocolRaw), "protocol: raw, length-field, udp, line, fixed, http1, websocket, mqtt, or redis")
 	flag.StringVar(&message, "message", "ping", "payload")
 	flag.IntVar(&count, "count", 1, "round trip count")
 	flag.DurationVar(&timeout, "timeout", 3*time.Second, "dial and read timeout")

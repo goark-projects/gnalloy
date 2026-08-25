@@ -7,6 +7,10 @@ LENGTH_FIELD_ADDR="${LENGTH_FIELD_ADDR:-127.0.0.1:19001}"
 UDP_ADDR="${UDP_ADDR:-127.0.0.1:19002}"
 LINE_ADDR="${LINE_ADDR:-127.0.0.1:19003}"
 FIXED_ADDR="${FIXED_ADDR:-127.0.0.1:19004}"
+HTTP1_ADDR="${HTTP1_ADDR:-127.0.0.1:19005}"
+WEBSOCKET_ADDR="${WEBSOCKET_ADDR:-127.0.0.1:19006}"
+MQTT_ADDR="${MQTT_ADDR:-127.0.0.1:19007}"
+REDIS_ADDR="${REDIS_ADDR:-127.0.0.1:19008}"
 ICMP_TARGET="${ICMP_TARGET:-127.0.0.1}"
 WORKERS="${WORKERS:-2}"
 COUNT="${COUNT:-3}"
@@ -78,6 +82,10 @@ go build -o "${TEMP_DIR}/length-field" ./examples/length-field
 go build -o "${TEMP_DIR}/udp-echo" ./examples/udp-echo
 go build -o "${TEMP_DIR}/line-frame" ./examples/line-frame
 go build -o "${TEMP_DIR}/fixed-length" ./examples/fixed-length
+go build -o "${TEMP_DIR}/http1" ./examples/http1
+go build -o "${TEMP_DIR}/websocket" ./examples/websocket
+go build -o "${TEMP_DIR}/mqtt-frame" ./examples/mqtt-frame
+go build -o "${TEMP_DIR}/redis-resp" ./examples/redis-resp
 if [ "${RUN_RAW}" = "1" ]; then
     go build -o "${TEMP_DIR}/icmp-ping" ./examples/icmp-ping
 fi
@@ -100,6 +108,11 @@ fi
 kill "${SERVER_PID}" 2>/dev/null || true
 wait "${SERVER_PID}" 2>/dev/null || true
 SERVER_PID=""
+
+run_server "${TEMP_DIR}/http1" "${HTTP1_ADDR}" http1
+run_server "${TEMP_DIR}/websocket" "${WEBSOCKET_ADDR}" websocket
+run_server "${TEMP_DIR}/mqtt-frame" "${MQTT_ADDR}" mqtt
+run_server "${TEMP_DIR}/redis-resp" "${REDIS_ADDR}" redis
 
 if [ "${RUN_RAW}" = "1" ]; then
     "${TEMP_DIR}/icmp-ping" $(server_args) -target "${ICMP_TARGET}" -timeout 3s

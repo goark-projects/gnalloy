@@ -47,7 +47,7 @@ func main() {
 			if err != nil {
 				return err
 			}
-			frameDecoder, err := websocket.NewFrameDecoder(1 << 20)
+			frameDecoder, err := websocket.NewServerFrameDecoder(1 << 20)
 			if err != nil {
 				return err
 			}
