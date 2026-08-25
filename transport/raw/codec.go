@@ -86,6 +86,32 @@ type AddressedMessageEncoder interface {
 	EncodeAddressed(ctx *channel.HandlerContext, msg any, out *codec.MessageList) error
 }
 
+// PacketEncoder 把 Addressed ByteBuf 直接写成 raw Packet。
+type PacketEncoder struct{}
+
+func NewPacketEncoder() *PacketEncoder {
+	return &PacketEncoder{}
+}
+
+func (e *PacketEncoder) Write(ctx *channel.HandlerContext, msg any) error {
+	addressed, ok := asAddressed(msg)
+	if !ok {
+		return ctx.Write(msg)
+	}
+	payload, ok := addressed.Message.(buffer.ByteBuf)
+	if !ok {
+		return ctx.Write(msg)
+	}
+	if payload == nil {
+		return ErrInvalidPacket
+	}
+	if err := ctx.Write(Packet{Payload: payload, Addr: addressed.Addr, Protocol: addressed.Protocol}); err != nil {
+		payload.Release()
+		return err
+	}
+	return nil
+}
+
 // MessageToPacketEncoder 把 Addressed typed message 编码成一个或多个 raw packet。
 type MessageToPacketEncoder struct {
 	encoder AddressedMessageEncoder

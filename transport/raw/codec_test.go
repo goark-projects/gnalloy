@@ -142,6 +142,32 @@ func TestMessageToPacketEncoderWritesAddressedPayload(t *testing.T) {
 	}
 }
 
+func TestPacketEncoderWritesAddressedByteBuf(t *testing.T) {
+	sink := &rawCaptureSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("packetEncoder", NewPacketEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+
+	if err := ch.Write(Addressed{Message: newRawTestBuf("custom"), Addr: testAddr, Protocol: 253}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
+	}
+	packet, ok := sink.writes[0].(Packet)
+	if !ok {
+		t.Fatalf("write=%T, want Packet", sink.writes[0])
+	}
+	if packet.Addr.String() != testAddr.String() || packet.Protocol != 253 {
+		t.Fatalf("packet=%+v", packet)
+	}
+	if string(packet.Payload.Bytes()) != "custom" {
+		t.Fatalf("payload=%q", packet.Payload.Bytes())
+	}
+}
+
 func TestMessageToPacketEncoderReleasesPayloadOnWriteError(t *testing.T) {
 	wantErr := errors.New("write failed")
 	sink := &rawCaptureSink{err: wantErr}
