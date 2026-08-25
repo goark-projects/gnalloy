@@ -51,9 +51,9 @@ type Unsafe struct {
 	closeHook      func(*Unsafe)
 	readBufferSize int
 	fixedBuffers   bool
-	registered     bool
-	closed         bool
-	inactiveFired  bool
+	registered     atomic.Bool
+	closed         atomic.Bool
+	inactiveFired  atomic.Bool
 
 	outHead       *outboundEntry
 	outTail       *outboundEntry
@@ -95,6 +95,7 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 		closeHook:          cfg.CloseHook,
 		readBufferSize:     readBufferSize,
 		fixedBuffers:       cfg.FixedBuffers,
+		closePromise:       NewPromise(),
 		writeHighWatermark: int64(watermark.High),
 		writeLowWatermark:  int64(watermark.Low),
 	}
@@ -119,18 +120,18 @@ func (u *Unsafe) Channel() *LocalChannel {
 
 // MarkRegistered 由 EventLoop 在 fd 成功注册到底层 poller 后调用。
 func (u *Unsafe) MarkRegistered() {
-	u.registered = true
+	u.registered.Store(true)
 	u.ch.Pipeline().FireChannelRegistered()
 }
 
 // MarkDeregistered 由 EventLoop 在 fd 从底层 poller 移除后调用。
 func (u *Unsafe) MarkDeregistered() {
-	u.registered = false
+	u.registered.Store(false)
 	u.ch.Pipeline().FireChannelUnregistered()
 }
 
 func (u *Unsafe) HandleEvent(ev transport.PollEvent) {
-	if u.closed {
+	if u.closed.Load() {
 		if ev.Buf != nil {
 			ev.Buf.Release()
 		}
@@ -162,7 +163,7 @@ func (u *Unsafe) Write(msg any) error {
 }
 
 func (u *Unsafe) WriteFuture(msg any) Future {
-	if u.closed {
+	if u.closed.Load() {
 		if buf, ok := msg.(buffer.ByteBuf); ok {
 			buf.Release()
 		}
@@ -226,17 +227,12 @@ func (u *Unsafe) Close() error {
 }
 
 func (u *Unsafe) CloseFuture() Future {
-	if u.closed {
-		if u.closePromise != nil {
-			return u.closePromise
-		}
-		return SucceededFuture()
+	if !u.closed.CompareAndSwap(false, true) {
+		return u.closePromise
 	}
-	u.closePromise = NewPromise()
-	u.closed = true
 	u.closeWritability()
 	u.releaseOutbound()
-	if u.registered && u.poller != nil && (u.poller.Backend() == transport.BackendIOUring || u.poller.Backend() == transport.BackendIOCP) {
+	if u.registered.Load() && u.poller != nil && (u.poller.Backend() == transport.BackendIOUring || u.poller.Backend() == transport.BackendIOCP) {
 		if err := u.poller.Submit(transport.IORequest{Op: transport.OpClose, FD: u.fd, ChannelID: u.ID()}); err == nil {
 			return u.closePromise
 		}
@@ -262,7 +258,7 @@ func (u *Unsafe) BeginRead() error {
 }
 
 func (u *Unsafe) Read() error {
-	if u.closed {
+	if u.closed.Load() {
 		return ErrPromiseFailed
 	}
 	if u.poller == nil || u.poller.Model() != transport.PollerCompletion {
@@ -333,7 +329,7 @@ func (u *Unsafe) handleCompletion(ev transport.PollEvent) {
 			_ = u.Close()
 			return
 		}
-		if !u.closed && u.AutoRead() {
+		if !u.closed.Load() && u.AutoRead() {
 			if err := u.submitRead(); err != nil {
 				u.fail(err)
 			}
@@ -351,7 +347,7 @@ func (u *Unsafe) handleCompletion(ev transport.PollEvent) {
 			return
 		}
 		u.completeWrite(ev.N)
-		if !u.closed {
+		if !u.closed.Load() {
 			if err := u.flushOutbound(); err != nil {
 				u.fail(err)
 			}
@@ -366,7 +362,7 @@ func (u *Unsafe) readReady() {
 		return
 	}
 	read := false
-	for !u.closed {
+	for !u.closed.Load() {
 		buf, err := u.ch.Allocator().Acquire(u.readBufferSize)
 		if err != nil {
 			u.fail(err)
@@ -577,7 +573,7 @@ func (u *Unsafe) releaseOutboundEntry(e *outboundEntry) {
 }
 
 func (u *Unsafe) updateWritability() {
-	if u.closed {
+	if u.closed.Load() {
 		u.closeWritability()
 		return
 	}
@@ -701,23 +697,19 @@ func (u *Unsafe) completeFlushWaiters(err error) {
 }
 
 func (u *Unsafe) finishClose() {
-	if !u.closed {
-		u.closed = true
+	if u.closed.CompareAndSwap(false, true) {
 		u.releaseOutbound()
 	}
 	u.fireInactiveOnce()
 }
 
 func (u *Unsafe) fireInactiveOnce() {
-	if u.inactiveFired {
+	if !u.inactiveFired.CompareAndSwap(false, true) {
 		return
 	}
-	u.inactiveFired = true
 	if u.closeHook != nil {
 		u.closeHook(u)
 	}
 	u.ch.Pipeline().FireChannelInactive()
-	if u.closePromise != nil {
-		u.closePromise.SetSuccess()
-	}
+	u.closePromise.SetSuccess()
 }
