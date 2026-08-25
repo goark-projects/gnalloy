@@ -39,6 +39,9 @@ blocks:
 - `handler/timeout`: time-wheel based `IdleStateHandler`,
   `ReadTimeoutHandler`, and `WriteTimeoutHandler` without per-connection
   `time.Timer` allocation.
+- `handler/tls`: Go-native TLS handler backed by `crypto/tls`, exposing
+  plaintext `ByteBuf` to business handlers while preserving SNI and ALPN
+  negotiation events.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `timer`: local hashed wheel timer for idle and heartbeat checks.
 - `transport`: EventLoop, Channel identity contracts, and a thin factory over
