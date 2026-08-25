@@ -140,7 +140,7 @@ func writeJoined(ctx *channel.HandlerContext, payload []byte, suffix []byte) err
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return writeOutboundBuffer(ctx, out)
 }
 
 func writeBytes(ctx *channel.HandlerContext, payload []byte) error {
@@ -155,5 +155,5 @@ func writeBytes(ctx *channel.HandlerContext, payload []byte) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return writeOutboundBuffer(ctx, out)
 }

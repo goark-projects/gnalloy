@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"errors"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
@@ -30,6 +31,52 @@ func TestMessageToByteEncoder(t *testing.T) {
 	buf := sink.writes[0].(buffer.ByteBuf)
 	if string(buf.Bytes()) != "ping" {
 		t.Fatalf("buf=%q", buf.Bytes())
+	}
+}
+
+func TestMessageToByteEncoderReleasesOutputOnWriteError(t *testing.T) {
+	writeErr := errors.New("write failed")
+	sink := &failingOutboundSink{err: writeErr}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	var encoded buffer.ByteBuf
+	encoder := NewMessageToByteEncoderFunc(
+		func(msg any) bool { _, ok := msg.(string); return ok },
+		func(*channel.HandlerContext, any) int { return 4 },
+		func(_ *channel.HandlerContext, msg any, out buffer.ByteBuf) error {
+			encoded = out
+			_, err := out.WriteBytes([]byte(msg.(string)))
+			return err
+		},
+	)
+	_ = ch.Pipeline().AddLast("encoder", encoder)
+
+	err := ch.Write("ping")
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("err=%v, want %v", err, writeErr)
+	}
+	if refs := encoded.RefCnt(); refs != 0 {
+		encoded.Release()
+		t.Fatalf("encoded refs=%d, want 0", refs)
+	}
+}
+
+func TestByteSliceEncoderReleasesOutputOnWriteError(t *testing.T) {
+	writeErr := errors.New("write failed")
+	sink := &failingOutboundSink{err: writeErr}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("bytes", NewByteSliceEncoder())
+
+	err := ch.Write([]byte("ping"))
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("err=%v, want %v", err, writeErr)
+	}
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
+	}
+	buf := sink.writes[0].(buffer.ByteBuf)
+	if refs := buf.RefCnt(); refs != 0 {
+		buf.Release()
+		t.Fatalf("buf refs=%d, want 0", refs)
 	}
 }
 
@@ -172,3 +219,16 @@ type byteListDecoderFunc struct {
 func (f byteListDecoderFunc) DecodeBytes(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf, out *MessageList) error {
 	return f.decode(ctx, in, out)
 }
+
+type failingOutboundSink struct {
+	err    error
+	writes []any
+}
+
+func (s *failingOutboundSink) Write(msg any) error {
+	s.writes = append(s.writes, msg)
+	return s.err
+}
+
+func (s *failingOutboundSink) Flush() error { return nil }
+func (s *failingOutboundSink) Close() error { return nil }

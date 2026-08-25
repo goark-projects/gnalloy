@@ -47,7 +47,7 @@ func (e *Base64Encoder) Write(ctx *channel.HandlerContext, msg any) error {
 		out.Release()
 		return err
 	}
-	return ctx.Write(out)
+	return writeOutboundBuffer(ctx, out)
 }
 
 type Base64Decoder struct {
