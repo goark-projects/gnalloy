@@ -59,6 +59,7 @@
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | partial | 已有 frame 和握手基础，扩展压缩和控制帧策略后续补齐。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧能力。 |
 | `MQTT` | `codec/mqtt` | partial | 已有 MQTT frame 基础。 |
+| `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | partial | 已有 DNS wire message 编解码、name 压缩解析、A/AAAA resolver；高级 record 类型后续扩展。 |
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
 
@@ -68,7 +69,7 @@
 | --- | --- | --- |
 | compression (`zlib`, `brotli`, `snappy`, `lz4`) | defer | 涉及外部算法依赖，应拆成独立扩展包。 |
 | serialization/marshalling | skip | Go 生态不应在核心网络层绑定对象序列化框架。 |
-| socks/smtp/stomp/dns | planned | 可独立协议包实现，不应堵塞核心 I/O 和 frame 层。 |
+| socks/smtp/stomp | planned | 可独立协议包实现，不应堵塞核心 I/O 和 frame 层。 |
 | TLS/SslHandler | defer | 应先稳定底层 fd 与 `crypto/tls` 或平台 TLS 的边界。 |
 | HTTP/2/HTTP/3 | defer | HTTP/3 与 QUIC 状态机强相关，需独立里程碑。 |
 

@@ -31,8 +31,8 @@ blocks:
   codecs, combined duplex handler, length-field, delimiter, line,
   fixed-length, matching outbound frame encoders, string, and byte-slice
   codecs.
-- `codec/http1`, `codec/http2`, `codec/protobuf`, `codec/mqtt`,
-  `codec/redis`, and `codec/websocket`: first protocol codec slice for
+- `codec/dns`, `codec/http1`, `codec/http2`, `codec/protobuf`, `codec/mqtt`,
+  `codec/redis`, and `codec/websocket`: first protocol codec slice for DNS,
   HTTP/1.x, HTTP/2 binary frames and stream state, Protobuf varint32 frames,
   MQTT frames, Redis RESP frames, and WebSocket frames.
 - `channel`: inbound/outbound pipeline contracts and the `Unsafe` bridge that
@@ -44,6 +44,8 @@ blocks:
   plaintext `ByteBuf` to business handlers while preserving SNI and ALPN
   negotiation events.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
+- `resolver/dns`: Go-native DNS resolver with system fallback, explicit
+  exchanger hooks, UDP query support, and A/AAAA lookup helpers.
 - `timer`: local hashed wheel timer for idle and heartbeat checks.
 - `transport`: EventLoop, Channel identity contracts, and a thin factory over
   split poller packages.
