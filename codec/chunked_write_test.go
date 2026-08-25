@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"errors"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
@@ -57,5 +58,32 @@ func TestChunkedByteBufInputRejectsInvalidChunkSizeAndReleasesInput(t *testing.T
 	}
 	if source.RefCnt() != 0 {
 		t.Fatalf("source ref=%d, want 0", source.RefCnt())
+	}
+}
+
+func TestChunkedWriteHandlerReleasesChunkWhenWriteFails(t *testing.T) {
+	writeErr := errors.New("write failed")
+	sink := &codecOutboundSink{writeAt: 1, writeErr: writeErr}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("chunked", NewChunkedWriteHandler()); err != nil {
+		t.Fatal(err)
+	}
+
+	source := testBuf([]byte("abcd"))
+	input, err := NewChunkedByteBufInput(source, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Write(input); !errors.Is(err, writeErr) {
+		t.Fatalf("err=%v, want writeErr", err)
+	}
+	if !input.closed {
+		t.Fatal("chunked input should be closed after write error")
+	}
+	if source.RefCnt() != 0 {
+		t.Fatalf("source ref=%d, want 0", source.RefCnt())
+	}
+	if sink.flushes != 0 {
+		t.Fatalf("flushes=%d, want 0 after write error", sink.flushes)
 	}
 }

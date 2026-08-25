@@ -1,10 +1,12 @@
 package protobuf
 
 import (
+	"errors"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/codec"
 )
 
 type frameCollector struct {
@@ -62,8 +64,61 @@ func TestVarint32LengthFieldPrepender(t *testing.T) {
 	}
 }
 
+func TestProtobufVarint32Aliases(t *testing.T) {
+	decoder, err := NewProtobufVarint32FrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoder == nil {
+		t.Fatal("decoder should not be nil")
+	}
+	if NewProtobufVarint32LengthFieldPrepender() == nil {
+		t.Fatal("prepender should not be nil")
+	}
+}
+
+func TestVarint32FrameDecoderRejectsMalformedHeader(t *testing.T) {
+	decoder, err := NewVarint32FrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x80, 0x80, 0x80, 0x80, 0x80}))
+	if len(collector.errs) != 1 || !errors.Is(collector.errs[0], codec.ErrInvalidLengthField) {
+		t.Fatalf("errs=%v, want invalid length field", collector.errs)
+	}
+}
+
+func TestVarint32FrameDecoderReportsTooLongFrame(t *testing.T) {
+	decoder, err := NewVarint32FrameDecoder(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{3, 'a', 'b', 'c'}))
+	if len(collector.errs) != 1 || !errors.Is(collector.errs[0], codec.ErrFrameTooLong) {
+		t.Fatalf("errs=%v, want frame too long", collector.errs)
+	}
+}
+
 type outboundSink struct {
 	writes []buffer.ByteBuf
+}
+
+type errorCollector struct {
+	errs []error
+}
+
+func (c *errorCollector) ExceptionCaught(_ *channel.HandlerContext, err error) {
+	c.errs = append(c.errs, err)
 }
 
 func (s *outboundSink) Write(msg any) error {

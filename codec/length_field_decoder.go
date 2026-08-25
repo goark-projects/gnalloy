@@ -14,9 +14,17 @@ type LengthFieldBasedFrameDecoder struct {
 	lengthAdjustment   int
 	initialBytesToSkip int
 	byteOrder          buffer.ByteOrder
+	failFast           bool
+	discarding         bool
+	tooLongFrameLength int64
+	bytesToDiscard     int64
 }
 
 func NewLengthFieldBasedFrameDecoder(maxFrameLength int, lengthFieldOffset int, lengthFieldLength int, lengthAdjustment int, initialBytesToSkip int, order buffer.ByteOrder) (*LengthFieldBasedFrameDecoder, error) {
+	return NewLengthFieldBasedFrameDecoderWithOptions(maxFrameLength, lengthFieldOffset, lengthFieldLength, lengthAdjustment, initialBytesToSkip, order, true)
+}
+
+func NewLengthFieldBasedFrameDecoderWithOptions(maxFrameLength int, lengthFieldOffset int, lengthFieldLength int, lengthAdjustment int, initialBytesToSkip int, order buffer.ByteOrder, failFast bool) (*LengthFieldBasedFrameDecoder, error) {
 	if maxFrameLength <= 0 || lengthFieldOffset < 0 || initialBytesToSkip < 0 {
 		return nil, ErrInvalidLengthField
 	}
@@ -32,6 +40,7 @@ func NewLengthFieldBasedFrameDecoder(maxFrameLength int, lengthFieldOffset int, 
 		lengthAdjustment:   lengthAdjustment,
 		initialBytesToSkip: initialBytesToSkip,
 		byteOrder:          order,
+		failFast:           failFast,
 	}
 	d.ByteToMessageDecoder = NewByteToMessageDecoder(d)
 	return d, nil
@@ -40,6 +49,9 @@ func NewLengthFieldBasedFrameDecoder(maxFrameLength int, lengthFieldOffset int, 
 func (d *LengthFieldBasedFrameDecoder) Decode(_ *channel.HandlerContext, cumulation *buffer.CompositeByteBuf) (any, error) {
 	if cumulation == nil {
 		return nil, nil
+	}
+	if d.discarding {
+		return d.discardTooLongFrame(cumulation)
 	}
 	readable := cumulation.ReadableBytes()
 	minFrameLength := d.lengthFieldOffset + d.lengthFieldLength
@@ -53,12 +65,15 @@ func (d *LengthFieldBasedFrameDecoder) Decode(_ *channel.HandlerContext, cumulat
 	if err != nil {
 		return nil, err
 	}
+	if rawLength > uint64(maxInt64Value()) {
+		return d.exceededFrameLength(cumulation, int64(d.maxFrameLength)+1)
+	}
 	frameLength64 := int64(rawLength) + int64(d.lengthAdjustment) + int64(minFrameLength)
 	if frameLength64 < int64(minFrameLength) || frameLength64 < int64(d.initialBytesToSkip) {
 		return nil, ErrInvalidLengthField
 	}
 	if frameLength64 > int64(d.maxFrameLength) {
-		return nil, ErrFrameTooLong
+		return d.exceededFrameLength(cumulation, frameLength64)
 	}
 	frameLength := int(frameLength64)
 	if readable < frameLength {
@@ -76,4 +91,64 @@ func (d *LengthFieldBasedFrameDecoder) Decode(_ *channel.HandlerContext, cumulat
 		return nil, err
 	}
 	return frame, nil
+}
+
+func (d *LengthFieldBasedFrameDecoder) exceededFrameLength(in *buffer.CompositeByteBuf, frameLength int64) (any, error) {
+	readable := int64(in.ReadableBytes())
+	if readable < frameLength {
+		if err := in.SkipBytes(int(readable)); err != nil {
+			return nil, err
+		}
+		d.discarding = true
+		d.tooLongFrameLength = frameLength
+		d.bytesToDiscard = frameLength - readable
+		if d.failFast {
+			return nil, NewTooLongFrameError(clampInt(frameLength), d.maxFrameLength, clampInt(readable))
+		}
+		return nil, nil
+	}
+	if err := in.SkipBytes(clampInt(frameLength)); err != nil {
+		return nil, err
+	}
+	return nil, NewTooLongFrameError(clampInt(frameLength), d.maxFrameLength, clampInt(frameLength))
+}
+
+func (d *LengthFieldBasedFrameDecoder) discardTooLongFrame(in *buffer.CompositeByteBuf) (any, error) {
+	readable := int64(in.ReadableBytes())
+	if readable == 0 {
+		return nil, nil
+	}
+	discard := readable
+	if discard > d.bytesToDiscard {
+		discard = d.bytesToDiscard
+	}
+	if err := in.SkipBytes(int(discard)); err != nil {
+		return nil, err
+	}
+	d.bytesToDiscard -= discard
+	if d.bytesToDiscard > 0 {
+		return nil, nil
+	}
+	frameLength := d.tooLongFrameLength
+	d.discarding = false
+	d.tooLongFrameLength = 0
+	if d.failFast {
+		return nil, nil
+	}
+	return nil, NewTooLongFrameError(clampInt(frameLength), d.maxFrameLength, clampInt(frameLength))
+}
+
+func maxInt64Value() int64 {
+	return int64(^uint64(0) >> 1)
+}
+
+func clampInt(v int64) int {
+	max := int64(int(^uint(0) >> 1))
+	if v > max {
+		return int(max)
+	}
+	if v < 0 {
+		return 0
+	}
+	return int(v)
 }

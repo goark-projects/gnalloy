@@ -15,6 +15,24 @@ func HexDump(buf ByteBuf) string {
 	return string(out)
 }
 
+func HexDumpRange(buf ByteBuf, index int, length int) string {
+	if buf == nil || length <= 0 {
+		return ""
+	}
+	if index < buf.ReaderIndex() || index+length > buf.WriterIndex() {
+		return ""
+	}
+	out := make([]byte, 0, length*2)
+	for i := 0; i < length; i++ {
+		b, ok := buf.GetByte(index + i)
+		if !ok {
+			return ""
+		}
+		out = append(out, hexdigits[b>>4], hexdigits[b&0x0f])
+	}
+	return string(out)
+}
+
 func ByteBufEqual(a ByteBuf, b ByteBuf) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -67,6 +85,21 @@ func ByteBufCompare(a ByteBuf, b ByteBuf) int {
 	}
 }
 
+func ByteBufHashCode(buf ByteBuf) uint32 {
+	if buf == nil {
+		return 0
+	}
+	var hash uint32 = 1
+	for i := 0; i < buf.ReadableBytes(); i++ {
+		b, ok := buf.GetByte(buf.ReaderIndex() + i)
+		if !ok {
+			return hash
+		}
+		hash = 31*hash + uint32(b)
+	}
+	return hash
+}
+
 func IndexOfByte(buf ByteBuf, fromIndex int, toIndex int, value byte) int {
 	if buf == nil {
 		return -1
@@ -93,4 +126,44 @@ func IndexOfByte(buf ByteBuf, fromIndex int, toIndex int, value byte) int {
 		}
 	}
 	return -1
+}
+
+func IndexOfBytes(buf ByteBuf, fromIndex int, toIndex int, needle []byte) int {
+	if buf == nil || len(needle) == 0 {
+		return -1
+	}
+	if fromIndex < buf.ReaderIndex() {
+		fromIndex = buf.ReaderIndex()
+	}
+	if toIndex > buf.WriterIndex() {
+		toIndex = buf.WriterIndex()
+	}
+	if fromIndex > toIndex || toIndex-fromIndex < len(needle) {
+		return -1
+	}
+	maxStart := toIndex - len(needle)
+	for i := fromIndex; i <= maxStart; i++ {
+		if bytesMatch(buf, i, needle) {
+			return i
+		}
+	}
+	return -1
+}
+
+func BytesBefore(buf ByteBuf, fromIndex int, toIndex int, needle []byte) int {
+	index := IndexOfBytes(buf, fromIndex, toIndex, needle)
+	if index < 0 {
+		return -1
+	}
+	return index - fromIndex
+}
+
+func bytesMatch(buf ByteBuf, index int, needle []byte) bool {
+	for i := range needle {
+		b, ok := buf.GetByte(index + i)
+		if !ok || b != needle[i] {
+			return false
+		}
+	}
+	return true
 }

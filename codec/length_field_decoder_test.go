@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"errors"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
@@ -84,7 +85,7 @@ func TestLengthFieldDecoderTooLong(t *testing.T) {
 	_ = ch.Pipeline().AddLast("collector", collector)
 
 	ch.Pipeline().FireChannelRead(testBuf([]byte{0, 0, 0, 5, 'h', 'e', 'l', 'l', 'o'}))
-	if len(collector.errs) != 1 || collector.errs[0] != ErrFrameTooLong {
+	if len(collector.errs) != 1 || !errors.Is(collector.errs[0], ErrFrameTooLong) {
 		t.Fatalf("errs=%v", collector.errs)
 	}
 }

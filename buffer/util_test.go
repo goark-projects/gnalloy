@@ -16,6 +16,9 @@ func TestHexDumpUsesReadableSlices(t *testing.T) {
 	if got := HexDump(c); got != "000f10ff" {
 		t.Fatalf("hex=%q", got)
 	}
+	if got := HexDumpRange(c, 1, 2); got != "0f10" {
+		t.Fatalf("range hex=%q", got)
+	}
 }
 
 func TestByteBufEqualAndCompare(t *testing.T) {
@@ -44,6 +47,9 @@ func TestByteBufEqualAndCompare(t *testing.T) {
 	if got := ByteBufCompare(c, a); got <= 0 {
 		t.Fatalf("compare c>a=%d, want positive", got)
 	}
+	if ByteBufHashCode(a) != ByteBufHashCode(b) {
+		t.Fatal("equal buffers should have equal hash")
+	}
 }
 
 func TestIndexOfByteForwardAndReverse(t *testing.T) {
@@ -58,6 +64,22 @@ func TestIndexOfByteForwardAndReverse(t *testing.T) {
 		t.Fatalf("reverse=%d, want 4", got)
 	}
 	if got := IndexOfByte(buf, 0, buf.WriterIndex(), 'z'); got != -1 {
+		t.Fatalf("missing=%d, want -1", got)
+	}
+}
+
+func TestIndexOfBytesAndBytesBefore(t *testing.T) {
+	buf := NewHeapBuffer(16)
+	_, _ = buf.WriteBytes([]byte("abc<END>def"))
+	defer buf.Release()
+
+	if got := IndexOfBytes(buf, buf.ReaderIndex(), buf.WriterIndex(), []byte("<END>")); got != 3 {
+		t.Fatalf("index=%d, want 3", got)
+	}
+	if got := BytesBefore(buf, buf.ReaderIndex(), buf.WriterIndex(), []byte("<END>")); got != 3 {
+		t.Fatalf("before=%d, want 3", got)
+	}
+	if got := IndexOfBytes(buf, buf.ReaderIndex(), buf.WriterIndex(), []byte("<MISS>")); got != -1 {
 		t.Fatalf("missing=%d, want -1", got)
 	}
 }

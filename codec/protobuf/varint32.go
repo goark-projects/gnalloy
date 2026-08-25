@@ -13,6 +13,8 @@ type Varint32FrameDecoder struct {
 	maxFrameLength int
 }
 
+type ProtobufVarint32FrameDecoder = Varint32FrameDecoder
+
 func NewVarint32FrameDecoder(maxFrameLength int) (*Varint32FrameDecoder, error) {
 	if maxFrameLength <= 0 {
 		return nil, codec.ErrInvalidFrameLength
@@ -22,6 +24,10 @@ func NewVarint32FrameDecoder(maxFrameLength int) (*Varint32FrameDecoder, error) 
 	return d, nil
 }
 
+func NewProtobufVarint32FrameDecoder(maxFrameLength int) (*ProtobufVarint32FrameDecoder, error) {
+	return NewVarint32FrameDecoder(maxFrameLength)
+}
+
 func (d *Varint32FrameDecoder) Decode(_ *channel.HandlerContext, in *buffer.CompositeByteBuf) (any, error) {
 	reader := in.ReaderIndex()
 	length, header, ok, err := readRawVarint32(in)
@@ -29,7 +35,7 @@ func (d *Varint32FrameDecoder) Decode(_ *channel.HandlerContext, in *buffer.Comp
 		return nil, err
 	}
 	if length > d.maxFrameLength {
-		return nil, codec.ErrFrameTooLong
+		return nil, codec.NewTooLongFrameError(length, d.maxFrameLength, 0)
 	}
 	total := header + length
 	if in.ReadableBytes() < total {
@@ -52,8 +58,14 @@ func (d *Varint32FrameDecoder) Decode(_ *channel.HandlerContext, in *buffer.Comp
 
 type Varint32LengthFieldPrepender struct{}
 
+type ProtobufVarint32LengthFieldPrepender = Varint32LengthFieldPrepender
+
 func NewVarint32LengthFieldPrepender() *Varint32LengthFieldPrepender {
 	return &Varint32LengthFieldPrepender{}
+}
+
+func NewProtobufVarint32LengthFieldPrepender() *ProtobufVarint32LengthFieldPrepender {
+	return NewVarint32LengthFieldPrepender()
 }
 
 func (p *Varint32LengthFieldPrepender) Write(ctx *channel.HandlerContext, msg any) error {

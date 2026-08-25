@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"errors"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
@@ -8,12 +9,19 @@ import (
 )
 
 type codecOutboundSink struct {
-	writes  []any
-	flushes int
-	closes  int
+	writes   []any
+	flushes  int
+	closes   int
+	writeAt  int
+	writeErr error
+	calls    int
 }
 
 func (s *codecOutboundSink) Write(msg any) error {
+	s.calls++
+	if s.writeErr != nil && s.calls == s.writeAt {
+		return s.writeErr
+	}
 	s.writes = append(s.writes, msg)
 	return nil
 }
@@ -150,6 +158,31 @@ func TestByteSliceEncoderDecoder(t *testing.T) {
 	inCh.Pipeline().FireChannelRead(testBuf([]byte("xyz")))
 	if len(collector.msgs) != 1 || string(collector.msgs[0]) != "xyz" {
 		t.Fatalf("msgs=%q", collector.msgs)
+	}
+}
+
+func TestLengthFieldPrependerReleasesPayloadWhenBodyWriteFails(t *testing.T) {
+	writeErr := errors.New("write failed")
+	prepender, err := NewLengthFieldPrepender(4, buffer.BigEndian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &codecOutboundSink{writeAt: 2, writeErr: writeErr}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("prepender", prepender); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+
+	payload := testBuf([]byte("abc"))
+	if err := ch.Write(payload); !errors.Is(err, writeErr) {
+		t.Fatalf("err=%v, want writeErr", err)
+	}
+	if payload.RefCnt() != 0 {
+		t.Fatalf("payload ref=%d, want 0", payload.RefCnt())
+	}
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want header accepted before body failure", len(sink.writes))
 	}
 }
 

@@ -16,20 +16,48 @@ type ByteListDecoder interface {
 	DecodeBytes(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf, out *MessageList) error
 }
 
+// Cumulator 决定入站 ByteBuf 如何并入半包累积区。
+type Cumulator interface {
+	Cumulate(ctx *channel.HandlerContext, cumulation *buffer.CompositeByteBuf, in buffer.ByteBuf) (*buffer.CompositeByteBuf, error)
+}
+
+// CumulatorFunc 允许用函数实现 Cumulator。
+type CumulatorFunc func(ctx *channel.HandlerContext, cumulation *buffer.CompositeByteBuf, in buffer.ByteBuf) (*buffer.CompositeByteBuf, error)
+
+func (f CumulatorFunc) Cumulate(ctx *channel.HandlerContext, cumulation *buffer.CompositeByteBuf, in buffer.ByteBuf) (*buffer.CompositeByteBuf, error) {
+	return f(ctx, cumulation, in)
+}
+
+var (
+	// CompositeCumulator 默认使用 CompositeByteBuf 累积半包，跨 buffer 切帧不复制 payload。
+	CompositeCumulator Cumulator = CumulatorFunc(compositeCumulate)
+	// MergeCumulator 将未读半包和新输入合并到连续 ByteBuf，供必须连续内存的 codec 使用。
+	MergeCumulator Cumulator = CumulatorFunc(mergeCumulate)
+)
+
 // ByteToMessageDecoder 对齐 Netty 的流式解码基类，负责 TCP 半包累积、循环解码和生命周期释放。
 type ByteToMessageDecoder struct {
 	decoder     ByteDecoder
 	listDecoder ByteListDecoder
+	cumulator   Cumulator
 	cumulation  *buffer.CompositeByteBuf
 	out         MessageList
 }
 
 func NewByteToMessageDecoder(decoder ByteDecoder) *ByteToMessageDecoder {
-	return &ByteToMessageDecoder{decoder: decoder}
+	return &ByteToMessageDecoder{decoder: decoder, cumulator: CompositeCumulator}
 }
 
 func NewByteToMessageListDecoder(decoder ByteListDecoder) *ByteToMessageDecoder {
-	return &ByteToMessageDecoder{listDecoder: decoder}
+	return &ByteToMessageDecoder{listDecoder: decoder, cumulator: CompositeCumulator}
+}
+
+// SetCumulator 切换半包累积策略；nil 会被忽略，避免运行期误配置打断链路。
+func (d *ByteToMessageDecoder) SetCumulator(cumulator Cumulator) *ByteToMessageDecoder {
+	if cumulator != nil {
+		d.cumulator = cumulator
+	}
+	return d
 }
 
 func (d *ByteToMessageDecoder) ChannelRead(ctx *channel.HandlerContext, msg any) {
@@ -43,10 +71,17 @@ func (d *ByteToMessageDecoder) ChannelRead(ctx *channel.HandlerContext, msg any)
 		ctx.FireExceptionCaught(ErrInvalidDecoder)
 		return
 	}
-	if d.cumulation == nil {
-		d.cumulation = buffer.NewCompositeByteBuf()
+	cumulator := d.cumulator
+	if cumulator == nil {
+		cumulator = CompositeCumulator
 	}
-	d.cumulation.Append(in)
+	cumulation, err := cumulator.Cumulate(ctx, d.cumulation, in)
+	if err != nil {
+		ctx.FireExceptionCaught(err)
+		d.releaseCumulation()
+		return
+	}
+	d.cumulation = cumulation
 	d.decodeLoop(ctx)
 }
 
@@ -120,4 +155,48 @@ func releaseMessage(msg any) {
 	if releasable, ok := msg.(interface{ Release() }); ok {
 		releasable.Release()
 	}
+}
+
+func compositeCumulate(_ *channel.HandlerContext, cumulation *buffer.CompositeByteBuf, in buffer.ByteBuf) (*buffer.CompositeByteBuf, error) {
+	if cumulation == nil {
+		cumulation = buffer.NewCompositeByteBuf()
+	}
+	cumulation.Append(in)
+	return cumulation, nil
+}
+
+func mergeCumulate(ctx *channel.HandlerContext, cumulation *buffer.CompositeByteBuf, in buffer.ByteBuf) (*buffer.CompositeByteBuf, error) {
+	if cumulation == nil {
+		cumulation = buffer.NewCompositeByteBuf()
+		cumulation.Append(in)
+		return cumulation, nil
+	}
+	if cumulation.ReadableBytes() == 0 {
+		cumulation.Clear()
+		cumulation.Append(in)
+		return cumulation, nil
+	}
+	total := cumulation.ReadableBytes() + in.ReadableBytes()
+	merged, err := ctx.Channel().Allocator().Acquire(total)
+	if err != nil {
+		in.Release()
+		return nil, err
+	}
+	for _, part := range cumulation.ReadableSlices(nil) {
+		if _, err := merged.WriteBytes(part); err != nil {
+			merged.Release()
+			in.Release()
+			return nil, err
+		}
+	}
+	if _, err := merged.WriteBytes(in.Bytes()); err != nil {
+		merged.Release()
+		in.Release()
+		return nil, err
+	}
+	in.Release()
+	cumulation.Release()
+	next := buffer.NewCompositeByteBuf()
+	next.Append(merged)
+	return next, nil
 }
