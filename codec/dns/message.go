@@ -11,8 +11,15 @@ import (
 
 const (
 	TypeA     uint16 = 1
+	TypeNS    uint16 = 2
 	TypeCNAME uint16 = 5
+	TypeSOA   uint16 = 6
+	TypePTR   uint16 = 12
+	TypeMX    uint16 = 15
+	TypeTXT   uint16 = 16
 	TypeAAAA  uint16 = 28
+	TypeSRV   uint16 = 33
+	TypeOPT   uint16 = 41
 
 	ClassIN uint16 = 1
 
@@ -60,6 +67,28 @@ type Resource struct {
 	Data  []byte
 }
 
+type MXData struct {
+	Preference uint16
+	Exchange   string
+}
+
+type SRVData struct {
+	Priority uint16
+	Weight   uint16
+	Port     uint16
+	Target   string
+}
+
+type SOAData struct {
+	MName   string
+	RName   string
+	Serial  uint32
+	Refresh uint32
+	Retry   uint32
+	Expire  uint32
+	Minimum uint32
+}
+
 func NewQuery(id uint16, name string, qtype uint16) Message {
 	return Message{
 		ID:               id,
@@ -89,6 +118,147 @@ func (r Resource) IP() net.IP {
 	default:
 		return nil
 	}
+}
+
+func (r Resource) Target() (string, bool) {
+	switch r.Type {
+	case TypeNS, TypeCNAME, TypePTR:
+		name, n, err := readName(r.Data, 0)
+		return name, err == nil && n == len(r.Data)
+	default:
+		return "", false
+	}
+}
+
+func (r Resource) MX() (MXData, bool) {
+	if r.Type != TypeMX || len(r.Data) < 3 {
+		return MXData{}, false
+	}
+	name, n, err := readName(r.Data, 2)
+	if err != nil || n+2 != len(r.Data) {
+		return MXData{}, false
+	}
+	return MXData{Preference: binary.BigEndian.Uint16(r.Data[:2]), Exchange: name}, true
+}
+
+func (r Resource) TXT() ([]string, bool) {
+	if r.Type != TypeTXT {
+		return nil, false
+	}
+	var out []string
+	for idx := 0; idx < len(r.Data); {
+		n := int(r.Data[idx])
+		idx++
+		if n > len(r.Data)-idx {
+			return nil, false
+		}
+		out = append(out, string(r.Data[idx:idx+n]))
+		idx += n
+	}
+	return out, true
+}
+
+func (r Resource) SRV() (SRVData, bool) {
+	if r.Type != TypeSRV || len(r.Data) < 7 {
+		return SRVData{}, false
+	}
+	target, n, err := readName(r.Data, 6)
+	if err != nil || n+6 != len(r.Data) {
+		return SRVData{}, false
+	}
+	return SRVData{
+		Priority: binary.BigEndian.Uint16(r.Data[0:2]),
+		Weight:   binary.BigEndian.Uint16(r.Data[2:4]),
+		Port:     binary.BigEndian.Uint16(r.Data[4:6]),
+		Target:   target,
+	}, true
+}
+
+func (r Resource) SOA() (SOAData, bool) {
+	if r.Type != TypeSOA {
+		return SOAData{}, false
+	}
+	mName, n, err := readName(r.Data, 0)
+	if err != nil {
+		return SOAData{}, false
+	}
+	rName, m, err := readName(r.Data, n)
+	if err != nil {
+		return SOAData{}, false
+	}
+	idx := n + m
+	if len(r.Data)-idx != 20 {
+		return SOAData{}, false
+	}
+	return SOAData{
+		MName:   mName,
+		RName:   rName,
+		Serial:  binary.BigEndian.Uint32(r.Data[idx : idx+4]),
+		Refresh: binary.BigEndian.Uint32(r.Data[idx+4 : idx+8]),
+		Retry:   binary.BigEndian.Uint32(r.Data[idx+8 : idx+12]),
+		Expire:  binary.BigEndian.Uint32(r.Data[idx+12 : idx+16]),
+		Minimum: binary.BigEndian.Uint32(r.Data[idx+16 : idx+20]),
+	}, true
+}
+
+func NewAResource(name string, ttl uint32, ip net.IP) (Resource, error) {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return Resource{}, ErrInvalidResource
+	}
+	return Resource{Name: name, Type: TypeA, Class: ClassIN, TTL: ttl, Data: append([]byte(nil), ip4...)}, nil
+}
+
+func NewAAAAResource(name string, ttl uint32, ip net.IP) (Resource, error) {
+	ip16 := ip.To16()
+	if ip16 == nil || ip.To4() != nil {
+		return Resource{}, ErrInvalidResource
+	}
+	return Resource{Name: name, Type: TypeAAAA, Class: ClassIN, TTL: ttl, Data: append([]byte(nil), ip16...)}, nil
+}
+
+func NewNameResource(name string, rtype uint16, ttl uint32, target string) (Resource, error) {
+	if rtype != TypeNS && rtype != TypeCNAME && rtype != TypePTR {
+		return Resource{}, ErrInvalidResource
+	}
+	data, err := appendName(nil, target)
+	if err != nil {
+		return Resource{}, err
+	}
+	return Resource{Name: name, Type: rtype, Class: ClassIN, TTL: ttl, Data: data}, nil
+}
+
+func NewMXResource(name string, ttl uint32, mx MXData) (Resource, error) {
+	data := binary.BigEndian.AppendUint16(nil, mx.Preference)
+	out, err := appendName(data, mx.Exchange)
+	if err != nil {
+		return Resource{}, err
+	}
+	return Resource{Name: name, Type: TypeMX, Class: ClassIN, TTL: ttl, Data: out}, nil
+}
+
+func NewTXTResource(name string, ttl uint32, values ...string) (Resource, error) {
+	var data []byte
+	for _, value := range values {
+		if len(value) > 255 {
+			return Resource{}, ErrInvalidResource
+		}
+		data = append(data, byte(len(value)))
+		data = append(data, value...)
+	}
+	return Resource{Name: name, Type: TypeTXT, Class: ClassIN, TTL: ttl, Data: data}, nil
+}
+
+func NewSRVResource(name string, ttl uint32, srv SRVData) (Resource, error) {
+	var data []byte
+	data = binary.BigEndian.AppendUint16(data, srv.Priority)
+	data = binary.BigEndian.AppendUint16(data, srv.Weight)
+	data = binary.BigEndian.AppendUint16(data, srv.Port)
+	out, err := appendName(data, srv.Target)
+	if err != nil {
+		return Resource{}, err
+	}
+	return Resource{Name: name, Type: TypeSRV, Class: ClassIN, TTL: ttl, Data: out}, nil
 }
 
 func ParseMessage(data []byte) (Message, error) {
@@ -279,17 +449,77 @@ func parseResources(data []byte, idx int, count int) ([]Resource, int, error) {
 		if rdLen > len(data)-idx-10 {
 			return nil, 0, ErrInvalidResource
 		}
+		resourceType := binary.BigEndian.Uint16(data[idx : idx+2])
+		rdata, err := normalizeResourceData(data, resourceType, idx+10, rdLen)
+		if err != nil {
+			return nil, 0, err
+		}
 		resource := Resource{
 			Name:  name,
-			Type:  binary.BigEndian.Uint16(data[idx : idx+2]),
+			Type:  resourceType,
 			Class: binary.BigEndian.Uint16(data[idx+2 : idx+4]),
 			TTL:   binary.BigEndian.Uint32(data[idx+4 : idx+8]),
-			Data:  append([]byte(nil), data[idx+10:idx+10+rdLen]...),
+			Data:  rdata,
 		}
 		idx += 10 + rdLen
 		resources = append(resources, resource)
 	}
 	return resources, idx, nil
+}
+
+func normalizeResourceData(packet []byte, rtype uint16, start int, length int) ([]byte, error) {
+	switch rtype {
+	case TypeNS, TypeCNAME, TypePTR:
+		name, _, err := readName(packet, start)
+		if err != nil {
+			return nil, err
+		}
+		return appendName(nil, name)
+	case TypeMX:
+		if length < 3 {
+			return nil, ErrInvalidResource
+		}
+		out := append([]byte(nil), packet[start:start+2]...)
+		name, _, err := readName(packet, start+2)
+		if err != nil {
+			return nil, err
+		}
+		return appendName(out, name)
+	case TypeSRV:
+		if length < 7 {
+			return nil, ErrInvalidResource
+		}
+		out := append([]byte(nil), packet[start:start+6]...)
+		name, _, err := readName(packet, start+6)
+		if err != nil {
+			return nil, err
+		}
+		return appendName(out, name)
+	case TypeSOA:
+		mName, n, err := readName(packet, start)
+		if err != nil {
+			return nil, err
+		}
+		rName, m, err := readName(packet, start+n)
+		if err != nil {
+			return nil, err
+		}
+		numbers := start + n + m
+		if numbers+20 > start+length {
+			return nil, ErrInvalidResource
+		}
+		out, err := appendName(nil, mName)
+		if err != nil {
+			return nil, err
+		}
+		out, err = appendName(out, rName)
+		if err != nil {
+			return nil, err
+		}
+		return append(out, packet[numbers:numbers+20]...), nil
+	default:
+		return append([]byte(nil), packet[start:start+length]...), nil
+	}
 }
 
 func appendQuestion(dst []byte, question Question) ([]byte, error) {

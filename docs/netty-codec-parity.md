@@ -59,12 +59,12 @@
 | `HAProxyMessageDecoder/Encoder` | `codec/haproxy` | done | 支持 PROXY protocol v1/v2、TCP/UDP IPv4/IPv6、UNIX 地址和 TLV。 |
 | `SpdyFrameDecoder/Encoder` | `codec/spdy` | done | 支持 SPDY/3 data、SYN、RST、SETTINGS、PING、GOAWAY、HEADERS、WINDOW_UPDATE 和未知控制帧。 |
 | `HttpObjectDecoder/Encoder` | `codec/http1` | done | 支持请求/响应、Content-Length、chunked、trailers、聚合器、100-continue 和 chunked 出站。 |
-| `WebSocketFrameDecoder/Encoder` | `codec/websocket` | partial | 已有 frame 和握手基础，扩展压缩和控制帧策略后续补齐。 |
+| `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |
 | `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame；HPACK 保持独立边界。 |
 | `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE 和未知扩展帧。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧能力。 |
 | `MQTT` | `codec/mqtt` | done | 支持 MQTT 3.1.1/MQTT5 固定头、结构化包、属性、原因码、AUTH 和零拷贝 PUBLISH payload。 |
-| `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | partial | 已有 DNS wire message 编解码、name 压缩解析、A/AAAA resolver；高级 record 类型后续扩展。 |
+| `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | done | 支持 DNS wire message、name 压缩、A/AAAA/NS/CNAME/PTR/MX/TXT/SRV/SOA/OPT 常用记录和 resolver。 |
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
 

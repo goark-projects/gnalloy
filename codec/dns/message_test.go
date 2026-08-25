@@ -46,8 +46,44 @@ func TestDecodeMessageParsesCompressedResponse(t *testing.T) {
 	if msg.Answers[0].Name != "example.com" || msg.Answers[0].Type != TypeCNAME {
 		t.Fatalf("cname=%+v", msg.Answers[0])
 	}
+	if target, ok := msg.Answers[0].Target(); !ok || target != "alias.example.com" {
+		t.Fatalf("target=%q ok=%v", target, ok)
+	}
 	if ip := msg.Answers[1].IP(); !ip.Equal(net.IPv4(1, 2, 3, 4)) {
 		t.Fatalf("ip=%v", ip)
+	}
+}
+
+func TestResourceHelpersRoundTripCommonRecords(t *testing.T) {
+	mx, err := NewMXResource("example.com", 60, MXData{Preference: 10, Exchange: "mail.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	txt, err := NewTXTResource("example.com", 60, "v=spf1", "mx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := NewSRVResource("_mqtt._tcp.example.com", 60, SRVData{Priority: 1, Weight: 2, Port: 1883, Target: "broker.example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := Message{ID: 1, Response: true, Answers: []Resource{mx, txt, srv}}
+	wire, err := AppendMessage(nil, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := ParseMessage(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := decoded.Answers[0].MX(); !ok || got.Preference != 10 || got.Exchange != "mail.example.com" {
+		t.Fatalf("mx=%+v ok=%v", got, ok)
+	}
+	if got, ok := decoded.Answers[1].TXT(); !ok || len(got) != 2 || got[0] != "v=spf1" || got[1] != "mx" {
+		t.Fatalf("txt=%+v ok=%v", got, ok)
+	}
+	if got, ok := decoded.Answers[2].SRV(); !ok || got.Port != 1883 || got.Target != "broker.example.com" {
+		t.Fatalf("srv=%+v ok=%v", got, ok)
 	}
 }
 
