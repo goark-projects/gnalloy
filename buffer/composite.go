@@ -17,11 +17,13 @@ type CompositeByteBuf struct {
 	readerIndex int
 	writerIndex int
 	refs        atomic.Int32
+	leakID      uint64
 }
 
 func NewCompositeByteBuf() *CompositeByteBuf {
 	c := &CompositeByteBuf{}
 	c.refs.Store(1)
+	c.leakID = trackLeak("composite")
 	return c
 }
 
@@ -33,6 +35,12 @@ func (c *CompositeByteBuf) checkAlive() error {
 }
 
 func (c *CompositeByteBuf) Append(buf ByteBuf) {
+	if err := c.checkAlive(); err != nil {
+		if buf != nil {
+			buf.Release()
+		}
+		return
+	}
 	if buf == nil || buf.ReadableBytes() == 0 {
 		if buf != nil {
 			buf.Release()
@@ -42,6 +50,22 @@ func (c *CompositeByteBuf) Append(buf ByteBuf) {
 	start := c.writerIndex
 	c.writerIndex += buf.ReadableBytes()
 	c.components = append(c.components, component{buf: buf, start: start, end: c.writerIndex})
+}
+
+// AppendRetained 保留调用方 ByteBuf 的所有权，并把 Retain 后的引用追加进 Composite。
+func (c *CompositeByteBuf) AppendRetained(buf ByteBuf) {
+	if buf == nil {
+		return
+	}
+	c.Append(buf.Retain())
+}
+
+func (c *CompositeByteBuf) ComponentCount() int {
+	return len(c.components)
+}
+
+func (c *CompositeByteBuf) IsContiguous() bool {
+	return len(c.components) <= 1
 }
 
 func (c *CompositeByteBuf) ReadableBytes() int { return c.writerIndex - c.readerIndex }
@@ -308,6 +332,8 @@ func (c *CompositeByteBuf) Release() bool {
 	if refs < 0 {
 		panic(ErrReleasedBuffer)
 	}
+	untrackLeak(c.leakID)
+	c.leakID = 0
 	for _, comp := range c.components {
 		comp.buf.Release()
 	}

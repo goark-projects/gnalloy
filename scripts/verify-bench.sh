@@ -10,13 +10,15 @@ IOURING_FIXED_BUFFERS="${IOURING_FIXED_BUFFERS:-0}"
 MMAP="${MMAP:-0}"
 MMAP_BLOCK_SIZE="${MMAP_BLOCK_SIZE:-4096}"
 MMAP_BLOCKS="${MMAP_BLOCKS:-4096}"
+WRITE_HIGH_WATERMARK="${WRITE_HIGH_WATERMARK:-0}"
+WRITE_LOW_WATERMARK="${WRITE_LOW_WATERMARK:-0}"
 
 REPO="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "${REPO}"
 export GOWORK=off
 
 echo "== benchmarks: core packages"
-go test -run '^$' -bench . -benchmem ./buffer ./channel ./codec ./queue ./timer
+go test -run '^$' -bench . -benchmem ./buffer ./channel ./codec ./codec/icmp ./codec/ip ./queue ./timer ./transport/quic ./transport/udp ./transport/raw
 
 old_ifs="${IFS}"
 IFS=','
@@ -32,6 +34,8 @@ for backend in ${BACKENDS}; do
     GNALLOY_BENCH_MMAP="${MMAP}" \
     GNALLOY_BENCH_MMAP_BLOCK_SIZE="${MMAP_BLOCK_SIZE}" \
     GNALLOY_BENCH_MMAP_BLOCKS="${MMAP_BLOCKS}" \
+    GNALLOY_BENCH_WRITE_HIGH_WATERMARK="${WRITE_HIGH_WATERMARK}" \
+    GNALLOY_BENCH_WRITE_LOW_WATERMARK="${WRITE_LOW_WATERMARK}" \
     GNALLOY_BENCH_IOURING_ENTRIES="${IOURING_ENTRIES}" \
     GNALLOY_BENCH_IOURING_SQPOLL="${IOURING_SQPOLL}" \
     GNALLOY_BENCH_IOURING_MULTISHOT_ACCEPT="${IOURING_MULTISHOT_ACCEPT}" \

@@ -74,6 +74,71 @@ func TestMessageToMessageEncoder(t *testing.T) {
 	}
 }
 
+func TestByteToMessageListDecoderEmitsMultipleMessages(t *testing.T) {
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	decoder := NewByteToMessageListDecoder(byteListDecoderFunc{
+		decode: func(_ *channel.HandlerContext, in *buffer.CompositeByteBuf, out *MessageList) error {
+			for in.ReadableBytes() >= 2 {
+				frame, err := in.Slice(in.ReaderIndex(), 2)
+				if err != nil {
+					return err
+				}
+				if err := in.SkipBytes(2); err != nil {
+					frame.Release()
+					return err
+				}
+				out.Add(frame)
+			}
+			return nil
+		},
+	})
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte("abcdef")))
+	if len(collector.frames) != 3 {
+		t.Fatalf("frames=%d, want 3", len(collector.frames))
+	}
+	if string(collector.frames[0].Bytes()) != "ab" || string(collector.frames[1].Bytes()) != "cd" || string(collector.frames[2].Bytes()) != "ef" {
+		t.Fatalf("frames=%q", []string{string(collector.frames[0].Bytes()), string(collector.frames[1].Bytes()), string(collector.frames[2].Bytes())})
+	}
+	collector.release()
+}
+
+func TestMessageToMessageCodec(t *testing.T) {
+	sink := &codecOutboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	collector := &captureStringInbound{}
+	decoder := messageDecoderFunc{
+		accept: func(msg any) bool { _, ok := msg.(string); return ok },
+		decode: func(_ *channel.HandlerContext, msg any, out *MessageList) error {
+			out.Add("in-" + msg.(string))
+			return nil
+		},
+	}
+	encoder := messageEncoderFunc{
+		accept: func(msg any) bool { _, ok := msg.(int); return ok },
+		encode: func(_ *channel.HandlerContext, msg any, out *MessageList) error {
+			out.Add(msg.(int) + 1)
+			return nil
+		},
+	}
+	_ = ch.Pipeline().AddLast("codec", NewMessageToMessageCodec(decoder, encoder))
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead("x")
+	if len(collector.msgs) != 1 || collector.msgs[0] != "in-x" {
+		t.Fatalf("in=%v", collector.msgs)
+	}
+	if err := ch.Write(41); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 1 || sink.writes[0] != 42 {
+		t.Fatalf("out=%v", sink.writes)
+	}
+}
+
 func TestCombinedChannelDuplexHandler(t *testing.T) {
 	sink := &codecOutboundSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
@@ -98,4 +163,12 @@ func TestCombinedChannelDuplexHandler(t *testing.T) {
 	if len(sink.writes) != 1 || sink.writes[0] != "out-msg" {
 		t.Fatalf("out=%v", sink.writes)
 	}
+}
+
+type byteListDecoderFunc struct {
+	decode func(*channel.HandlerContext, *buffer.CompositeByteBuf, *MessageList) error
+}
+
+func (f byteListDecoderFunc) DecodeBytes(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf, out *MessageList) error {
+	return f.decode(ctx, in, out)
 }

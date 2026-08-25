@@ -11,9 +11,10 @@ const defaultReadBufferSize = 2048
 type AllocatorFactory func(loop *transport.EventLoop) (buffer.Allocator, error)
 
 type Config struct {
-	ReuseAddr      bool
-	ReusePort      bool
-	ReadBufferSize int
+	ReuseAddr            bool
+	ReusePort            bool
+	ReadBufferSize       int
+	WriteBufferWatermark transport.WriteBufferWatermark
 
 	AllocatorFactory AllocatorFactory
 }
@@ -30,19 +31,22 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.ReadBufferSize <= 0 {
 		cfg.ReadBufferSize = def.ReadBufferSize
 	}
+	cfg.WriteBufferWatermark = transport.NormalizeWriteBufferWatermark(cfg.WriteBufferWatermark)
 	return cfg
 }
 
 type socketOptions struct {
-	reuseAddr      bool
-	reusePort      bool
-	readBufferSize int
+	reuseAddr            bool
+	reusePort            bool
+	readBufferSize       int
+	writeBufferWatermark transport.WriteBufferWatermark
 }
 
 func (c Config) socketOptions() socketOptions {
 	return socketOptions{
-		reuseAddr:      c.ReuseAddr,
-		reusePort:      c.ReusePort,
-		readBufferSize: c.ReadBufferSize,
+		reuseAddr:            c.ReuseAddr,
+		reusePort:            c.ReusePort,
+		readBufferSize:       c.ReadBufferSize,
+		writeBufferWatermark: c.WriteBufferWatermark,
 	}
 }

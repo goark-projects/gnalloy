@@ -1,6 +1,8 @@
 package udp
 
 import (
+	"sync/atomic"
+
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/transport"
@@ -20,10 +22,15 @@ type endpoint struct {
 	writePending   bool
 	closed         bool
 	inactiveFired  bool
+	outboundBytes  atomic.Int64
 
 	outHead *outboundDatagram
 	outTail *outboundDatagram
 	outFree *outboundDatagram
+
+	writeHighWatermark int64
+	writeLowWatermark  int64
+	writable           atomic.Bool
 
 	server *Server
 }
@@ -55,6 +62,13 @@ func (e *endpoint) MarkDeregistered() {
 	if e.ch != nil {
 		e.ch.Pipeline().FireChannelUnregistered()
 	}
+}
+
+func (e *endpoint) initBackpressure(w transport.WriteBufferWatermark) {
+	w = transport.NormalizeWriteBufferWatermark(w)
+	e.writeHighWatermark = int64(w.High)
+	e.writeLowWatermark = int64(w.Low)
+	e.writable.Store(true)
 }
 
 func (e *endpoint) HandleEvent(ev transport.PollEvent) {
@@ -130,7 +144,15 @@ func (e *endpoint) Flush() error {
 }
 
 func (e *endpoint) IsWritable() bool {
-	return !e.closed && e.outHead == nil && !e.writePending
+	return e.writable.Load()
+}
+
+func (e *endpoint) PendingOutboundBytes() int64 {
+	return e.outboundBytes.Load()
+}
+
+func (e *endpoint) WriteBufferWatermark() transport.WriteBufferWatermark {
+	return transport.WriteBufferWatermark{Low: int(e.writeLowWatermark), High: int(e.writeHighWatermark)}
 }
 
 func (e *endpoint) Close() error {
@@ -138,6 +160,7 @@ func (e *endpoint) Close() error {
 		return nil
 	}
 	e.closed = true
+	e.closeWritability()
 	e.releaseOutbound()
 	err := closeFD(e.fd)
 	if e.alloc != nil {
@@ -327,10 +350,14 @@ func (e *endpoint) enqueue(datagram Datagram) {
 	if e.outTail == nil {
 		e.outHead = entry
 		e.outTail = entry
+		e.outboundBytes.Add(int64(datagramSize(datagram)))
+		e.updateWritability()
 		return
 	}
 	e.outTail.next = entry
 	e.outTail = entry
+	e.outboundBytes.Add(int64(datagramSize(datagram)))
+	e.updateWritability()
 }
 
 func (e *endpoint) dequeue() {
@@ -342,8 +369,12 @@ func (e *endpoint) dequeue() {
 	if e.outHead == nil {
 		e.outTail = nil
 	}
+	if pending := e.outboundBytes.Add(-int64(datagramSize(entry.datagram))); pending < 0 {
+		e.outboundBytes.Store(0)
+	}
 	entry.datagram.Release()
 	e.releaseEntry(entry)
+	e.updateWritability()
 }
 
 func (e *endpoint) acquireEntry(datagram Datagram) *outboundDatagram {
@@ -371,6 +402,35 @@ func (e *endpoint) releaseOutbound() {
 		entry := e.outFree
 		e.outFree = entry.next
 		entry.next = nil
+	}
+}
+
+func (e *endpoint) updateWritability() {
+	if e.closed {
+		e.closeWritability()
+		return
+	}
+	pending := e.outboundBytes.Load()
+	if e.writable.Load() && pending >= e.writeHighWatermark {
+		e.writable.Store(false)
+		e.fireWritabilityChanged()
+		return
+	}
+	if !e.writable.Load() && pending <= e.writeLowWatermark {
+		e.writable.Store(true)
+		e.fireWritabilityChanged()
+	}
+}
+
+func (e *endpoint) closeWritability() {
+	if e.writable.CompareAndSwap(true, false) {
+		e.fireWritabilityChanged()
+	}
+}
+
+func (e *endpoint) fireWritabilityChanged() {
+	if e.ch != nil {
+		e.ch.Pipeline().FireChannelWritabilityChanged()
 	}
 }
 
@@ -437,4 +497,11 @@ func releasePollEvent(ev transport.PollEvent) {
 	for _, buf := range ev.Bufs {
 		buf.Release()
 	}
+}
+
+func datagramSize(datagram Datagram) int {
+	if datagram.Payload == nil {
+		return 0
+	}
+	return datagram.Payload.ReadableBytes()
 }

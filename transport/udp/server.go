@@ -59,6 +59,7 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 			readBufferSize: opts.readBufferSize,
 			server:         server,
 		}
+		ep.initBackpressure(opts.writeBufferWatermark)
 		server.endpoints = append(server.endpoints, ep)
 		loop, err := cfg.WorkerGroup.Next()
 		if err != nil {
@@ -73,6 +74,8 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 			}
 			ep.alloc = alloc
 			ep.ch = channel.NewLocalChannelWithTimer(ep.id, alloc, ep, loop.Timer())
+			channel.OptionReadBufferSize.Set(ep.ch.Options(), ep.readBufferSize)
+			channel.OptionWriteBufferWatermark.Set(ep.ch.Options(), ep.WriteBufferWatermark())
 			if err := server.childInitializer(ep.ch); err != nil {
 				return err
 			}

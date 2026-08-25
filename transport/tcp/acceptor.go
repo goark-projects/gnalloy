@@ -95,15 +95,16 @@ func (a *acceptor) acceptChild(fd transport.FDRef) {
 		return
 	}
 	ch, unsafeCh := channel.NewUnsafeChannel(channel.UnsafeConfig{
-		ID:             a.server.nextChannelID(),
-		FD:             fd,
-		Allocator:      alloc,
-		Poller:         worker.Poller(),
-		ReadWriter:     newNativeReadWriter(),
-		CloseHook:      a.closeChildHook(worker),
-		ReadBufferSize: a.server.options.readBufferSize,
-		FixedBuffers:   a.server.options.iouringFixed,
-		Timer:          worker.Timer(),
+		ID:                   a.server.nextChannelID(),
+		FD:                   fd,
+		Allocator:            alloc,
+		Poller:               worker.Poller(),
+		ReadWriter:           newNativeReadWriter(),
+		CloseHook:            a.closeChildHook(worker),
+		ReadBufferSize:       a.server.options.readBufferSize,
+		WriteBufferWatermark: a.server.options.writeBufferWatermark,
+		FixedBuffers:         a.server.options.iouringFixed,
+		Timer:                worker.Timer(),
 	})
 	if err := a.server.childInitializer(ch); err != nil {
 		_ = unsafeCh.Close()

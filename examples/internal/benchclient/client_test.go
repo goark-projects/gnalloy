@@ -51,6 +51,46 @@ func TestExchangeLengthField(t *testing.T) {
 	}
 }
 
+func TestExchangeLine(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	go func() {
+		var payload [4]byte
+		size, err := readLinePayload(server, payload[:])
+		if err != nil {
+			return
+		}
+		_, _ = server.Write(append(payload[:size], '\n'))
+	}()
+
+	payload := []byte("ping")
+	frame := make([]byte, len(payload)+1)
+	reply := make([]byte, len(payload))
+	if err := exchange(client, ProtocolLine, payload, nil, frame, reply); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExchangeFixed(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	go func() {
+		var buf [4]byte
+		_, _ = io.ReadFull(server, buf[:])
+		_, _ = server.Write(buf[:])
+	}()
+
+	payload := []byte("ping")
+	reply := make([]byte, len(payload))
+	if err := exchange(client, ProtocolFixed, payload, reply, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConfigValidate(t *testing.T) {
 	cfg := Config{Addr: "127.0.0.1:1", Protocol: ProtocolRaw, Connections: 1, MessagesPerConn: 1, PayloadSize: 1}
 	if err := cfg.validate(); err != nil {

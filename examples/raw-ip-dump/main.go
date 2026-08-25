@@ -48,6 +48,7 @@ func main() {
 	cfg.Protocol = *protocol
 	cfg.Family = family
 	cfg.ReadBufferSize = opts.ReadBufferSize
+	cfg.WriteBufferWatermark = opts.WriteBufferWatermark()
 	server, err := bootstrap.NewServerBootstrap().
 		Group(boss, workers).
 		Transport(raw.NewTransport(cfg)).

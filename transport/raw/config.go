@@ -11,10 +11,11 @@ const defaultReadBufferSize = 4096
 type AllocatorFactory func(loop *transport.EventLoop) (buffer.Allocator, error)
 
 type Config struct {
-	Protocol       int
-	Family         Family
-	HeaderIncluded bool
-	ReadBufferSize int
+	Protocol             int
+	Family               Family
+	HeaderIncluded       bool
+	ReadBufferSize       int
+	WriteBufferWatermark transport.WriteBufferWatermark
 
 	AllocatorFactory AllocatorFactory
 }
@@ -34,14 +35,16 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.ReadBufferSize <= 0 {
 		cfg.ReadBufferSize = def.ReadBufferSize
 	}
+	cfg.WriteBufferWatermark = transport.NormalizeWriteBufferWatermark(cfg.WriteBufferWatermark)
 	return cfg
 }
 
 type socketOptions struct {
-	protocol       int
-	family         Family
-	headerIncluded bool
-	readBufferSize int
+	protocol             int
+	family               Family
+	headerIncluded       bool
+	readBufferSize       int
+	writeBufferWatermark transport.WriteBufferWatermark
 }
 
 func (c Config) socketOptions() (socketOptions, error) {
@@ -52,9 +55,10 @@ func (c Config) socketOptions() (socketOptions, error) {
 		return socketOptions{}, ErrInvalidAddress
 	}
 	return socketOptions{
-		protocol:       c.Protocol,
-		family:         c.Family,
-		headerIncluded: c.HeaderIncluded,
-		readBufferSize: c.ReadBufferSize,
+		protocol:             c.Protocol,
+		family:               c.Family,
+		headerIncluded:       c.HeaderIncluded,
+		readBufferSize:       c.ReadBufferSize,
+		writeBufferWatermark: c.WriteBufferWatermark,
 	}, nil
 }

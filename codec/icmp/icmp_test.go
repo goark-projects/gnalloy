@@ -181,6 +181,41 @@ func TestPipelineDecodeEncodeRawAddressed(t *testing.T) {
 	}
 }
 
+func TestEchoResponderWritesEchoReply(t *testing.T) {
+	sink := &captureSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("icmpEncoder", NewEncoder(EncoderConfig{})); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("echoResponder", NewEchoResponder()); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+
+	payload := testBuf("abc")
+	request := NewEchoRequest(raw.ProtocolICMP, 100, 7, payload)
+	ch.Pipeline().FireChannelRead(raw.Addressed{Message: request, Addr: raw.Address{IP: testIPv4}, Protocol: raw.ProtocolICMP})
+	if payload.RefCnt() != 0 {
+		t.Fatalf("payload ref=%d, want 0 after responder writes reply", payload.RefCnt())
+	}
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
+	}
+	out := sink.writes[0].(raw.Addressed)
+	if out.Protocol != raw.ProtocolICMP {
+		t.Fatalf("protocol=%d", out.Protocol)
+	}
+	buf := out.Message.(buffer.ByteBuf)
+	reply, err := Decode(buf, raw.ProtocolICMP)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reply.Release()
+	if !reply.IsEchoReply() || reply.Identifier != 100 || reply.Sequence != 7 || string(reply.Payload.Bytes()) != "abc" {
+		t.Fatalf("reply=%+v payload=%q", reply, reply.Payload.Bytes())
+	}
+}
+
 type captureInbound struct {
 	msgs []any
 }

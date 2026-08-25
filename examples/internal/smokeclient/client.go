@@ -15,6 +15,9 @@ type Protocol string
 const (
 	ProtocolRaw         Protocol = "raw"
 	ProtocolLengthField Protocol = "length-field"
+	ProtocolUDP         Protocol = "udp"
+	ProtocolLine        Protocol = "line"
+	ProtocolFixed       Protocol = "fixed"
 )
 
 var (
@@ -30,7 +33,7 @@ type Config struct {
 	Timeout  time.Duration
 }
 
-// Run 建立 TCP 连接并验证服务端 echo 行为，供本机与远端平台冒烟使用。
+// Run 建立本地连接并验证服务端 echo 行为，供本机与远端平台冒烟使用。
 func Run(ctx context.Context, cfg Config) error {
 	if cfg.Addr == "" {
 		return fmt.Errorf("empty address")
@@ -51,8 +54,12 @@ func Run(ctx context.Context, cfg Config) error {
 		ctx = context.Background()
 	}
 
+	network := "tcp"
+	if cfg.Protocol == ProtocolUDP {
+		network = "udp"
+	}
 	dialer := net.Dialer{Timeout: cfg.Timeout}
-	conn, err := dialer.DialContext(ctx, "tcp", cfg.Addr)
+	conn, err := dialer.DialContext(ctx, network, cfg.Addr)
 	if err != nil {
 		return err
 	}
@@ -71,7 +78,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 func exchange(conn net.Conn, protocol Protocol, payload []byte) error {
 	switch protocol {
-	case ProtocolRaw:
+	case ProtocolRaw, ProtocolUDP, ProtocolFixed:
 		if err := writeAll(conn, payload); err != nil {
 			return err
 		}
@@ -81,6 +88,18 @@ func exchange(conn net.Conn, protocol Protocol, payload []byte) error {
 		}
 		if string(got) != string(payload) {
 			return fmt.Errorf("raw echo=%q, want %q", got, payload)
+		}
+		return nil
+	case ProtocolLine:
+		if err := writeAll(conn, appendLine(payload)); err != nil {
+			return err
+		}
+		got, err := readLine(conn)
+		if err != nil {
+			return err
+		}
+		if string(got) != string(payload) {
+			return fmt.Errorf("line echo=%q, want %q", got, payload)
 		}
 		return nil
 	case ProtocolLengthField:
@@ -102,7 +121,7 @@ func exchange(conn net.Conn, protocol Protocol, payload []byte) error {
 
 func validateProtocol(protocol Protocol) error {
 	switch protocol {
-	case ProtocolRaw, ProtocolLengthField:
+	case ProtocolRaw, ProtocolLengthField, ProtocolUDP, ProtocolLine, ProtocolFixed:
 		return nil
 	default:
 		return ErrInvalidProtocol
@@ -132,6 +151,30 @@ func readFrame(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func appendLine(payload []byte) []byte {
+	out := make([]byte, 0, len(payload)+1)
+	out = append(out, payload...)
+	out = append(out, '\n')
+	return out
+}
+
+func readLine(r io.Reader) ([]byte, error) {
+	out := make([]byte, 0, 64)
+	var one [1]byte
+	for {
+		if _, err := io.ReadFull(r, one[:]); err != nil {
+			return nil, err
+		}
+		if one[0] == '\n' {
+			if len(out) > 0 && out[len(out)-1] == '\r' {
+				out = out[:len(out)-1]
+			}
+			return out, nil
+		}
+		out = append(out, one[0])
+	}
 }
 
 func writeAll(w io.Writer, src []byte) error {

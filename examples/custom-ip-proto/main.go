@@ -48,6 +48,7 @@ func main() {
 	cfg.Family = raw.FamilyIPv4
 	cfg.HeaderIncluded = true
 	cfg.ReadBufferSize = opts.ReadBufferSize
+	cfg.WriteBufferWatermark = opts.WriteBufferWatermark()
 
 	done := make(chan error, 1)
 	server, err := bootstrap.NewServerBootstrap().

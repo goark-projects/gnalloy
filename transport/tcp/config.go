@@ -14,11 +14,12 @@ const (
 type AllocatorFactory func(loop *transport.EventLoop) (buffer.Allocator, error)
 
 type Config struct {
-	Backlog        int
-	ReuseAddr      bool
-	ReusePort      bool
-	NoDelay        bool
-	ReadBufferSize int
+	Backlog              int
+	ReuseAddr            bool
+	ReusePort            bool
+	NoDelay              bool
+	ReadBufferSize       int
+	WriteBufferWatermark transport.WriteBufferWatermark
 
 	AllocatorFactory AllocatorFactory
 
@@ -44,6 +45,7 @@ func normalizeConfig(cfg Config) Config {
 	if cfg.ReadBufferSize <= 0 {
 		cfg.ReadBufferSize = def.ReadBufferSize
 	}
+	cfg.WriteBufferWatermark = transport.NormalizeWriteBufferWatermark(cfg.WriteBufferWatermark)
 	if !cfg.ReuseAddr {
 		cfg.ReuseAddr = def.ReuseAddr
 	}
@@ -54,21 +56,23 @@ func normalizeConfig(cfg Config) Config {
 }
 
 type socketOptions struct {
-	backlog        int
-	reuseAddr      bool
-	reusePort      bool
-	noDelay        bool
-	readBufferSize int
-	iouringFixed   bool
+	backlog              int
+	reuseAddr            bool
+	reusePort            bool
+	noDelay              bool
+	readBufferSize       int
+	writeBufferWatermark transport.WriteBufferWatermark
+	iouringFixed         bool
 }
 
 func (c Config) socketOptions() socketOptions {
 	return socketOptions{
-		backlog:        c.Backlog,
-		reuseAddr:      c.ReuseAddr,
-		reusePort:      c.ReusePort,
-		noDelay:        c.NoDelay,
-		readBufferSize: c.ReadBufferSize,
-		iouringFixed:   c.IOUringFixedBuffers,
+		backlog:              c.Backlog,
+		reuseAddr:            c.ReuseAddr,
+		reusePort:            c.ReusePort,
+		noDelay:              c.NoDelay,
+		readBufferSize:       c.ReadBufferSize,
+		writeBufferWatermark: c.WriteBufferWatermark,
+		iouringFixed:         c.IOUringFixedBuffers,
 	}
 }

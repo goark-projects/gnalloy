@@ -11,6 +11,8 @@ type Channel interface {
 	ID() transport.ChannelID
 	Pipeline() *Pipeline
 	Allocator() buffer.Allocator
+	Attributes() *AttributeMap
+	Options() *ChannelOptions
 	Write(msg any) error
 	Flush() error
 	WriteAndFlush(msg any) error
@@ -19,6 +21,8 @@ type Channel interface {
 	WriteAndFlushFuture(msg any) Future
 	CloseFuture() Future
 	IsWritable() bool
+	PendingOutboundBytes() int64
+	WriteBufferWatermark() transport.WriteBufferWatermark
 	ScheduleTimer(delayMillis int64, cb timer.Callback) (*timer.Task, error)
 	CancelTimer(task *timer.Task) bool
 }
@@ -40,11 +44,19 @@ type WritabilitySink interface {
 	IsWritable() bool
 }
 
+type OutboundBufferSink interface {
+	WritabilitySink
+	PendingOutboundBytes() int64
+	WriteBufferWatermark() transport.WriteBufferWatermark
+}
+
 type LocalChannel struct {
 	id       transport.ChannelID
 	pipeline *Pipeline
 	alloc    buffer.Allocator
 	timer    *timer.Wheel
+	attrs    *AttributeMap
+	options  *ChannelOptions
 }
 
 func NewLocalChannel(id transport.ChannelID, alloc buffer.Allocator, sink OutboundSink) *LocalChannel {
@@ -52,7 +64,8 @@ func NewLocalChannel(id transport.ChannelID, alloc buffer.Allocator, sink Outbou
 }
 
 func NewLocalChannelWithTimer(id transport.ChannelID, alloc buffer.Allocator, sink OutboundSink, wheel *timer.Wheel) *LocalChannel {
-	ch := &LocalChannel{id: id, alloc: alloc, timer: wheel}
+	ch := &LocalChannel{id: id, alloc: alloc, timer: wheel, attrs: NewAttributeMap(), options: NewChannelOptions()}
+	OptionAutoRead.Set(ch.options, true)
 	ch.pipeline = NewPipeline(ch, sink)
 	return ch
 }
@@ -67,6 +80,14 @@ func (c *LocalChannel) Pipeline() *Pipeline {
 
 func (c *LocalChannel) Allocator() buffer.Allocator {
 	return c.alloc
+}
+
+func (c *LocalChannel) Attributes() *AttributeMap {
+	return c.attrs
+}
+
+func (c *LocalChannel) Options() *ChannelOptions {
+	return c.options
 }
 
 func (c *LocalChannel) Write(msg any) error {
@@ -105,6 +126,20 @@ func (c *LocalChannel) IsWritable() bool {
 		return sink.IsWritable()
 	}
 	return false
+}
+
+func (c *LocalChannel) PendingOutboundBytes() int64 {
+	if sink, ok := c.pipeline.sink.(OutboundBufferSink); ok {
+		return sink.PendingOutboundBytes()
+	}
+	return 0
+}
+
+func (c *LocalChannel) WriteBufferWatermark() transport.WriteBufferWatermark {
+	if sink, ok := c.pipeline.sink.(OutboundBufferSink); ok {
+		return sink.WriteBufferWatermark()
+	}
+	return transport.DefaultWriteBufferWatermark()
 }
 
 func (c *LocalChannel) ScheduleTimer(delayMillis int64, cb timer.Callback) (*timer.Task, error) {

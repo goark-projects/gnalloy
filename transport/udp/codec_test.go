@@ -176,6 +176,38 @@ func TestEndpointReleasesCompletionBufferAfterClose(t *testing.T) {
 	}
 }
 
+func TestEndpointBackpressureWatermark(t *testing.T) {
+	ep := &endpoint{}
+	ep.initBackpressure(transport.WriteBufferWatermark{Low: 2, High: 4})
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), ep)
+	ep.ch = ch
+	recorder := &udpWritabilityRecorder{}
+	if err := ch.Pipeline().AddLast("writable", recorder); err != nil {
+		t.Fatal(err)
+	}
+
+	first := newUDPTestBuf("abc")
+	second := newUDPTestBuf("de")
+	ep.enqueue(Datagram{Payload: first, Addr: testAddr})
+	if !ch.IsWritable() || ch.PendingOutboundBytes() != 3 || recorder.changes != 0 {
+		t.Fatalf("after first writable=%v pending=%d changes=%d", ch.IsWritable(), ch.PendingOutboundBytes(), recorder.changes)
+	}
+
+	ep.enqueue(Datagram{Payload: second, Addr: testAddr})
+	if ch.IsWritable() || ch.PendingOutboundBytes() != 5 || recorder.changes != 1 {
+		t.Fatalf("after second writable=%v pending=%d changes=%d", ch.IsWritable(), ch.PendingOutboundBytes(), recorder.changes)
+	}
+
+	ep.dequeue()
+	if !ch.IsWritable() || ch.PendingOutboundBytes() != 2 || recorder.changes != 2 {
+		t.Fatalf("after dequeue writable=%v pending=%d changes=%d", ch.IsWritable(), ch.PendingOutboundBytes(), recorder.changes)
+	}
+	ep.releaseOutbound()
+	if first.RefCnt() != 0 || second.RefCnt() != 0 {
+		t.Fatalf("refs=%d,%d, want 0,0", first.RefCnt(), second.RefCnt())
+	}
+}
+
 type udpCaptureInbound struct {
 	msgs []any
 }
@@ -216,4 +248,12 @@ func newUDPTestBuf(s string) *buffer.DirectByteBuf {
 	buf := buffer.NewHeapBuffer(len(s))
 	_, _ = buf.WriteBytes([]byte(s))
 	return buf
+}
+
+type udpWritabilityRecorder struct {
+	changes int
+}
+
+func (r *udpWritabilityRecorder) ChannelWritabilityChanged(*channel.HandlerContext) {
+	r.changes++
 }

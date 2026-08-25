@@ -18,6 +18,8 @@ type Protocol string
 const (
 	ProtocolRaw         Protocol = "raw"
 	ProtocolLengthField Protocol = "length-field"
+	ProtocolLine        Protocol = "line"
+	ProtocolFixed       Protocol = "fixed"
 )
 
 var (
@@ -90,7 +92,7 @@ func (c Config) validate() error {
 		return fmt.Errorf("%w: connections, messages and payload-size must be positive", ErrInvalidConfig)
 	}
 	switch c.Protocol {
-	case ProtocolRaw, ProtocolLengthField:
+	case ProtocolRaw, ProtocolLengthField, ProtocolLine, ProtocolFixed:
 	default:
 		return ErrInvalidProtocol
 	}
@@ -132,7 +134,7 @@ func runConnection(ctx context.Context, cfg Config, clientID int, nextSample *at
 
 func exchange(conn net.Conn, protocol Protocol, payload []byte, rawReply []byte, frame []byte, frameReply []byte) error {
 	switch protocol {
-	case ProtocolRaw:
+	case ProtocolRaw, ProtocolFixed:
 		if err := writeAll(conn, payload); err != nil {
 			return err
 		}
@@ -141,6 +143,23 @@ func exchange(conn net.Conn, protocol Protocol, payload []byte, rawReply []byte,
 		}
 		if string(rawReply[:len(payload)]) != string(payload) {
 			return fmt.Errorf("raw echo mismatch")
+		}
+		return nil
+	case ProtocolLine:
+		if len(frame) < len(payload)+1 || len(frameReply) < len(payload) {
+			return ErrInvalidConfig
+		}
+		copy(frame, payload)
+		frame[len(payload)] = '\n'
+		if err := writeAll(conn, frame[:len(payload)+1]); err != nil {
+			return err
+		}
+		size, err := readLinePayload(conn, frameReply)
+		if err != nil {
+			return err
+		}
+		if size != len(payload) || string(frameReply[:size]) != string(payload) {
+			return fmt.Errorf("line echo mismatch")
 		}
 		return nil
 	case ProtocolLengthField:
@@ -162,6 +181,27 @@ func exchange(conn net.Conn, protocol Protocol, payload []byte, rawReply []byte,
 		return nil
 	default:
 		return ErrInvalidProtocol
+	}
+}
+
+func readLinePayload(r io.Reader, dst []byte) (int, error) {
+	var one [1]byte
+	n := 0
+	for {
+		if _, err := io.ReadFull(r, one[:]); err != nil {
+			return 0, err
+		}
+		if one[0] == '\n' {
+			if n > 0 && dst[n-1] == '\r' {
+				n--
+			}
+			return n, nil
+		}
+		if n >= len(dst) {
+			return 0, fmt.Errorf("line too large")
+		}
+		dst[n] = one[0]
+		n++
 	}
 }
 

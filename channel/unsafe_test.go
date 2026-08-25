@@ -231,6 +231,13 @@ func TestUnsafeOutboundPartialWrite(t *testing.T) {
 	if ch.IsWritable() {
 		t.Fatal("channel should be unwritable after crossing high watermark")
 	}
+	if ch.PendingOutboundBytes() != 2 {
+		t.Fatalf("pending outbound bytes=%d, want 2 after partial write", ch.PendingOutboundBytes())
+	}
+	watermark := ch.WriteBufferWatermark()
+	if watermark.Low != 1 || watermark.High != 4 {
+		t.Fatalf("watermark=%+v", watermark)
+	}
 	if len(poller.modified) != 1 || poller.modified[0] != transport.ReadyRead|transport.ReadyWrite {
 		t.Fatalf("modified=%v", poller.modified)
 	}
@@ -238,6 +245,9 @@ func TestUnsafeOutboundPartialWrite(t *testing.T) {
 	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
 	if !ch.IsWritable() {
 		t.Fatal("channel should become writable after draining below low watermark")
+	}
+	if ch.PendingOutboundBytes() != 0 {
+		t.Fatalf("pending outbound bytes=%d, want 0", ch.PendingOutboundBytes())
 	}
 	if buf.RefCnt() != 0 {
 		t.Fatalf("ref=%d, want 0", buf.RefCnt())

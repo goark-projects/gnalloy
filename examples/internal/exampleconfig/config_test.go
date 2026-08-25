@@ -77,3 +77,28 @@ func TestOptionsTCPConfigEnablesFixedBuffers(t *testing.T) {
 		t.Fatal("tcp config did not enable io_uring fixed buffers")
 	}
 }
+
+func TestOptionsWriteBufferWatermarkFlowsToConfigs(t *testing.T) {
+	opts := &Options{
+		BackendName:        "memory",
+		Boss:               1,
+		Workers:            1,
+		ReadBufferSize:     4096,
+		WriteHighWatermark: 1024,
+		WriteLowWatermark:  256,
+	}
+	tcpCfg, err := opts.TCPConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tcpCfg.WriteBufferWatermark.High != 1024 || tcpCfg.WriteBufferWatermark.Low != 256 {
+		t.Fatalf("tcp watermark=%+v", tcpCfg.WriteBufferWatermark)
+	}
+	udpCfg, err := opts.UDPConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if udpCfg.WriteBufferWatermark.High != 1024 || udpCfg.WriteBufferWatermark.Low != 256 {
+		t.Fatalf("udp watermark=%+v", udpCfg.WriteBufferWatermark)
+	}
+}

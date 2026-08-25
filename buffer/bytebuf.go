@@ -65,11 +65,13 @@ type DirectByteBuf struct {
 
 	owner      releaser
 	ownerIndex uint32
+	leakID     uint64
 }
 
 func newDirectByteBuf(data []byte, owner releaser) *DirectByteBuf {
 	b := &DirectByteBuf{data: data, owner: owner}
 	b.refs.Store(1)
+	b.leakID = trackLeak("direct")
 	return b
 }
 
@@ -79,6 +81,7 @@ func (b *DirectByteBuf) reset(data []byte, owner releaser) {
 	b.writerIndex = 0
 	b.owner = owner
 	b.refs.Store(1)
+	b.leakID = trackLeak("direct")
 }
 
 func (b *DirectByteBuf) checkAlive() error {
@@ -312,6 +315,8 @@ func (b *DirectByteBuf) Release() bool {
 	if refs < 0 {
 		panic(ErrReleasedBuffer)
 	}
+	untrackLeak(b.leakID)
+	b.leakID = 0
 	if b.owner != nil {
 		b.owner.releaseDirect(b)
 	}

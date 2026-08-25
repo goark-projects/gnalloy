@@ -63,6 +63,7 @@ func main() {
 	rawConfig.Protocol = protocol
 	rawConfig.Family = family
 	rawConfig.ReadBufferSize = opts.ReadBufferSize
+	rawConfig.WriteBufferWatermark = opts.WriteBufferWatermark()
 	if opts.Mmap {
 		rawConfig.AllocatorFactory = raw.NewMmapAllocatorFactory(buffer.MmapAllocatorConfig{
 			BlockSize: opts.MmapBlockSize,

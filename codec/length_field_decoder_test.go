@@ -89,6 +89,66 @@ func TestLengthFieldDecoderTooLong(t *testing.T) {
 	}
 }
 
+func TestLengthFieldDecoderThreeByteLittleEndianWithOffset(t *testing.T) {
+	decoder, err := NewLengthFieldBasedFrameDecoder(1024, 1, 3, 0, 4, buffer.LittleEndian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x7e, 2, 0, 0, 'o', 'k'}))
+	if len(collector.frames) != 1 {
+		t.Fatalf("frames=%d", len(collector.frames))
+	}
+	if string(collector.frames[0].Bytes()) != "ok" {
+		t.Fatalf("frame=%q", collector.frames[0].Bytes())
+	}
+	collector.release()
+}
+
+func TestLengthFieldDecoderLengthIncludesHeaderViaAdjustment(t *testing.T) {
+	decoder, err := NewLengthFieldBasedFrameDecoder(1024, 0, 4, -4, 4, buffer.BigEndian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0, 0, 0, 6, 'o', 'k'}))
+	if len(collector.frames) != 1 {
+		t.Fatalf("frames=%d", len(collector.frames))
+	}
+	if string(collector.frames[0].Bytes()) != "ok" {
+		t.Fatalf("frame=%q", collector.frames[0].Bytes())
+	}
+	collector.release()
+}
+
+func TestLengthFieldPrependerRejectsOverflowAndReleasesInput(t *testing.T) {
+	prepender, err := NewLengthFieldPrepender(1, buffer.BigEndian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), &codecOutboundSink{})
+	_ = ch.Pipeline().AddLast("prepender", prepender)
+
+	payload := buffer.NewHeapBuffer(256)
+	if _, err := payload.WriteBytes(make([]byte, 256)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Write(payload); err != ErrEncodedLengthRange {
+		t.Fatalf("err=%v, want %v", err, ErrEncodedLengthRange)
+	}
+	if payload.RefCnt() != 0 {
+		t.Fatalf("ref=%d, want 0", payload.RefCnt())
+	}
+}
+
 func (c *frameCollector) release() {
 	for _, frame := range c.frames {
 		frame.Release()

@@ -11,9 +11,7 @@ import (
 const defaultReadBufferSize = 4096
 
 const (
-	defaultWriteHighWatermark = 64 * 1024
-	defaultWriteLowWatermark  = 32 * 1024
-	maxGatheringBuffers       = 16
+	maxGatheringBuffers = 16
 )
 
 // FDReadWriter 抽象 readiness 模型下的非阻塞 fd 读写。
@@ -30,17 +28,18 @@ type FDVectorWriter interface {
 }
 
 type UnsafeConfig struct {
-	ID                 transport.ChannelID
-	FD                 transport.FDRef
-	Allocator          buffer.Allocator
-	Poller             transport.Poller
-	ReadWriter         FDReadWriter
-	CloseHook          func(*Unsafe)
-	ReadBufferSize     int
-	WriteHighWatermark int
-	WriteLowWatermark  int
-	FixedBuffers       bool
-	Timer              *timer.Wheel
+	ID                   transport.ChannelID
+	FD                   transport.FDRef
+	Allocator            buffer.Allocator
+	Poller               transport.Poller
+	ReadWriter           FDReadWriter
+	CloseHook            func(*Unsafe)
+	ReadBufferSize       int
+	WriteBufferWatermark transport.WriteBufferWatermark
+	WriteHighWatermark   int
+	WriteLowWatermark    int
+	FixedBuffers         bool
+	Timer                *timer.Wheel
 }
 
 // Unsafe 是底层 I/O 事件与业务 Pipeline 的分界线。
@@ -59,7 +58,7 @@ type Unsafe struct {
 	outHead       *outboundEntry
 	outTail       *outboundEntry
 	outFree       *outboundEntry
-	outboundBytes int64
+	outboundBytes atomic.Int64
 	writePending  bool
 	writeInterest bool
 	writeBatch    []buffer.ByteBuf
@@ -83,14 +82,11 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 	if readBufferSize <= 0 {
 		readBufferSize = defaultReadBufferSize
 	}
-	high := cfg.WriteHighWatermark
-	if high <= 0 {
-		high = defaultWriteHighWatermark
+	watermark := cfg.WriteBufferWatermark
+	if watermark.High == 0 && watermark.Low == 0 && (cfg.WriteHighWatermark != 0 || cfg.WriteLowWatermark != 0) {
+		watermark = transport.WriteBufferWatermark{Low: cfg.WriteLowWatermark, High: cfg.WriteHighWatermark}
 	}
-	low := cfg.WriteLowWatermark
-	if low < 0 || low >= high {
-		low = high / 2
-	}
+	watermark = transport.NormalizeWriteBufferWatermark(watermark)
 	u := &Unsafe{
 		fd:                 cfg.FD,
 		poller:             cfg.Poller,
@@ -98,11 +94,13 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 		closeHook:          cfg.CloseHook,
 		readBufferSize:     readBufferSize,
 		fixedBuffers:       cfg.FixedBuffers,
-		writeHighWatermark: int64(high),
-		writeLowWatermark:  int64(low),
+		writeHighWatermark: int64(watermark.High),
+		writeLowWatermark:  int64(watermark.Low),
 	}
 	u.writable.Store(true)
 	u.ch = NewLocalChannelWithTimer(cfg.ID, cfg.Allocator, u, cfg.Timer)
+	OptionReadBufferSize.Set(u.ch.Options(), readBufferSize)
+	OptionWriteBufferWatermark.Set(u.ch.Options(), watermark)
 	return u.ch, u
 }
 
@@ -210,6 +208,14 @@ func (u *Unsafe) IsWritable() bool {
 	return u.writable.Load()
 }
 
+func (u *Unsafe) PendingOutboundBytes() int64 {
+	return u.outboundBytes.Load()
+}
+
+func (u *Unsafe) WriteBufferWatermark() transport.WriteBufferWatermark {
+	return transport.WriteBufferWatermark{Low: int(u.writeLowWatermark), High: int(u.writeHighWatermark)}
+}
+
 func (u *Unsafe) Close() error {
 	future := u.CloseFuture()
 	if future.IsDone() {
@@ -227,6 +233,7 @@ func (u *Unsafe) CloseFuture() Future {
 	}
 	u.closePromise = NewPromise()
 	u.closed = true
+	u.closeWritability()
 	u.releaseOutbound()
 	if u.registered && u.poller != nil && (u.poller.Backend() == transport.BackendIOUring || u.poller.Backend() == transport.BackendIOCP) {
 		if err := u.poller.Submit(transport.IORequest{Op: transport.OpClose, FD: u.fd, ChannelID: u.ID()}); err == nil {
@@ -453,7 +460,7 @@ func (u *Unsafe) completeWrite(n int) {
 			consume = readable
 		}
 		_ = buf.SkipBytes(consume)
-		u.outboundBytes -= int64(consume)
+		u.outboundBytes.Add(-int64(consume))
 		n -= consume
 		if buf.ReadableBytes() == 0 {
 			u.dequeueOutbound()
@@ -506,7 +513,7 @@ func (u *Unsafe) enqueueOutbound(buf buffer.ByteBuf, promise Promise) {
 		u.outTail.next = e
 		u.outTail = e
 	}
-	u.outboundBytes += int64(buf.ReadableBytes())
+	u.outboundBytes.Add(int64(buf.ReadableBytes()))
 	u.updateWritability()
 }
 
@@ -547,13 +554,24 @@ func (u *Unsafe) releaseOutboundEntry(e *outboundEntry) {
 }
 
 func (u *Unsafe) updateWritability() {
-	if u.writable.Load() && u.outboundBytes >= u.writeHighWatermark {
+	if u.closed {
+		u.closeWritability()
+		return
+	}
+	pending := u.outboundBytes.Load()
+	if u.writable.Load() && pending >= u.writeHighWatermark {
 		u.writable.Store(false)
 		u.ch.Pipeline().FireChannelWritabilityChanged()
 		return
 	}
-	if !u.writable.Load() && u.outboundBytes <= u.writeLowWatermark {
+	if !u.writable.Load() && pending <= u.writeLowWatermark {
 		u.writable.Store(true)
+		u.ch.Pipeline().FireChannelWritabilityChanged()
+	}
+}
+
+func (u *Unsafe) closeWritability() {
+	if u.writable.CompareAndSwap(true, false) {
 		u.ch.Pipeline().FireChannelWritabilityChanged()
 	}
 }
@@ -587,7 +605,7 @@ func (u *Unsafe) releaseOutbound() {
 		}
 		u.releaseOutboundEntry(e)
 	}
-	u.outboundBytes = 0
+	u.outboundBytes.Store(0)
 	u.completeFlushWaiters(ErrPromiseFailed)
 	for u.outFree != nil {
 		e := u.outFree

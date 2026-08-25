@@ -4,6 +4,8 @@ param(
     [switch]$Mmap,
     [int]$MmapBlockSize = 4096,
     [int]$MmapBlocks = 4096,
+    [int]$WriteHighWatermark = 0,
+    [int]$WriteLowWatermark = 0,
     [int]$IOUringEntries = 0,
     [switch]$IOUringSQPoll,
     [switch]$IOUringMultishotAccept,
@@ -22,6 +24,8 @@ $oldBenchIOUringEntries = $env:GNALLOY_BENCH_IOURING_ENTRIES
 $oldBenchIOUringSQPoll = $env:GNALLOY_BENCH_IOURING_SQPOLL
 $oldBenchIOUringMultishotAccept = $env:GNALLOY_BENCH_IOURING_MULTISHOT_ACCEPT
 $oldBenchIOUringFixedBuffers = $env:GNALLOY_BENCH_IOURING_FIXED_BUFFERS
+$oldBenchWriteHighWatermark = $env:GNALLOY_BENCH_WRITE_HIGH_WATERMARK
+$oldBenchWriteLowWatermark = $env:GNALLOY_BENCH_WRITE_LOW_WATERMARK
 
 function Set-EnvValue($name, $value) {
     [System.Environment]::SetEnvironmentVariable($name, $value, "Process")
@@ -40,7 +44,7 @@ try {
     $env:GOWORK = "off"
 
     Write-Host "== benchmarks: core packages"
-    go test -run "^$" -bench . -benchmem ./buffer ./channel ./codec ./queue ./timer
+    go test -run "^$" -bench . -benchmem ./buffer ./channel ./codec ./codec/icmp ./codec/ip ./queue ./timer ./transport/quic ./transport/udp ./transport/raw
 
     foreach ($backend in $Backends) {
         if ([string]::IsNullOrWhiteSpace($backend)) {
@@ -52,6 +56,8 @@ try {
         Set-EnvValue "GNALLOY_BENCH_MMAP" ($(if ($Mmap) { "1" } else { "0" }))
         Set-EnvValue "GNALLOY_BENCH_MMAP_BLOCK_SIZE" "$MmapBlockSize"
         Set-EnvValue "GNALLOY_BENCH_MMAP_BLOCKS" "$MmapBlocks"
+        Set-EnvValue "GNALLOY_BENCH_WRITE_HIGH_WATERMARK" "$WriteHighWatermark"
+        Set-EnvValue "GNALLOY_BENCH_WRITE_LOW_WATERMARK" "$WriteLowWatermark"
         Set-EnvValue "GNALLOY_BENCH_IOURING_ENTRIES" "$IOUringEntries"
         Set-EnvValue "GNALLOY_BENCH_IOURING_SQPOLL" ($(if ($IOUringSQPoll) { "1" } else { "0" }))
         Set-EnvValue "GNALLOY_BENCH_IOURING_MULTISHOT_ACCEPT" ($(if ($IOUringMultishotAccept) { "1" } else { "0" }))
@@ -69,5 +75,7 @@ try {
     Restore-EnvValue "GNALLOY_BENCH_IOURING_SQPOLL" $oldBenchIOUringSQPoll
     Restore-EnvValue "GNALLOY_BENCH_IOURING_MULTISHOT_ACCEPT" $oldBenchIOUringMultishotAccept
     Restore-EnvValue "GNALLOY_BENCH_IOURING_FIXED_BUFFERS" $oldBenchIOUringFixedBuffers
+    Restore-EnvValue "GNALLOY_BENCH_WRITE_HIGH_WATERMARK" $oldBenchWriteHighWatermark
+    Restore-EnvValue "GNALLOY_BENCH_WRITE_LOW_WATERMARK" $oldBenchWriteLowWatermark
     Pop-Location
 }

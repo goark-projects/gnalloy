@@ -74,3 +74,55 @@ func TestReadUnsignedWithoutCopy(t *testing.T) {
 	}
 	c.Release()
 }
+
+func TestCompositeAppendRetainedKeepsCallerOwnership(t *testing.T) {
+	buf := NewHeapBuffer(8)
+	_, _ = buf.WriteBytes([]byte("abc"))
+
+	c := NewCompositeByteBuf()
+	c.AppendRetained(buf)
+	if buf.RefCnt() != 2 {
+		t.Fatalf("ref=%d, want 2", buf.RefCnt())
+	}
+	if c.ComponentCount() != 1 || !c.IsContiguous() {
+		t.Fatalf("components=%d contiguous=%v", c.ComponentCount(), c.IsContiguous())
+	}
+	c.Release()
+	if buf.RefCnt() != 1 {
+		t.Fatalf("ref after composite release=%d, want 1", buf.RefCnt())
+	}
+	buf.Release()
+}
+
+func TestCompositeReadableSlicesAreViews(t *testing.T) {
+	a := NewHeapBuffer(8)
+	b := NewHeapBuffer(8)
+	_, _ = a.WriteBytes([]byte("ab"))
+	_, _ = b.WriteBytes([]byte("cd"))
+
+	c := NewCompositeByteBuf()
+	c.Append(a)
+	c.Append(b)
+	slices := c.ReadableSlices(nil)
+	if len(slices) != 2 {
+		t.Fatalf("slices=%d, want 2", len(slices))
+	}
+	slices[0][0] = 'A'
+	slices[1][1] = 'D'
+	if got := string(c.Bytes()); got != "AbcD" {
+		t.Fatalf("bytes=%q", got)
+	}
+	c.Release()
+}
+
+func TestCompositeAppendAfterReleaseDropsInput(t *testing.T) {
+	c := NewCompositeByteBuf()
+	c.Release()
+
+	buf := NewHeapBuffer(4)
+	_, _ = buf.WriteBytes([]byte("x"))
+	c.Append(buf)
+	if buf.RefCnt() != 0 {
+		t.Fatalf("ref=%d, want 0", buf.RefCnt())
+	}
+}

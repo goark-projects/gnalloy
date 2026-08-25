@@ -27,8 +27,10 @@ type Options struct {
 	Boss    int
 	Workers int
 
-	ReusePort      bool
-	ReadBufferSize int
+	ReusePort          bool
+	ReadBufferSize     int
+	WriteHighWatermark int
+	WriteLowWatermark  int
 
 	Mmap          bool
 	MmapFallback  bool
@@ -63,6 +65,8 @@ func Register(fs *flag.FlagSet, defaultAddr string) *Options {
 	fs.IntVar(&opts.Workers, "workers", opts.Workers, "worker event loop count")
 	fs.BoolVar(&opts.ReusePort, "reuseport", opts.ReusePort, "enable SO_REUSEPORT when supported")
 	fs.IntVar(&opts.ReadBufferSize, "read-buffer-size", opts.ReadBufferSize, "per-read ByteBuf size")
+	fs.IntVar(&opts.WriteHighWatermark, "write-high-watermark", opts.WriteHighWatermark, "outbound high watermark in bytes, 0 means default")
+	fs.IntVar(&opts.WriteLowWatermark, "write-low-watermark", opts.WriteLowWatermark, "outbound low watermark in bytes, 0 means half of high")
 
 	fs.BoolVar(&opts.Mmap, "mmap", opts.Mmap, "use per-worker mmap allocator")
 	fs.BoolVar(&opts.MmapFallback, "mmap-fallback", opts.MmapFallback, "fallback to heap allocator when mmap is unsupported")
@@ -96,6 +100,9 @@ func (o *Options) Resolve() error {
 	}
 	if o.ReadBufferSize <= 0 {
 		return fmt.Errorf("%w: read-buffer-size must be positive", ErrInvalidConfig)
+	}
+	if o.WriteHighWatermark < 0 || o.WriteLowWatermark < 0 {
+		return fmt.Errorf("%w: write watermarks must be non-negative", ErrInvalidConfig)
 	}
 	if o.Mmap && (o.MmapBlockSize <= 0 || o.MmapBlocks <= 0) {
 		return fmt.Errorf("%w: mmap block size and blocks must be positive", ErrInvalidConfig)
@@ -155,6 +162,7 @@ func (o *Options) TCPConfig() (tcp.Config, error) {
 	cfg := tcp.DefaultConfig()
 	cfg.ReusePort = o.ReusePort
 	cfg.ReadBufferSize = o.ReadBufferSize
+	cfg.WriteBufferWatermark = o.WriteBufferWatermark()
 	if o.Mmap {
 		cfg.AllocatorFactory = tcp.NewMmapAllocatorFactory(buffer.MmapAllocatorConfig{
 			BlockSize: o.MmapBlockSize,
@@ -172,6 +180,7 @@ func (o *Options) UDPConfig() (udp.Config, error) {
 	cfg := udp.DefaultConfig()
 	cfg.ReusePort = o.ReusePort
 	cfg.ReadBufferSize = o.ReadBufferSize
+	cfg.WriteBufferWatermark = o.WriteBufferWatermark()
 	if o.Mmap {
 		cfg.AllocatorFactory = udp.NewMmapAllocatorFactory(buffer.MmapAllocatorConfig{
 			BlockSize: o.MmapBlockSize,
@@ -179,6 +188,16 @@ func (o *Options) UDPConfig() (udp.Config, error) {
 		}, o.MmapFallback)
 	}
 	return cfg, nil
+}
+
+func (o *Options) WriteBufferWatermark() transport.WriteBufferWatermark {
+	if o == nil {
+		return transport.DefaultWriteBufferWatermark()
+	}
+	return transport.NormalizeWriteBufferWatermark(transport.WriteBufferWatermark{
+		Low:  o.WriteLowWatermark,
+		High: o.WriteHighWatermark,
+	})
 }
 
 func (o *Options) BackendLabel() string {

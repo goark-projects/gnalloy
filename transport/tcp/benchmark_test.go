@@ -86,6 +86,10 @@ func startTCPBenchmarkServer(b *testing.B, cfg tcp.Config, initializer bootstrap
 			Blocks:    benchmarkEnvInt("GNALLOY_BENCH_MMAP_BLOCKS", 4096),
 		}, true)
 	}
+	cfg.WriteBufferWatermark = transport.NormalizeWriteBufferWatermark(transport.WriteBufferWatermark{
+		High: benchmarkEnvInt("GNALLOY_BENCH_WRITE_HIGH_WATERMARK", 0),
+		Low:  benchmarkEnvInt("GNALLOY_BENCH_WRITE_LOW_WATERMARK", 0),
+	})
 	cfg.IOUringFixedBuffers = benchmarkEnvBool("GNALLOY_BENCH_IOURING_FIXED_BUFFERS")
 	workerCount := benchmarkEnvInt("GNALLOY_BENCH_WORKERS", runtime.GOMAXPROCS(0))
 

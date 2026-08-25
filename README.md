@@ -62,9 +62,11 @@ Examples:
 ```bash
 go run ./examples/echo -addr :9000 -backend default -workers 4
 go run ./examples/length-field -addr :9001 -backend default -workers 4
+go run ./examples/line-frame -addr :9003 -backend default -workers 4
+go run ./examples/fixed-length -addr :9004 -backend default -workers 4 -frame-length 4
 ```
 
-Example flags shared by `examples/echo` and `examples/length-field`:
+Example flags shared by the TCP examples:
 
 - `-addr`: listen address.
 - `-backend`: `default`, `epoll`, `iouring`, `kqueue`, `iocp`, or `memory`.
@@ -87,6 +89,8 @@ Smoke verification:
 ```bash
 go run ./examples/smoke-client -addr 127.0.0.1:9000 -protocol raw -count 3
 go run ./examples/smoke-client -addr 127.0.0.1:9001 -protocol length-field -count 3
+go run ./examples/smoke-client -addr 127.0.0.1:9003 -protocol line -count 3
+go run ./examples/smoke-client -addr 127.0.0.1:9004 -protocol fixed -count 3
 ```
 
 Benchmark client:
@@ -94,6 +98,8 @@ Benchmark client:
 ```bash
 go run ./examples/bench-client -addr 127.0.0.1:9000 -protocol raw -connections 256 -messages 1000 -payload-size 64
 go run ./examples/bench-client -addr 127.0.0.1:9001 -protocol length-field -connections 256 -messages 1000 -payload-size 64
+go run ./examples/bench-client -addr 127.0.0.1:9003 -protocol line -connections 256 -messages 1000 -payload-size 64
+go run ./examples/bench-client -addr 127.0.0.1:9004 -protocol fixed -connections 256 -messages 1000 -payload-size 4
 ```
 
 Stress client:

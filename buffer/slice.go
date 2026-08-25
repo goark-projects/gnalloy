@@ -15,7 +15,8 @@ type slicedByteBuf struct {
 	readerIndex int
 	writerIndex int
 
-	refs atomic.Int32
+	refs   atomic.Int32
+	leakID uint64
 }
 
 func newSlicedByteBuf(parent ByteBuf, data []byte) *slicedByteBuf {
@@ -28,6 +29,7 @@ func newSlicedByteBuf(parent ByteBuf, data []byte) *slicedByteBuf {
 	s.readerIndex = 0
 	s.writerIndex = len(data)
 	s.refs.Store(1)
+	s.leakID = trackLeak("slice")
 	return s
 }
 
@@ -248,6 +250,8 @@ func (b *slicedByteBuf) Release() bool {
 	if refs < 0 {
 		panic(ErrReleasedBuffer)
 	}
+	untrackLeak(b.leakID)
+	b.leakID = 0
 	b.parent.Release()
 	b.parent = nil
 	b.data = nil

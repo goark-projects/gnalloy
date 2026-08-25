@@ -20,7 +20,7 @@ func main() {
 		timeout     time.Duration
 	)
 	flag.StringVar(&addr, "addr", "127.0.0.1:9000", "server address")
-	flag.StringVar(&protocol, "protocol", string(benchclient.ProtocolRaw), "protocol: raw or length-field")
+	flag.StringVar(&protocol, "protocol", string(benchclient.ProtocolRaw), "protocol: raw, length-field, line, or fixed")
 	flag.IntVar(&connections, "connections", 64, "concurrent connections")
 	flag.IntVar(&messages, "messages", 1000, "messages per connection")
 	flag.IntVar(&payloadSize, "payload-size", 64, "payload bytes")

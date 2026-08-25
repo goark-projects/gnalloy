@@ -8,7 +8,9 @@ import (
 )
 
 type codecOutboundSink struct {
-	writes []any
+	writes  []any
+	flushes int
+	closes  int
 }
 
 func (s *codecOutboundSink) Write(msg any) error {
@@ -17,10 +19,12 @@ func (s *codecOutboundSink) Write(msg any) error {
 }
 
 func (s *codecOutboundSink) Flush() error {
+	s.flushes++
 	return nil
 }
 
 func (s *codecOutboundSink) Close() error {
+	s.closes++
 	return nil
 }
 
