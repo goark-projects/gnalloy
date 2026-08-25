@@ -192,6 +192,11 @@ func parseV2Header(in *buffer.CompositeByteBuf, reader int, payloadLength int) (
 	msg := Message{Version: Version2, Command: command, Protocol: Protocol(protocolByte)}
 	payload := reader + 16
 	if command == CommandLocal || msg.Protocol == ProtocolUnknown {
+		tlvs, err := parseTLVs(in, payload, reader+16+payloadLength)
+		if err != nil {
+			return Message{}, err
+		}
+		msg.TLVs = tlvs
 		return msg, nil
 	}
 	var tlvStart int

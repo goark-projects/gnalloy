@@ -80,6 +80,56 @@ func TestAppendAndDecodeV2TCP6WithTLV(t *testing.T) {
 	}
 }
 
+func TestAppendAndDecodeV2ControlFrameWithTLV(t *testing.T) {
+	tests := []struct {
+		name     string
+		command  Command
+		protocol Protocol
+	}{
+		{
+			name:     "local",
+			command:  CommandLocal,
+			protocol: ProtocolUnknown,
+		},
+		{
+			name:     "proxy unknown",
+			command:  CommandProxy,
+			protocol: ProtocolUnknown,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			header, err := AppendHeader(nil, Message{
+				Version:  Version2,
+				Command:  tt.command,
+				Protocol: tt.protocol,
+				TLVs:     []TLV{{Type: TLVTypeUniqueID, Value: []byte("trace-1")}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoder, err := NewDecoder(0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := singleComposite(testBuf(header))
+			defer in.Release()
+
+			out, err := decoder.Decode(nil, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg := out.(Message)
+			if msg.Version != Version2 || msg.Command != tt.command || msg.Protocol != tt.protocol {
+				t.Fatalf("msg=%+v", msg)
+			}
+			if len(msg.TLVs) != 1 || msg.TLVs[0].Type != TLVTypeUniqueID || string(msg.TLVs[0].Value) != "trace-1" {
+				t.Fatalf("tlvs=%+v", msg.TLVs)
+			}
+		})
+	}
+}
+
 func TestAppendAndDecodeV2UnixAddress(t *testing.T) {
 	header, err := AppendHeader(nil, Message{
 		Version:            Version2,
