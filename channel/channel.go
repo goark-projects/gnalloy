@@ -20,6 +20,7 @@ type Channel interface {
 	FlushFuture() Future
 	WriteAndFlushFuture(msg any) Future
 	CloseFuture() Future
+	Close() error
 	Read() error
 	IsWritable() bool
 	PendingOutboundBytes() int64
@@ -124,6 +125,10 @@ func (c *LocalChannel) WriteAndFlushFuture(msg any) Future {
 
 func (c *LocalChannel) CloseFuture() Future {
 	return c.pipeline.CloseFuture()
+}
+
+func (c *LocalChannel) Close() error {
+	return c.pipeline.Close()
 }
 
 func (c *LocalChannel) Read() error {
