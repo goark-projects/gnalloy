@@ -9,11 +9,32 @@ type Allocator interface {
 	Close() error
 }
 
+// FixedBufferProvider 暴露可注册到 completion 后端的稳定内存块。
+// 该接口只用于控制面注册，热路径通过 ByteBuf 的 FixedBufferIndex 查询块号。
+type FixedBufferProvider interface {
+	FixedBuffers() [][]byte
+}
+
+// FixedBuffer 标识某个 ByteBuf 来自已注册的固定内存块。
+type FixedBuffer interface {
+	FixedBufferIndex() (uint16, bool)
+}
+
+// FixedBufferIndex 返回 ByteBuf 对应的 registered buffer 下标。
+func FixedBufferIndex(buf ByteBuf) (uint16, bool) {
+	fixed, ok := buf.(FixedBuffer)
+	if !ok {
+		return 0, false
+	}
+	return fixed.FixedBufferIndex()
+}
+
 // AllocatorStats 暴露 allocator 的容量与泄漏观测信息。
 // OffHeap 为 true 表示 payload 不在 Go heap 上，适合 io_uring 共享内存场景。
 type AllocatorStats struct {
 	BlockSize int
 	Blocks    int
+	Fixed     int
 	InUse     int
 	Free      int
 	Closed    bool

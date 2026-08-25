@@ -24,11 +24,19 @@ replace goark.dev/gnalloy => G:/opensource/goark/gnalloy
 The first implementation slice provides stable contracts and hot-path building
 blocks:
 
-- `buffer`: reference-counted `ByteBuf`, zero-copy slices, composite buffers,
-  heap allocator, and Linux mmap slab allocator.
-- `codec`: zero-copy `LengthFieldBasedFrameDecoder`.
+- `buffer`: reference-counted `ByteBuf`, zero-copy slices, readable slice views,
+  composite buffers, heap allocator, and Linux mmap slab allocator.
+- `codec`: Netty-style codec foundations including `ByteToMessageDecoder`,
+  `MessageToByteEncoder`, message-to-message codecs, combined duplex handler,
+  length-field, delimiter, line, fixed-length, string, and byte-slice codecs.
+- `codec/http1`, `codec/protobuf`, `codec/mqtt`, `codec/redis`, and
+  `codec/websocket`: first protocol codec slice for HTTP/1.x, Protobuf
+  varint32 frames, MQTT frames, Redis RESP frames, and WebSocket frames.
 - `channel`: inbound/outbound pipeline contracts and the `Unsafe` bridge that
   normalizes readiness/completion events before they enter business handlers.
+- `handler/timeout`: time-wheel based `IdleStateHandler`,
+  `ReadTimeoutHandler`, and `WriteTimeoutHandler` without per-connection
+  `time.Timer` allocation.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `timer`: local hashed wheel timer for idle and heartbeat checks.
 - `transport`: EventLoop, Channel identity contracts, and a thin factory over
@@ -68,6 +76,11 @@ Example flags shared by `examples/echo` and `examples/length-field`:
 - `-iouring-entries`: io_uring queue depth.
 - `-iouring-sqpoll`, `-iouring-sqpoll-affinity`,
   `-iouring-sqpoll-cpu`, `-iouring-sqpoll-idle-ms`: io_uring SQPOLL options.
+- `-iouring-multishot-accept`: enable one accept SQE to produce multiple CQEs
+  when the running Linux kernel supports it.
+- `-iouring-fixed-buffers`: register per-worker mmap allocator blocks as
+  io_uring fixed buffers. This is intentionally supported only with
+  `-backend iouring -mmap`; other combinations fail fast.
 
 Smoke verification:
 
@@ -112,11 +125,13 @@ Platform helper scripts:
 ./scripts/verify-smoke.sh
 ./scripts/verify-stress.sh
 ./scripts/verify-iouring-sqpoll.sh
+./scripts/verify-iouring-fixed.sh
 BACKEND=epoll WORKERS=4 REUSEPORT=1 ./scripts/verify-smoke.sh
 BACKEND=iouring WORKERS=4 MMAP=1 ./scripts/verify-smoke.sh
 BACKEND=kqueue WORKERS=4 ./scripts/verify-smoke.sh
 BACKEND=epoll WORKERS=4 REUSEPORT=1 ./scripts/verify-stress.sh
 BACKEND=iouring WORKERS=4 MMAP=1 IOURING_MULTISHOT_ACCEPT=1 ./scripts/verify-stress.sh
+BACKEND=iouring WORKERS=2 MMAP=1 MMAP_BLOCKS=512 IOURING_FIXED_BUFFERS=1 ./scripts/verify-stress.sh
 BACKEND=kqueue WORKERS=4 ./scripts/verify-stress.sh
 ```
 
@@ -124,6 +139,13 @@ Benchmarks:
 
 ```bash
 go test -bench=. ./buffer ./channel ./codec ./queue ./timer ./transport/tcp
+./scripts/verify-bench.sh
+BACKENDS=epoll,iouring MMAP=1 MMAP_BLOCKS=512 IOURING_MULTISHOT_ACCEPT=1 IOURING_FIXED_BUFFERS=1 ./scripts/verify-bench.sh
+```
+
+```powershell
+.\scripts\verify-bench.ps1
+.\scripts\verify-bench.ps1 -Backends default,iocp
 ```
 
 Current hot-path target:
@@ -158,6 +180,12 @@ Current validation boundary:
   connections or allocator in-use counts do not drain to zero.
 - `Server.Close` stops acceptors, closes tracked active child channels, waits for
   inactive hooks, and only then closes cached per-worker allocators.
+- io_uring fixed buffers are registered and unregistered on the owning
+  `EventLoop`; mmap allocators are not unmapped until fixed buffers have been
+  unregistered and all active child channels have drained.
+- Registered buffers may be constrained by Linux locked-memory limits; reduce
+  `MMAP_BLOCKS` or raise the process memlock limit when fixed-buffer setup
+  returns a kernel permission/resource error.
 
 Design rules:
 
@@ -171,6 +199,9 @@ Design rules:
   `golang.org/x/sys/windows`.
 - Outbound writes are queued per Channel; partial writes remain in the outbound
   buffer until a write-ready/completion event drains them.
+- Outbound buffers are gathered across queued `ByteBuf` instances. Readiness
+  transports use `writev`/multi-buffer `WSASend`, while completion transports
+  can submit batched buffers through io_uring `WRITEV` or IOCP `WSASend`.
 - io_uring supports optional registered buffers and multishot accept at the
   poller layer; both are opt-in because kernel/version support differs.
 - Performance-only CPU affinity is configured on `EventLoopGroup`; Linux binds

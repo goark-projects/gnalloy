@@ -33,8 +33,11 @@ const (
 	acceptMultishot = 1 << 0
 
 	opNop        = 0
+	opWritev     = 2
 	opReadFixed  = 4
 	opWriteFixed = 5
+	opSendMsg    = 9
+	opRecvMsg    = 10
 	opAccept     = 13
 	opClose      = 19
 	opRead       = 22
@@ -126,6 +129,25 @@ type iovec struct {
 	len  uintptr
 }
 
+type msghdr struct {
+	name       uintptr
+	namelen    uint32
+	_pad0      uint32
+	iov        uintptr
+	iovlen     uint64
+	control    uintptr
+	controllen uint64
+	flags      uint32
+	_pad1      uint32
+}
+
+type msgContext struct {
+	name    unix.RawSockaddrAny
+	nameLen uint32
+	iov     []iovec
+	hdr     msghdr
+}
+
 type Poller struct {
 	fd int
 
@@ -135,6 +157,8 @@ type Poller struct {
 
 	entries map[poller.FDRef]poller.ChannelID
 	pending map[uint64]poller.IORequest
+	writev  map[uint64][]iovec
+	msgctx  map[uint64]*msgContext
 	nextID  uint64
 	closed  bool
 
@@ -183,6 +207,8 @@ func NewWithConfig(cfg Config) (poller.Poller, error) {
 	p := &Poller{
 		entries:         make(map[poller.FDRef]poller.ChannelID, entries),
 		pending:         make(map[uint64]poller.IORequest, entries),
+		writev:          make(map[uint64][]iovec, entries),
+		msgctx:          make(map[uint64]*msgContext, entries),
 		multishotAccept: cfg.MultishotAccept,
 	}
 	if err := p.setup(entries, cfg); err != nil {
@@ -305,17 +331,30 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	if req.Buf != nil {
 		req.Buf.Retain()
 	}
+	for _, buf := range req.Bufs {
+		buf.Retain()
+	}
 	if err := p.prepare(uint64(id), req); err != nil {
+		delete(p.writev, uint64(id))
+		delete(p.msgctx, uint64(id))
 		if req.Buf != nil {
 			req.Buf.Release()
+		}
+		for _, buf := range req.Bufs {
+			buf.Release()
 		}
 		return err
 	}
 	p.pending[uint64(id)] = req
 	if err := p.enter(1, 0, 0); err != nil {
 		delete(p.pending, uint64(id))
+		delete(p.writev, uint64(id))
+		delete(p.msgctx, uint64(id))
 		if req.Buf != nil {
 			req.Buf.Release()
+		}
+		for _, buf := range req.Bufs {
+			buf.Release()
 		}
 		return err
 	}
@@ -378,7 +417,14 @@ func (p *Poller) Close() error {
 		if req.Buf != nil {
 			req.Buf.Release()
 		}
+		for _, buf := range req.Bufs {
+			buf.Release()
+		}
 	}
+	clear(p.writev)
+	clear(p.msgctx)
+	p.writev = nil
+	p.msgctx = nil
 	p.pending = nil
 	err1 := unmapIfPresent(p.sq.sqes)
 	if len(p.cq.ring) > 0 && len(p.sq.ring) > 0 && &p.cq.ring[0] == &p.sq.ring[0] {
@@ -493,6 +539,18 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 			entry.ioprio |= acceptMultishot
 		}
 	case poller.OpRead:
+		if req.Datagram {
+			ctx, err := makeRecvMsgContext(req)
+			if err != nil {
+				return err
+			}
+			p.msgctx[userData] = ctx
+			entry.opcode = opRecvMsg
+			entry.fd = int32(req.FD.FD)
+			entry.addr = uint64(uintptr(unsafe.Pointer(&ctx.hdr)))
+			entry.len = 1
+			break
+		}
 		view := req.Buf.WritableBytesView()
 		if len(view) == 0 {
 			return poller.ErrInvalidIORequest
@@ -507,6 +565,42 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 		entry.addr = uint64(uintptr(unsafe.Pointer(&view[0])))
 		entry.len = uint32(len(view))
 	case poller.OpWrite:
+		if req.Datagram {
+			ctx, err := makeSendMsgContext(req)
+			if err != nil {
+				return err
+			}
+			p.msgctx[userData] = ctx
+			entry.opcode = opSendMsg
+			entry.fd = int32(req.FD.FD)
+			entry.addr = uint64(uintptr(unsafe.Pointer(&ctx.hdr)))
+			entry.len = 1
+			break
+		}
+		if len(req.Bufs) > 0 {
+			vectors := make([]iovec, 0, len(req.Bufs))
+			for _, buf := range req.Bufs {
+				slices := buf.ReadableSlices(nil)
+				for _, data := range slices {
+					if len(data) == 0 {
+						continue
+					}
+					vectors = append(vectors, iovec{
+						base: uintptr(unsafe.Pointer(&data[0])),
+						len:  uintptr(len(data)),
+					})
+				}
+			}
+			if len(vectors) == 0 {
+				return poller.ErrInvalidIORequest
+			}
+			p.writev[userData] = vectors
+			entry.opcode = opWritev
+			entry.fd = int32(req.FD.FD)
+			entry.addr = uint64(uintptr(unsafe.Pointer(&vectors[0])))
+			entry.len = uint32(len(vectors))
+			break
+		}
 		data := req.Buf.Bytes()
 		if len(data) == 0 {
 			return poller.ErrInvalidIORequest
@@ -541,9 +635,12 @@ func (p *Poller) reap(dst []poller.Event) int {
 		index := head & atomic.LoadUint32(p.cq.ringMask)
 		cqe := p.cqe(index)
 		req := p.pending[cqe.userData]
+		msgctx := p.msgctx[cqe.userData]
 		more := cqe.flags&cqeFMore != 0
 		if !more {
 			delete(p.pending, cqe.userData)
+			delete(p.writev, cqe.userData)
+			delete(p.msgctx, cqe.userData)
 		}
 
 		n := int(cqe.res)
@@ -556,6 +653,10 @@ func (p *Poller) reap(dst []poller.Event) int {
 			if advErr := req.Buf.AdvanceWriter(n); advErr != nil && err == nil {
 				err = advErr
 			}
+		}
+		addr := req.Addr
+		if req.Op == poller.OpRead && req.Datagram && err == nil && msgctx != nil {
+			addr = socketAddressFromRaw(&msgctx.name, msgctx.nameLen)
 		}
 		acceptedFD := req.AcceptedFD
 		if req.Op == poller.OpAccept && err == nil {
@@ -570,6 +671,8 @@ func (p *Poller) reap(dst []poller.Event) int {
 			ChannelID:  req.ChannelID,
 			OpID:       req.OpID,
 			Buf:        req.Buf,
+			Bufs:       req.Bufs,
+			Addr:       addr,
 			N:          n,
 			Err:        err,
 			More:       more,
@@ -588,10 +691,126 @@ func validRequest(req poller.IORequest) bool {
 	case poller.OpAccept, poller.OpClose:
 		return req.FD.Valid()
 	case poller.OpRead, poller.OpWrite:
-		return req.FD.Valid() && req.Buf != nil
+		if !req.FD.Valid() || (req.Buf == nil && len(req.Bufs) == 0) {
+			return false
+		}
+		return !req.Datagram || req.Op == poller.OpRead || req.Addr.Valid()
 	default:
 		return false
 	}
+}
+
+func makeRecvMsgContext(req poller.IORequest) (*msgContext, error) {
+	view := req.Buf.WritableBytesView()
+	if len(view) == 0 {
+		return nil, poller.ErrInvalidIORequest
+	}
+	ctx := &msgContext{nameLen: unix.SizeofSockaddrAny}
+	ctx.iov = []iovec{{base: uintptr(unsafe.Pointer(&view[0])), len: uintptr(len(view))}}
+	ctx.hdr = msghdr{
+		name:    uintptr(unsafe.Pointer(&ctx.name)),
+		namelen: ctx.nameLen,
+		iov:     uintptr(unsafe.Pointer(&ctx.iov[0])),
+		iovlen:  1,
+	}
+	return ctx, nil
+}
+
+func makeSendMsgContext(req poller.IORequest) (*msgContext, error) {
+	name, nameLen, err := makeRawSockaddr(req.Addr)
+	if err != nil {
+		return nil, err
+	}
+	vectors, err := makeIOVectors(req)
+	if err != nil {
+		return nil, err
+	}
+	ctx := &msgContext{name: name, nameLen: nameLen, iov: vectors}
+	ctx.hdr = msghdr{
+		name:    uintptr(unsafe.Pointer(&ctx.name)),
+		namelen: ctx.nameLen,
+		iov:     uintptr(unsafe.Pointer(&ctx.iov[0])),
+		iovlen:  uint64(len(ctx.iov)),
+	}
+	return ctx, nil
+}
+
+func makeIOVectors(req poller.IORequest) ([]iovec, error) {
+	if req.Buf != nil {
+		data := req.Buf.Bytes()
+		if len(data) == 0 {
+			return nil, poller.ErrInvalidIORequest
+		}
+		return []iovec{{base: uintptr(unsafe.Pointer(&data[0])), len: uintptr(len(data))}}, nil
+	}
+	vectors := make([]iovec, 0, len(req.Bufs))
+	for _, buf := range req.Bufs {
+		slices := buf.ReadableSlices(nil)
+		for _, data := range slices {
+			if len(data) == 0 {
+				continue
+			}
+			vectors = append(vectors, iovec{base: uintptr(unsafe.Pointer(&data[0])), len: uintptr(len(data))})
+		}
+	}
+	if len(vectors) == 0 {
+		return nil, poller.ErrInvalidIORequest
+	}
+	return vectors, nil
+}
+
+func makeRawSockaddr(addr poller.SocketAddress) (unix.RawSockaddrAny, uint32, error) {
+	var rsa unix.RawSockaddrAny
+	switch addr.Family {
+	case poller.SocketFamilyIPv4:
+		raw := (*unix.RawSockaddrInet4)(unsafe.Pointer(&rsa))
+		raw.Family = unix.AF_INET
+		raw.Port = htons(uint16(addr.Port))
+		copy(raw.Addr[:], addr.IP[:4])
+		return rsa, unix.SizeofSockaddrInet4, nil
+	case poller.SocketFamilyIPv6:
+		raw := (*unix.RawSockaddrInet6)(unsafe.Pointer(&rsa))
+		raw.Family = unix.AF_INET6
+		raw.Port = htons(uint16(addr.Port))
+		raw.Scope_id = addr.ZoneID
+		copy(raw.Addr[:], addr.IP[:])
+		return rsa, unix.SizeofSockaddrInet6, nil
+	default:
+		return rsa, 0, poller.ErrInvalidIORequest
+	}
+}
+
+func socketAddressFromRaw(rsa *unix.RawSockaddrAny, n uint32) poller.SocketAddress {
+	if rsa == nil || n == 0 {
+		return poller.SocketAddress{}
+	}
+	switch rsa.Addr.Family {
+	case unix.AF_INET:
+		raw := (*unix.RawSockaddrInet4)(unsafe.Pointer(rsa))
+		var addr poller.SocketAddress
+		addr.Family = poller.SocketFamilyIPv4
+		addr.Port = int(ntohs(raw.Port))
+		copy(addr.IP[:4], raw.Addr[:])
+		return addr
+	case unix.AF_INET6:
+		raw := (*unix.RawSockaddrInet6)(unsafe.Pointer(rsa))
+		var addr poller.SocketAddress
+		addr.Family = poller.SocketFamilyIPv6
+		addr.Port = int(ntohs(raw.Port))
+		addr.ZoneID = raw.Scope_id
+		copy(addr.IP[:], raw.Addr[:])
+		return addr
+	default:
+		return poller.SocketAddress{}
+	}
+}
+
+func htons(v uint16) uint16 {
+	return v<<8 | v>>8
+}
+
+func ntohs(v uint16) uint16 {
+	return htons(v)
 }
 
 func (p *Poller) enter(toSubmit uint32, minComplete uint32, flags uint32) error {

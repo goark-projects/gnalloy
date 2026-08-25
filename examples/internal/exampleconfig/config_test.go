@@ -44,3 +44,36 @@ func TestOptionsResolveRejectsInvalidSizes(t *testing.T) {
 		t.Fatalf("err=%v, want %v", err, ErrInvalidConfig)
 	}
 }
+
+func TestOptionsResolveRejectsFixedBuffersWithoutIOUringMmap(t *testing.T) {
+	tests := []*Options{
+		{BackendName: "iouring", Boss: 1, Workers: 1, ReadBufferSize: 4096, IOUringFixedBuffers: true},
+		{BackendName: "memory", Boss: 1, Workers: 1, ReadBufferSize: 4096, Mmap: true, IOUringFixedBuffers: true},
+	}
+	for _, opts := range tests {
+		if err := opts.Resolve(); !errors.Is(err, ErrInvalidConfig) {
+			t.Fatalf("Resolve(%+v) err=%v, want %v", opts, err, ErrInvalidConfig)
+		}
+	}
+}
+
+func TestOptionsTCPConfigEnablesFixedBuffers(t *testing.T) {
+	opts := &Options{
+		BackendName:            "iouring",
+		Boss:                   1,
+		Workers:                1,
+		ReadBufferSize:         4096,
+		Mmap:                   true,
+		MmapBlockSize:          4096,
+		MmapBlocks:             16,
+		IOUringFixedBuffers:    true,
+		IOUringMultishotAccept: true,
+	}
+	cfg, err := opts.TCPConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.IOUringFixedBuffers {
+		t.Fatal("tcp config did not enable io_uring fixed buffers")
+	}
+}

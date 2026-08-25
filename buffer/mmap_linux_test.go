@@ -65,6 +65,38 @@ func TestMmapAllocatorStatsTracksInUseAndClosed(t *testing.T) {
 	}
 }
 
+func TestMmapAllocatorExposesFixedBuffers(t *testing.T) {
+	alloc, err := NewMmapAllocator(MmapAllocatorConfig{BlockSize: 1024, Blocks: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer alloc.Close()
+
+	provider := alloc.(FixedBufferProvider)
+	fixed := provider.FixedBuffers()
+	if len(fixed) != 2 || len(fixed[0]) != 1024 || len(fixed[1]) != 1024 {
+		t.Fatalf("fixed buffers=%d/%d/%d", len(fixed), len(fixed[0]), len(fixed[1]))
+	}
+	buf, err := alloc.Acquire(128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, ok := FixedBufferIndex(buf)
+	if !ok || idx > 1 {
+		t.Fatalf("fixed index=(%d,%v), want block index", idx, ok)
+	}
+	slice, err := buf.Slice(0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sliceIdx, sliceOK := FixedBufferIndex(slice)
+	if !sliceOK || sliceIdx != idx {
+		t.Fatalf("slice fixed index=(%d,%v), want (%d,true)", sliceIdx, sliceOK, idx)
+	}
+	slice.Release()
+	buf.Release()
+}
+
 func TestMmapAllocatorDirectDoubleReleaseDoesNotCorruptFreeList(t *testing.T) {
 	alloc, err := NewMmapAllocator(MmapAllocatorConfig{BlockSize: 1024, Blocks: 1})
 	if err != nil {

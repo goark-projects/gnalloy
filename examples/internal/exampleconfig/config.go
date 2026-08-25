@@ -10,6 +10,7 @@ import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/transport"
 	"goark.dev/gnalloy/transport/tcp"
+	"goark.dev/gnalloy/transport/udp"
 )
 
 var (
@@ -40,6 +41,7 @@ type Options struct {
 	IOUringSQPollCPU        int
 	IOUringSQPollIdleMillis uint
 	IOUringMultishotAccept  bool
+	IOUringFixedBuffers     bool
 }
 
 // Register 把示例通用参数注册到指定 FlagSet。
@@ -73,6 +75,7 @@ func Register(fs *flag.FlagSet, defaultAddr string) *Options {
 	fs.IntVar(&opts.IOUringSQPollCPU, "iouring-sqpoll-cpu", opts.IOUringSQPollCPU, "io_uring SQPOLL CPU id")
 	fs.UintVar(&opts.IOUringSQPollIdleMillis, "iouring-sqpoll-idle-ms", opts.IOUringSQPollIdleMillis, "io_uring SQPOLL idle timeout in milliseconds")
 	fs.BoolVar(&opts.IOUringMultishotAccept, "iouring-multishot-accept", opts.IOUringMultishotAccept, "enable io_uring multishot accept")
+	fs.BoolVar(&opts.IOUringFixedBuffers, "iouring-fixed-buffers", opts.IOUringFixedBuffers, "register mmap allocator blocks as io_uring fixed buffers")
 	return opts
 }
 
@@ -102,6 +105,9 @@ func (o *Options) Resolve() error {
 	}
 	if o.IOUringSQPollCPU < 0 {
 		return fmt.Errorf("%w: iouring-sqpoll-cpu must be non-negative", ErrInvalidConfig)
+	}
+	if o.IOUringFixedBuffers && (!o.Mmap || backend != transport.BackendIOUring) {
+		return fmt.Errorf("%w: iouring-fixed-buffers requires backend=iouring and mmap allocator", ErrInvalidConfig)
 	}
 	o.Backend = backend
 	return nil
@@ -151,6 +157,23 @@ func (o *Options) TCPConfig() (tcp.Config, error) {
 	cfg.ReadBufferSize = o.ReadBufferSize
 	if o.Mmap {
 		cfg.AllocatorFactory = tcp.NewMmapAllocatorFactory(buffer.MmapAllocatorConfig{
+			BlockSize: o.MmapBlockSize,
+			Blocks:    o.MmapBlocks,
+		}, o.MmapFallback)
+	}
+	cfg.IOUringFixedBuffers = o.IOUringFixedBuffers
+	return cfg, nil
+}
+
+func (o *Options) UDPConfig() (udp.Config, error) {
+	if err := o.Resolve(); err != nil {
+		return udp.Config{}, err
+	}
+	cfg := udp.DefaultConfig()
+	cfg.ReusePort = o.ReusePort
+	cfg.ReadBufferSize = o.ReadBufferSize
+	if o.Mmap {
+		cfg.AllocatorFactory = udp.NewMmapAllocatorFactory(buffer.MmapAllocatorConfig{
 			BlockSize: o.MmapBlockSize,
 			Blocks:    o.MmapBlocks,
 		}, o.MmapFallback)

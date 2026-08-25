@@ -6,14 +6,14 @@ import (
 )
 
 type LengthFieldBasedFrameDecoder struct {
+	*ByteToMessageDecoder
+
 	maxFrameLength     int
 	lengthFieldOffset  int
 	lengthFieldLength  int
 	lengthAdjustment   int
 	initialBytesToSkip int
 	byteOrder          buffer.ByteOrder
-
-	cumulation *buffer.CompositeByteBuf
 }
 
 func NewLengthFieldBasedFrameDecoder(maxFrameLength int, lengthFieldOffset int, lengthFieldLength int, lengthAdjustment int, initialBytesToSkip int, order buffer.ByteOrder) (*LengthFieldBasedFrameDecoder, error) {
@@ -25,48 +25,19 @@ func NewLengthFieldBasedFrameDecoder(maxFrameLength int, lengthFieldOffset int, 
 	default:
 		return nil, ErrInvalidLengthField
 	}
-	return &LengthFieldBasedFrameDecoder{
+	d := &LengthFieldBasedFrameDecoder{
 		maxFrameLength:     maxFrameLength,
 		lengthFieldOffset:  lengthFieldOffset,
 		lengthFieldLength:  lengthFieldLength,
 		lengthAdjustment:   lengthAdjustment,
 		initialBytesToSkip: initialBytesToSkip,
 		byteOrder:          order,
-	}, nil
+	}
+	d.ByteToMessageDecoder = NewByteToMessageDecoder(d)
+	return d, nil
 }
 
-func (d *LengthFieldBasedFrameDecoder) ChannelRead(ctx *channel.HandlerContext, msg any) {
-	in, ok := msg.(buffer.ByteBuf)
-	if !ok {
-		ctx.FireChannelRead(msg)
-		return
-	}
-	if d.cumulation == nil {
-		d.cumulation = buffer.NewCompositeByteBuf()
-	}
-	d.cumulation.Append(in)
-
-	for {
-		frame, err := d.decode()
-		if err != nil {
-			ctx.FireExceptionCaught(err)
-			d.releaseCumulation()
-			return
-		}
-		if frame == nil {
-			return
-		}
-		ctx.FireChannelRead(frame)
-	}
-}
-
-func (d *LengthFieldBasedFrameDecoder) ChannelInactive(ctx *channel.HandlerContext) {
-	d.releaseCumulation()
-	ctx.FireChannelInactive()
-}
-
-func (d *LengthFieldBasedFrameDecoder) decode() (buffer.ByteBuf, error) {
-	cumulation := d.cumulation
+func (d *LengthFieldBasedFrameDecoder) Decode(_ *channel.HandlerContext, cumulation *buffer.CompositeByteBuf) (any, error) {
 	if cumulation == nil {
 		return nil, nil
 	}
@@ -104,14 +75,5 @@ func (d *LengthFieldBasedFrameDecoder) decode() (buffer.ByteBuf, error) {
 		frame.Release()
 		return nil, err
 	}
-	cumulation.DiscardReadComponents()
 	return frame, nil
-}
-
-func (d *LengthFieldBasedFrameDecoder) releaseCumulation() {
-	if d.cumulation == nil {
-		return
-	}
-	d.cumulation.Release()
-	d.cumulation = nil
 }

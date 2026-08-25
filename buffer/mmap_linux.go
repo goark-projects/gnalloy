@@ -5,6 +5,7 @@ package buffer
 import "golang.org/x/sys/unix"
 
 const maxInt = int(^uint(0) >> 1)
+const maxFixedBufferCount = 1 << 16
 
 type mmapAllocator struct {
 	data      []byte
@@ -103,11 +104,34 @@ func (a *mmapAllocator) Stats() AllocatorStats {
 	return AllocatorStats{
 		BlockSize: a.blockSize,
 		Blocks:    len(a.buffers),
+		Fixed:     len(a.buffers),
 		InUse:     a.inUseCnt,
 		Free:      free,
 		Closed:    a.closed,
 		OffHeap:   true,
 	}
+}
+
+func (a *mmapAllocator) FixedBuffers() [][]byte {
+	if a.closed || len(a.buffers) == 0 || len(a.buffers) > maxFixedBufferCount {
+		return nil
+	}
+	out := make([][]byte, len(a.buffers))
+	for i := range a.buffers {
+		out[i] = a.buffers[i].data[:a.blockSize]
+	}
+	return out
+}
+
+func (a *mmapAllocator) fixedBufferIndex(buf *DirectByteBuf) (uint16, bool) {
+	if buf == nil || a.closed {
+		return 0, false
+	}
+	idx := buf.ownerIndex
+	if int(idx) >= len(a.buffers) || idx >= maxFixedBufferCount || &a.buffers[idx] != buf {
+		return 0, false
+	}
+	return uint16(idx), true
 }
 
 func (a *mmapAllocator) Close() error {

@@ -24,6 +24,24 @@ func (c *HandlerContext) Handler() Handler {
 	return c.handler
 }
 
+func (c *HandlerContext) FireChannelRegistered() {
+	for n := c.next; n != nil; n = n.next {
+		if h, ok := n.handler.(ChannelRegisteredHandler); ok {
+			h.ChannelRegistered(n)
+			return
+		}
+	}
+}
+
+func (c *HandlerContext) FireChannelUnregistered() {
+	for n := c.next; n != nil; n = n.next {
+		if h, ok := n.handler.(ChannelUnregisteredHandler); ok {
+			h.ChannelUnregistered(n)
+			return
+		}
+	}
+}
+
 func (c *HandlerContext) FireChannelActive() {
 	for n := c.next; n != nil; n = n.next {
 		if h, ok := n.handler.(ChannelActiveHandler); ok {
@@ -37,6 +55,15 @@ func (c *HandlerContext) FireChannelRead(msg any) {
 	for n := c.next; n != nil; n = n.next {
 		if h, ok := n.handler.(ChannelReadHandler); ok {
 			h.ChannelRead(n, msg)
+			return
+		}
+	}
+}
+
+func (c *HandlerContext) FireChannelReadComplete() {
+	for n := c.next; n != nil; n = n.next {
+		if h, ok := n.handler.(ChannelReadCompleteHandler); ok {
+			h.ChannelReadComplete(n)
 			return
 		}
 	}
@@ -60,6 +87,24 @@ func (c *HandlerContext) FireChannelWritabilityChanged() {
 	}
 }
 
+func (c *HandlerContext) FireUserEventTriggered(event any) {
+	for n := c.next; n != nil; n = n.next {
+		if h, ok := n.handler.(UserEventTriggeredHandler); ok {
+			h.UserEventTriggered(n, event)
+			return
+		}
+	}
+}
+
+func (c *HandlerContext) FireFlushComplete() {
+	for n := c.next; n != nil; n = n.next {
+		if h, ok := n.handler.(FlushCompleteHandler); ok {
+			h.FlushComplete(n)
+			return
+		}
+	}
+}
+
 func (c *HandlerContext) FireExceptionCaught(err error) {
 	for n := c.next; n != nil; n = n.next {
 		if h, ok := n.handler.(ExceptionCaughtHandler); ok {
@@ -67,6 +112,10 @@ func (c *HandlerContext) FireExceptionCaught(err error) {
 			return
 		}
 	}
+}
+
+func (c *HandlerContext) WriteFuture(msg any) Future {
+	return writeFutureFrom(c, msg)
 }
 
 func (c *HandlerContext) Write(msg any) error {
@@ -81,6 +130,10 @@ func (c *HandlerContext) Write(msg any) error {
 	return c.pipeline.sink.Write(msg)
 }
 
+func (c *HandlerContext) FlushFuture() Future {
+	return flushFutureFrom(c)
+}
+
 func (c *HandlerContext) Flush() error {
 	for n := c.prev; n != nil; n = n.prev {
 		if h, ok := n.handler.(FlushHandler); ok {
@@ -91,6 +144,10 @@ func (c *HandlerContext) Flush() error {
 		return ErrNoOutboundSink
 	}
 	return c.pipeline.sink.Flush()
+}
+
+func (c *HandlerContext) CloseFuture() Future {
+	return closeFutureFrom(c)
 }
 
 func (c *HandlerContext) Close() error {

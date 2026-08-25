@@ -80,6 +80,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		ChannelID:  req.ChannelID,
 		OpID:       req.OpID,
 		Buf:        req.Buf,
+		Addr:       req.Addr,
 	})
 	p.cond.Signal()
 	return nil

@@ -52,6 +52,7 @@ type Config struct {
 	IOUringSQPollCPU        int
 	IOUringSQPollIdleMillis uint
 	IOUringMultishotAccept  bool
+	IOUringFixedBuffers     bool
 }
 
 type Result struct {
@@ -173,6 +174,7 @@ func buildOptions(cfg Config) *exampleconfig.Options {
 		IOUringSQPollCPU:        cfg.IOUringSQPollCPU,
 		IOUringSQPollIdleMillis: cfg.IOUringSQPollIdleMillis,
 		IOUringMultishotAccept:  cfg.IOUringMultishotAccept,
+		IOUringFixedBuffers:     cfg.IOUringFixedBuffers,
 	}
 	if opts.BackendName == "" {
 		opts.BackendName = "default"

@@ -168,6 +168,13 @@ func (b *slicedByteBuf) Bytes() []byte {
 	return b.data[b.readerIndex:b.writerIndex]
 }
 
+func (b *slicedByteBuf) ReadableSlices(dst [][]byte) [][]byte {
+	if b.refs.Load() <= 0 || b.readerIndex == b.writerIndex {
+		return dst
+	}
+	return append(dst, b.data[b.readerIndex:b.writerIndex])
+}
+
 func (b *slicedByteBuf) WritableBytesView() []byte {
 	if b.refs.Load() <= 0 {
 		return nil
@@ -251,3 +258,10 @@ func (b *slicedByteBuf) Release() bool {
 }
 
 func (b *slicedByteBuf) RefCnt() int32 { return b.refs.Load() }
+
+func (b *slicedByteBuf) FixedBufferIndex() (uint16, bool) {
+	if b.refs.Load() <= 0 || b.parent == nil {
+		return 0, false
+	}
+	return FixedBufferIndex(b.parent)
+}

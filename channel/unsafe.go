@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 
 	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/timer"
 	"goark.dev/gnalloy/transport"
 )
 
@@ -12,6 +13,7 @@ const defaultReadBufferSize = 4096
 const (
 	defaultWriteHighWatermark = 64 * 1024
 	defaultWriteLowWatermark  = 32 * 1024
+	maxGatheringBuffers       = 16
 )
 
 // FDReadWriter 抽象 readiness 模型下的非阻塞 fd 读写。
@@ -20,6 +22,11 @@ type FDReadWriter interface {
 	Read(fd transport.FDRef, dst []byte) (n int, again bool, err error)
 	Write(fd transport.FDRef, src []byte) (n int, again bool, err error)
 	Close(fd transport.FDRef) error
+}
+
+// FDVectorWriter 是支持 gathering write 的 readiness 后端可选能力。
+type FDVectorWriter interface {
+	Writev(fd transport.FDRef, src [][]byte) (n int, again bool, err error)
 }
 
 type UnsafeConfig struct {
@@ -32,6 +39,8 @@ type UnsafeConfig struct {
 	ReadBufferSize     int
 	WriteHighWatermark int
 	WriteLowWatermark  int
+	FixedBuffers       bool
+	Timer              *timer.Wheel
 }
 
 // Unsafe 是底层 I/O 事件与业务 Pipeline 的分界线。
@@ -42,6 +51,7 @@ type Unsafe struct {
 	rw             FDReadWriter
 	closeHook      func(*Unsafe)
 	readBufferSize int
+	fixedBuffers   bool
 	registered     bool
 	closed         bool
 	inactiveFired  bool
@@ -52,6 +62,10 @@ type Unsafe struct {
 	outboundBytes int64
 	writePending  bool
 	writeInterest bool
+	writeBatch    []buffer.ByteBuf
+	writeSlices   [][]byte
+	flushWaiters  []*DefaultPromise
+	closePromise  *DefaultPromise
 
 	writeHighWatermark int64
 	writeLowWatermark  int64
@@ -59,8 +73,9 @@ type Unsafe struct {
 }
 
 type outboundEntry struct {
-	buf  buffer.ByteBuf
-	next *outboundEntry
+	buf     buffer.ByteBuf
+	promise Promise
+	next    *outboundEntry
 }
 
 func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
@@ -82,11 +97,12 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 		rw:                 cfg.ReadWriter,
 		closeHook:          cfg.CloseHook,
 		readBufferSize:     readBufferSize,
+		fixedBuffers:       cfg.FixedBuffers,
 		writeHighWatermark: int64(high),
 		writeLowWatermark:  int64(low),
 	}
 	u.writable.Store(true)
-	u.ch = NewLocalChannel(cfg.ID, cfg.Allocator, u)
+	u.ch = NewLocalChannelWithTimer(cfg.ID, cfg.Allocator, u, cfg.Timer)
 	return u.ch, u
 }
 
@@ -105,17 +121,22 @@ func (u *Unsafe) Channel() *LocalChannel {
 // MarkRegistered 由 EventLoop 在 fd 成功注册到底层 poller 后调用。
 func (u *Unsafe) MarkRegistered() {
 	u.registered = true
+	u.ch.Pipeline().FireChannelRegistered()
 }
 
 // MarkDeregistered 由 EventLoop 在 fd 从底层 poller 移除后调用。
 func (u *Unsafe) MarkDeregistered() {
 	u.registered = false
+	u.ch.Pipeline().FireChannelUnregistered()
 }
 
 func (u *Unsafe) HandleEvent(ev transport.PollEvent) {
 	if u.closed {
 		if ev.Buf != nil {
 			ev.Buf.Release()
+		}
+		for _, buf := range ev.Bufs {
+			buf.Release()
 		}
 		if ev.Op == transport.OpClose {
 			u.fireInactiveOnce()
@@ -134,20 +155,55 @@ func (u *Unsafe) HandleEvent(ev transport.PollEvent) {
 }
 
 func (u *Unsafe) Write(msg any) error {
-	buf, ok := msg.(buffer.ByteBuf)
-	if !ok {
-		return ErrInvalidMessage
+	future := u.WriteFuture(msg)
+	if future.IsDone() {
+		return future.Err()
 	}
-	if buf.ReadableBytes() == 0 {
-		buf.Release()
-		return nil
-	}
-	u.enqueueOutbound(buf)
 	return nil
 }
 
+func (u *Unsafe) WriteFuture(msg any) Future {
+	if u.closed {
+		if buf, ok := msg.(buffer.ByteBuf); ok {
+			buf.Release()
+		}
+		return FailedFuture(ErrPromiseFailed)
+	}
+	buf, ok := msg.(buffer.ByteBuf)
+	if !ok {
+		return FailedFuture(ErrInvalidMessage)
+	}
+	promise := NewPromise()
+	if buf.ReadableBytes() == 0 {
+		buf.Release()
+		promise.SetSuccess()
+		return promise
+	}
+	u.enqueueOutbound(buf, promise)
+	return promise
+}
+
 func (u *Unsafe) Flush() error {
-	return u.flushOutbound()
+	future := u.FlushFuture()
+	if future.IsDone() {
+		return future.Err()
+	}
+	return nil
+}
+
+func (u *Unsafe) FlushFuture() Future {
+	promise := NewPromise()
+	if u.outHead == nil {
+		promise.SetSuccess()
+		u.ch.Pipeline().FireFlushComplete()
+		return promise
+	}
+	u.flushWaiters = append(u.flushWaiters, promise)
+	if err := u.flushOutbound(); err != nil {
+		u.completeFlushWaiters(err)
+		return promise
+	}
+	return promise
 }
 
 func (u *Unsafe) IsWritable() bool {
@@ -155,23 +211,39 @@ func (u *Unsafe) IsWritable() bool {
 }
 
 func (u *Unsafe) Close() error {
-	if u.closed {
-		return nil
+	future := u.CloseFuture()
+	if future.IsDone() {
+		return future.Err()
 	}
+	return nil
+}
+
+func (u *Unsafe) CloseFuture() Future {
+	if u.closed {
+		if u.closePromise != nil {
+			return u.closePromise
+		}
+		return SucceededFuture()
+	}
+	u.closePromise = NewPromise()
 	u.closed = true
 	u.releaseOutbound()
 	if u.registered && u.poller != nil && (u.poller.Backend() == transport.BackendIOUring || u.poller.Backend() == transport.BackendIOCP) {
 		if err := u.poller.Submit(transport.IORequest{Op: transport.OpClose, FD: u.fd, ChannelID: u.ID()}); err == nil {
-			return nil
+			return u.closePromise
 		}
 	}
 	if u.rw != nil {
 		err := u.rw.Close(u.fd)
+		if err != nil {
+			u.closePromise.SetFailure(err)
+			return u.closePromise
+		}
 		u.fireInactiveOnce()
-		return err
+		return u.closePromise
 	}
 	u.fireInactiveOnce()
-	return nil
+	return u.closePromise
 }
 
 func (u *Unsafe) BeginRead() error {
@@ -217,10 +289,15 @@ func (u *Unsafe) handleCompletion(ev transport.PollEvent) {
 			u.fail(ev.Err)
 			return
 		}
+		read := false
 		if ev.N > 0 && ev.Buf != nil {
 			u.ch.Pipeline().FireChannelRead(ev.Buf)
+			read = true
 		} else if ev.Buf != nil {
 			ev.Buf.Release()
+		}
+		if read {
+			u.ch.Pipeline().FireChannelReadComplete()
 		}
 		if ev.N == 0 {
 			_ = u.Close()
@@ -234,6 +311,9 @@ func (u *Unsafe) handleCompletion(ev transport.PollEvent) {
 	case transport.OpWrite:
 		if ev.Buf != nil {
 			ev.Buf.Release()
+		}
+		for _, buf := range ev.Bufs {
+			buf.Release()
 		}
 		u.writePending = false
 		if ev.Err != nil {
@@ -255,6 +335,7 @@ func (u *Unsafe) readReady() {
 	if u.rw == nil {
 		return
 	}
+	read := false
 	for !u.closed {
 		buf, err := u.ch.Allocator().Acquire(u.readBufferSize)
 		if err != nil {
@@ -270,6 +351,7 @@ func (u *Unsafe) readReady() {
 				return
 			}
 			u.ch.Pipeline().FireChannelRead(buf)
+			read = true
 		} else {
 			buf.Release()
 		}
@@ -278,10 +360,16 @@ func (u *Unsafe) readReady() {
 			return
 		}
 		if n == 0 && !again {
+			if read {
+				u.ch.Pipeline().FireChannelReadComplete()
+			}
 			_ = u.Close()
 			return
 		}
 		if again {
+			if read {
+				u.ch.Pipeline().FireChannelReadComplete()
+			}
 			return
 		}
 	}
@@ -299,21 +387,12 @@ func (u *Unsafe) flushReady() error {
 		return ErrNoOutboundSink
 	}
 	for u.outHead != nil {
-		buf := u.outHead.buf
-		n, again, err := u.rw.Write(u.fd, buf.Bytes())
+		n, again, err := u.writeReadyBatch()
 		if n > 0 {
-			if skipErr := buf.SkipBytes(n); skipErr != nil {
-				return skipErr
-			}
-			u.outboundBytes -= int64(n)
-			u.updateWritability()
+			u.completeWrite(n)
 		}
 		if err != nil {
 			return err
-		}
-		if buf.ReadableBytes() == 0 {
-			u.dequeueOutbound()
-			continue
 		}
 		if again || n == 0 {
 			return u.enableWriteInterest()
@@ -322,17 +401,36 @@ func (u *Unsafe) flushReady() error {
 	return u.disableWriteInterest()
 }
 
+func (u *Unsafe) writeReadyBatch() (int, bool, error) {
+	if vector, ok := u.rw.(FDVectorWriter); ok {
+		u.writeSlices = u.writeSlices[:0]
+		u.collectOutboundSlices(maxGatheringBuffers)
+		if len(u.writeSlices) > 1 {
+			return vector.Writev(u.fd, u.writeSlices)
+		}
+	}
+	buf := u.outHead.buf
+	return u.rw.Write(u.fd, buf.Bytes())
+}
+
 func (u *Unsafe) submitWrite() error {
 	if u.writePending || u.outHead == nil {
 		return nil
 	}
 	u.writePending = true
-	err := u.poller.Submit(transport.IORequest{
+	u.collectOutboundBatch()
+	req := transport.IORequest{
 		Op:        transport.OpWrite,
 		FD:        u.fd,
 		ChannelID: u.ID(),
-		Buf:       u.outHead.buf,
-	})
+	}
+	if len(u.writeBatch) == 1 {
+		req.Buf = u.writeBatch[0]
+	} else {
+		req.Bufs = u.writeBatch
+	}
+	req = u.prepareIORequest(req)
+	err := u.poller.Submit(req)
 	if err != nil {
 		u.writePending = false
 	}
@@ -343,22 +441,64 @@ func (u *Unsafe) completeWrite(n int) {
 	if u.outHead == nil {
 		return
 	}
-	if n > 0 {
+	for n > 0 && u.outHead != nil {
 		buf := u.outHead.buf
-		if n > buf.ReadableBytes() {
-			n = buf.ReadableBytes()
+		readable := buf.ReadableBytes()
+		if readable == 0 {
+			u.dequeueOutbound()
+			continue
 		}
-		_ = buf.SkipBytes(n)
-		u.outboundBytes -= int64(n)
-	}
-	if u.outHead.buf.ReadableBytes() == 0 {
-		u.dequeueOutbound()
+		consume := n
+		if consume > readable {
+			consume = readable
+		}
+		_ = buf.SkipBytes(consume)
+		u.outboundBytes -= int64(consume)
+		n -= consume
+		if buf.ReadableBytes() == 0 {
+			u.dequeueOutbound()
+		}
 	}
 	u.updateWritability()
+	if u.outHead == nil {
+		u.completeFlushWaiters(nil)
+		u.ch.Pipeline().FireFlushComplete()
+	}
 }
 
-func (u *Unsafe) enqueueOutbound(buf buffer.ByteBuf) {
-	e := u.acquireOutboundEntry(buf)
+func (u *Unsafe) collectOutboundBatch() {
+	u.writeBatch = u.writeBatch[:0]
+	limit := maxGatheringBuffers
+	if u.fixedBuffers && u.poller != nil && u.poller.Backend() == transport.BackendIOUring {
+		limit = 1
+	}
+	for e := u.outHead; e != nil && len(u.writeBatch) < limit; e = e.next {
+		if e.buf.ReadableBytes() == 0 {
+			continue
+		}
+		u.writeBatch = append(u.writeBatch, e.buf)
+	}
+}
+
+func (u *Unsafe) collectOutboundSlices(limit int) {
+	for e := u.outHead; e != nil && len(u.writeSlices) < limit; e = e.next {
+		if e.buf.ReadableBytes() == 0 {
+			continue
+		}
+		before := len(u.writeSlices)
+		u.writeSlices = e.buf.ReadableSlices(u.writeSlices)
+		if len(u.writeSlices) > limit {
+			u.writeSlices = u.writeSlices[:limit]
+			return
+		}
+		if len(u.writeSlices) == before {
+			return
+		}
+	}
+}
+
+func (u *Unsafe) enqueueOutbound(buf buffer.ByteBuf, promise Promise) {
+	e := u.acquireOutboundEntry(buf, promise)
 	if u.outTail == nil {
 		u.outHead = e
 		u.outTail = e
@@ -380,23 +520,28 @@ func (u *Unsafe) dequeueOutbound() {
 		u.outTail = nil
 	}
 	e.buf.Release()
+	if e.promise != nil {
+		e.promise.SetSuccess()
+	}
 	u.releaseOutboundEntry(e)
 	u.updateWritability()
 }
 
-func (u *Unsafe) acquireOutboundEntry(buf buffer.ByteBuf) *outboundEntry {
+func (u *Unsafe) acquireOutboundEntry(buf buffer.ByteBuf, promise Promise) *outboundEntry {
 	if u.outFree == nil {
-		return &outboundEntry{buf: buf}
+		return &outboundEntry{buf: buf, promise: promise}
 	}
 	e := u.outFree
 	u.outFree = e.next
 	e.buf = buf
+	e.promise = promise
 	e.next = nil
 	return e
 }
 
 func (u *Unsafe) releaseOutboundEntry(e *outboundEntry) {
 	e.buf = nil
+	e.promise = nil
 	e.next = u.outFree
 	u.outFree = e
 }
@@ -431,8 +576,19 @@ func (u *Unsafe) disableWriteInterest() error {
 
 func (u *Unsafe) releaseOutbound() {
 	for u.outHead != nil {
-		u.dequeueOutbound()
+		e := u.outHead
+		u.outHead = e.next
+		if u.outHead == nil {
+			u.outTail = nil
+		}
+		e.buf.Release()
+		if e.promise != nil {
+			e.promise.SetFailure(ErrPromiseFailed)
+		}
+		u.releaseOutboundEntry(e)
 	}
+	u.outboundBytes = 0
+	u.completeFlushWaiters(ErrPromiseFailed)
 	for u.outFree != nil {
 		e := u.outFree
 		u.outFree = e.next
@@ -445,19 +601,48 @@ func (u *Unsafe) submitRead() error {
 	if err != nil {
 		return err
 	}
-	err = u.poller.Submit(transport.IORequest{
+	req := u.prepareIORequest(transport.IORequest{
 		Op:        transport.OpRead,
 		FD:        u.fd,
 		ChannelID: u.ID(),
 		Buf:       buf,
 	})
+	err = u.poller.Submit(req)
 	buf.Release()
 	return err
+}
+
+func (u *Unsafe) prepareIORequest(req transport.IORequest) transport.IORequest {
+	if !u.fixedBuffers || u.poller == nil || u.poller.Backend() != transport.BackendIOUring || req.Buf == nil {
+		return req
+	}
+	idx, ok := buffer.FixedBufferIndex(req.Buf)
+	if !ok {
+		return req
+	}
+	req.UseFixedBuffer = true
+	req.FixedBufferIndex = idx
+	return req
 }
 
 func (u *Unsafe) fail(err error) {
 	u.ch.Pipeline().FireExceptionCaught(err)
 	_ = u.Close()
+}
+
+func (u *Unsafe) completeFlushWaiters(err error) {
+	if len(u.flushWaiters) == 0 {
+		return
+	}
+	waiters := u.flushWaiters
+	u.flushWaiters = nil
+	for _, waiter := range waiters {
+		if err != nil {
+			waiter.SetFailure(err)
+		} else {
+			waiter.SetSuccess()
+		}
+	}
 }
 
 func (u *Unsafe) finishClose() {
@@ -477,4 +662,7 @@ func (u *Unsafe) fireInactiveOnce() {
 		u.closeHook(u)
 	}
 	u.ch.Pipeline().FireChannelInactive()
+	if u.closePromise != nil {
+		u.closePromise.SetSuccess()
+	}
 }

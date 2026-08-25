@@ -10,8 +10,11 @@ param(
     [string]$Protocol = "both",
     [switch]$ReusePort,
     [switch]$Mmap,
+    [int]$MmapBlockSize = 4096,
+    [int]$MmapBlocks = 4096,
     [switch]$IOUringSQPoll,
     [switch]$IOUringMultishotAccept,
+    [switch]$IOUringFixedBuffers,
     [int]$IOUringEntries = 0
 )
 
@@ -58,13 +61,16 @@ try {
         $args += "-reuseport"
     }
     if ($Mmap) {
-        $args += "-mmap"
+        $args += @("-mmap", "-mmap-block-size", "$MmapBlockSize", "-mmap-blocks", "$MmapBlocks")
     }
     if ($IOUringSQPoll) {
         $args += "-iouring-sqpoll"
     }
     if ($IOUringMultishotAccept) {
         $args += "-iouring-multishot-accept"
+    }
+    if ($IOUringFixedBuffers) {
+        $args += "-iouring-fixed-buffers"
     }
     if ($IOUringEntries -gt 0) {
         $args += @("-iouring-entries", "$IOUringEntries")

@@ -102,6 +102,8 @@ func (a *acceptor) acceptChild(fd transport.FDRef) {
 		ReadWriter:     newNativeReadWriter(),
 		CloseHook:      a.closeChildHook(worker),
 		ReadBufferSize: a.server.options.readBufferSize,
+		FixedBuffers:   a.server.options.iouringFixed,
+		Timer:          worker.Timer(),
 	})
 	if err := a.server.childInitializer(ch); err != nil {
 		_ = unsafeCh.Close()

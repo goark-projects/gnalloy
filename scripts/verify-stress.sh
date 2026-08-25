@@ -12,8 +12,11 @@ SCENARIO="${SCENARIO:-mixed}"
 PROTOCOL="${PROTOCOL:-both}"
 REUSEPORT="${REUSEPORT:-0}"
 MMAP="${MMAP:-0}"
+MMAP_BLOCK_SIZE="${MMAP_BLOCK_SIZE:-4096}"
+MMAP_BLOCKS="${MMAP_BLOCKS:-4096}"
 IOURING_SQPOLL="${IOURING_SQPOLL:-0}"
 IOURING_MULTISHOT_ACCEPT="${IOURING_MULTISHOT_ACCEPT:-0}"
+IOURING_FIXED_BUFFERS="${IOURING_FIXED_BUFFERS:-0}"
 IOURING_ENTRIES="${IOURING_ENTRIES:-0}"
 
 REPO="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -34,13 +37,16 @@ if [ "${REUSEPORT}" = "1" ]; then
     args="${args} -reuseport"
 fi
 if [ "${MMAP}" = "1" ]; then
-    args="${args} -mmap"
+    args="${args} -mmap -mmap-block-size ${MMAP_BLOCK_SIZE} -mmap-blocks ${MMAP_BLOCKS}"
 fi
 if [ "${IOURING_SQPOLL}" = "1" ]; then
     args="${args} -iouring-sqpoll"
 fi
 if [ "${IOURING_MULTISHOT_ACCEPT}" = "1" ]; then
     args="${args} -iouring-multishot-accept"
+fi
+if [ "${IOURING_FIXED_BUFFERS}" = "1" ]; then
+    args="${args} -iouring-fixed-buffers"
 fi
 if [ "${IOURING_ENTRIES}" != "0" ]; then
     args="${args} -iouring-entries ${IOURING_ENTRIES}"

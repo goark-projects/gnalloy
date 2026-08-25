@@ -8,6 +8,9 @@ WORKERS="${WORKERS:-2}"
 COUNT="${COUNT:-3}"
 REUSEPORT="${REUSEPORT:-0}"
 MMAP="${MMAP:-0}"
+MMAP_BLOCK_SIZE="${MMAP_BLOCK_SIZE:-4096}"
+MMAP_BLOCKS="${MMAP_BLOCKS:-4096}"
+IOURING_FIXED_BUFFERS="${IOURING_FIXED_BUFFERS:-0}"
 
 REPO="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/gnalloy-smoke.XXXXXX")"
@@ -28,7 +31,10 @@ server_args() {
         printf '%s\n' "-reuseport"
     fi
     if [ "${MMAP}" = "1" ]; then
-        printf '%s\n' "-mmap"
+        printf '%s\n' "-mmap" "-mmap-block-size" "${MMAP_BLOCK_SIZE}" "-mmap-blocks" "${MMAP_BLOCKS}"
+    fi
+    if [ "${IOURING_FIXED_BUFFERS}" = "1" ]; then
+        printf '%s\n' "-iouring-fixed-buffers"
     fi
 }
 

@@ -49,6 +49,25 @@ const (
 	OpWakeup
 )
 
+type SocketFamily uint8
+
+const (
+	SocketFamilyIPv4 SocketFamily = iota + 1
+	SocketFamilyIPv6
+)
+
+// SocketAddress 是 completion poller 使用的无分配 socket 地址。
+type SocketAddress struct {
+	Family SocketFamily
+	IP     [16]byte
+	Port   int
+	ZoneID uint32
+}
+
+func (a SocketAddress) Valid() bool {
+	return a.Family == SocketFamilyIPv4 || a.Family == SocketFamilyIPv6
+}
+
 type ReadyMask uint32
 
 const (
@@ -78,6 +97,8 @@ type Event struct {
 	ChannelID  ChannelID
 	OpID       OpID
 	Buf        buffer.ByteBuf
+	Bufs       []buffer.ByteBuf
+	Addr       SocketAddress
 	N          int
 	Err        error
 	More       bool
@@ -90,7 +111,10 @@ type IORequest struct {
 	ChannelID  ChannelID
 	OpID       OpID
 	Buf        buffer.ByteBuf
+	Bufs       []buffer.ByteBuf
 	Ready      ReadyMask
+	Addr       SocketAddress
+	Datagram   bool
 
 	// UseFixedBuffer 仅对支持 registered buffers 的 completion 后端生效。
 	UseFixedBuffer   bool
@@ -109,6 +133,12 @@ type Poller interface {
 	Poll(dst []Event, timeoutMillis int) (int, error)
 	Wakeup() error
 	Close() error
+}
+
+// BufferRegistrar 是支持 registered buffers 的 completion poller 可选能力。
+type BufferRegistrar interface {
+	RegisterBuffers(buffers [][]byte) error
+	UnregisterBuffers() error
 }
 
 type Config struct {

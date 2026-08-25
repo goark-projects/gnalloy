@@ -50,6 +50,7 @@ func (p *fakeReadyPoller) Close() error {
 
 type fakeCompletionPoller struct {
 	submitted []transport.IORequest
+	backend   transport.BackendKind
 }
 
 func (p *fakeCompletionPoller) Model() transport.PollerModel {
@@ -57,6 +58,9 @@ func (p *fakeCompletionPoller) Model() transport.PollerModel {
 }
 
 func (p *fakeCompletionPoller) Backend() transport.BackendKind {
+	if p.backend != 0 {
+		return p.backend
+	}
 	return transport.BackendIOCP
 }
 
@@ -75,6 +79,9 @@ func (p *fakeCompletionPoller) Deregister(transport.FDRef) error {
 func (p *fakeCompletionPoller) Submit(req transport.IORequest) error {
 	if req.Buf != nil {
 		req.Buf.Retain()
+	}
+	for _, buf := range req.Bufs {
+		buf.Retain()
 	}
 	p.submitted = append(p.submitted, req)
 	return nil
@@ -117,6 +124,46 @@ func (rw *partialWriteRW) Close(transport.FDRef) error {
 	return nil
 }
 
+type vectorWriteRW struct {
+	n      int
+	again  bool
+	writes [][]string
+	writev int
+	scalar int
+}
+
+func (rw *vectorWriteRW) Read(transport.FDRef, []byte) (int, bool, error) {
+	return 0, true, nil
+}
+
+func (rw *vectorWriteRW) Write(_ transport.FDRef, src []byte) (int, bool, error) {
+	rw.scalar++
+	rw.writes = append(rw.writes, []string{string(src)})
+	if rw.n > 0 {
+		return rw.n, rw.again, nil
+	}
+	return len(src), rw.again, nil
+}
+
+func (rw *vectorWriteRW) Writev(_ transport.FDRef, src [][]byte) (int, bool, error) {
+	rw.writev++
+	parts := make([]string, 0, len(src))
+	total := 0
+	for _, part := range src {
+		parts = append(parts, string(part))
+		total += len(part)
+	}
+	rw.writes = append(rw.writes, parts)
+	if rw.n > 0 {
+		return rw.n, rw.again, nil
+	}
+	return total, rw.again, nil
+}
+
+func (rw *vectorWriteRW) Close(transport.FDRef) error {
+	return nil
+}
+
 type writabilityRecorder struct {
 	changes int
 }
@@ -136,6 +183,15 @@ func (r *inactiveRecorder) ChannelInactive(*HandlerContext) {
 type releaseReadHandler struct {
 	reads      int
 	closeAfter bool
+}
+
+type fixedTestBuf struct {
+	buffer.ByteBuf
+	idx uint16
+}
+
+func (b fixedTestBuf) FixedBufferIndex() (uint16, bool) {
+	return b.idx, true
 }
 
 func (h *releaseReadHandler) ChannelRead(ctx *HandlerContext, msg any) {
@@ -194,6 +250,74 @@ func TestUnsafeOutboundPartialWrite(t *testing.T) {
 	}
 	if recorder.changes != 2 {
 		t.Fatalf("writability changes=%d, want 2", recorder.changes)
+	}
+}
+
+func TestUnsafeReadinessUsesGatheringWrite(t *testing.T) {
+	rw := &vectorWriteRW{}
+	ch, _ := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     &fakeReadyPoller{},
+		ReadWriter: rw,
+	})
+
+	a := buffer.NewHeapBuffer(4)
+	_, _ = a.WriteBytes([]byte("ab"))
+	b := buffer.NewHeapBuffer(4)
+	_, _ = b.WriteBytes([]byte("cd"))
+	if err := ch.Write(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.WriteAndFlush(b); err != nil {
+		t.Fatal(err)
+	}
+	if rw.writev != 1 || rw.scalar != 0 {
+		t.Fatalf("writev=%d scalar=%d", rw.writev, rw.scalar)
+	}
+	if len(rw.writes) != 1 || len(rw.writes[0]) != 2 || rw.writes[0][0] != "ab" || rw.writes[0][1] != "cd" {
+		t.Fatalf("writes=%v", rw.writes)
+	}
+	if a.RefCnt() != 0 || b.RefCnt() != 0 {
+		t.Fatalf("refs=%d,%d", a.RefCnt(), b.RefCnt())
+	}
+}
+
+func TestUnsafeCompletionSubmitsGatheringWrite(t *testing.T) {
+	poller := &fakeCompletionPoller{}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:        1,
+		FD:        transport.FDRef{FD: 1},
+		Allocator: buffer.NewHeapAllocator(),
+		Poller:    poller,
+	})
+
+	a := buffer.NewHeapBuffer(4)
+	_, _ = a.WriteBytes([]byte("ab"))
+	b := buffer.NewHeapBuffer(4)
+	_, _ = b.WriteBytes([]byte("cd"))
+	if err := ch.Write(a); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.WriteAndFlush(b); err != nil {
+		t.Fatal(err)
+	}
+	if len(poller.submitted) != 1 || len(poller.submitted[0].Bufs) != 2 {
+		t.Fatalf("submitted=%+v", poller.submitted)
+	}
+	if a.RefCnt() != 2 || b.RefCnt() != 2 {
+		t.Fatalf("pending refs=%d,%d, want 2,2", a.RefCnt(), b.RefCnt())
+	}
+	unsafeCh.HandleEvent(transport.PollEvent{
+		Model: transport.PollerCompletion,
+		Op:    transport.OpWrite,
+		FD:    transport.FDRef{FD: 1},
+		Bufs:  poller.submitted[0].Bufs,
+		N:     4,
+	})
+	if a.RefCnt() != 0 || b.RefCnt() != 0 {
+		t.Fatalf("refs=%d,%d, want 0,0", a.RefCnt(), b.RefCnt())
 	}
 }
 
@@ -296,6 +420,32 @@ func TestUnsafeCompletionWriteKeepsPendingBufferAliveUntilEvent(t *testing.T) {
 	})
 	if buf.RefCnt() != 0 {
 		t.Fatalf("write buf ref=%d, want 0", buf.RefCnt())
+	}
+}
+
+func TestUnsafeCompletionWriteUsesFixedBufferIndexForIOUring(t *testing.T) {
+	poller := &fakeCompletionPoller{backend: transport.BackendIOUring}
+	ch, _ := NewUnsafeChannel(UnsafeConfig{
+		ID:           1,
+		FD:           transport.FDRef{FD: 1},
+		Allocator:    buffer.NewHeapAllocator(),
+		Poller:       poller,
+		FixedBuffers: true,
+	})
+
+	inner := buffer.NewHeapBuffer(4)
+	if _, err := inner.WriteBytes([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.WriteAndFlush(fixedTestBuf{ByteBuf: inner, idx: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if len(poller.submitted) != 1 {
+		t.Fatalf("submitted=%d, want 1", len(poller.submitted))
+	}
+	req := poller.submitted[0]
+	if !req.UseFixedBuffer || req.FixedBufferIndex != 7 {
+		t.Fatalf("fixed request=%+v, want fixed buffer index 7", req)
 	}
 }
 

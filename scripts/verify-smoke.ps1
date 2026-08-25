@@ -5,7 +5,10 @@ param(
     [int]$Workers = 2,
     [int]$Count = 3,
     [switch]$ReusePort,
-    [switch]$Mmap
+    [switch]$Mmap,
+    [int]$MmapBlockSize = 4096,
+    [int]$MmapBlocks = 4096,
+    [switch]$IOUringFixedBuffers
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,7 +68,10 @@ try {
         $common += "-reuseport"
     }
     if ($Mmap) {
-        $common += "-mmap"
+        $common += @("-mmap", "-mmap-block-size", "$MmapBlockSize", "-mmap-blocks", "$MmapBlocks")
+    }
+    if ($IOUringFixedBuffers) {
+        $common += "-iouring-fixed-buffers"
     }
 
     Invoke-SmokeServer $echoExe `

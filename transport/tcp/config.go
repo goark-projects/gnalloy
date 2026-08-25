@@ -21,6 +21,10 @@ type Config struct {
 	ReadBufferSize int
 
 	AllocatorFactory AllocatorFactory
+
+	// IOUringFixedBuffers 将 allocator 暴露的稳定内存块注册到 io_uring。
+	// 该开关仅适用于 Linux io_uring + 支持 FixedBufferProvider 的 allocator。
+	IOUringFixedBuffers bool
 }
 
 func DefaultConfig() Config {
@@ -55,6 +59,7 @@ type socketOptions struct {
 	reusePort      bool
 	noDelay        bool
 	readBufferSize int
+	iouringFixed   bool
 }
 
 func (c Config) socketOptions() socketOptions {
@@ -64,5 +69,6 @@ func (c Config) socketOptions() socketOptions {
 		reusePort:      c.ReusePort,
 		noDelay:        c.NoDelay,
 		readBufferSize: c.ReadBufferSize,
+		iouringFixed:   c.IOUringFixedBuffers,
 	}
 }

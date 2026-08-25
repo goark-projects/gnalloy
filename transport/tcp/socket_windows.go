@@ -52,6 +52,25 @@ func (nativeReadWriter) Write(fd transport.FDRef, src []byte) (int, bool, error)
 	return int(sent), false, err
 }
 
+func (nativeReadWriter) Writev(fd transport.FDRef, src [][]byte) (int, bool, error) {
+	wsabufs := make([]windows.WSABuf, 0, len(src))
+	for _, part := range src {
+		if len(part) == 0 {
+			continue
+		}
+		wsabufs = append(wsabufs, windows.WSABuf{Len: uint32(len(part)), Buf: &part[0]})
+	}
+	if len(wsabufs) == 0 {
+		return 0, false, nil
+	}
+	var sent uint32
+	err := windows.WSASend(windows.Handle(uintptr(fd.FD)), &wsabufs[0], uint32(len(wsabufs)), &sent, 0, nil, nil)
+	if isAgain(err) {
+		return int(sent), true, nil
+	}
+	return int(sent), false, err
+}
+
 func (nativeReadWriter) Close(fd transport.FDRef) error {
 	return closeFD(fd)
 }

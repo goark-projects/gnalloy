@@ -7,4 +7,6 @@ var (
 	ErrHandlerNotFound  = errors.New("gnalloy/channel: handler not found")
 	ErrNoOutboundSink   = errors.New("gnalloy/channel: no outbound sink")
 	ErrInvalidMessage   = errors.New("gnalloy/channel: invalid outbound message")
+	ErrNoTimer          = errors.New("gnalloy/channel: no timer scheduler")
+	ErrPromiseFailed    = errors.New("gnalloy/channel: promise failed")
 )

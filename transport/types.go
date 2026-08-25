@@ -21,9 +21,12 @@ type PollerModel = poller.Model
 type IOOp = poller.IOOp
 type ReadyMask = poller.ReadyMask
 type BackendKind = poller.BackendKind
+type SocketFamily = poller.SocketFamily
+type SocketAddress = poller.SocketAddress
 type PollEvent = poller.Event
 type IORequest = poller.IORequest
 type Poller = poller.Poller
+type BufferRegistrar = poller.BufferRegistrar
 type Config = poller.Config
 
 const (
@@ -40,6 +43,9 @@ const (
 	ReadyWrite  = poller.ReadyWrite
 	ReadyHangup = poller.ReadyHangup
 	ReadyError  = poller.ReadyError
+
+	SocketFamilyIPv4 = poller.SocketFamilyIPv4
+	SocketFamilyIPv6 = poller.SocketFamilyIPv6
 
 	BackendMemory  = poller.BackendMemory
 	BackendStd     = poller.BackendStd

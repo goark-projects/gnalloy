@@ -36,6 +36,7 @@ func main() {
 		iouringSQPollCPU       int
 		iouringSQPollIdle      uint
 		iouringMultishotAccept bool
+		iouringFixedBuffers    bool
 	)
 	flag.StringVar(&addr, "addr", "127.0.0.1:0", "listen address")
 	flag.StringVar(&backend, "backend", "default", "poller backend")
@@ -60,6 +61,7 @@ func main() {
 	flag.IntVar(&iouringSQPollCPU, "iouring-sqpoll-cpu", 0, "io_uring SQPOLL CPU id")
 	flag.UintVar(&iouringSQPollIdle, "iouring-sqpoll-idle-ms", 0, "io_uring SQPOLL idle timeout in milliseconds")
 	flag.BoolVar(&iouringMultishotAccept, "iouring-multishot-accept", false, "enable io_uring multishot accept")
+	flag.BoolVar(&iouringFixedBuffers, "iouring-fixed-buffers", false, "register mmap allocator blocks as io_uring fixed buffers")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -88,6 +90,7 @@ func main() {
 		IOUringSQPollCPU:        iouringSQPollCPU,
 		IOUringSQPollIdleMillis: iouringSQPollIdle,
 		IOUringMultishotAccept:  iouringMultishotAccept,
+		IOUringFixedBuffers:     iouringFixedBuffers,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

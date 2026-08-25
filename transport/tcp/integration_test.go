@@ -3,6 +3,7 @@ package tcp_test
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"reflect"
@@ -458,6 +459,39 @@ func TestMmapAllocatorFactoryFallback(t *testing.T) {
 		t.Fatalf("buf=%q, want ok", buf.Bytes())
 	}
 	buf.Release()
+}
+
+func TestTCPServerRejectsFixedBuffersWithoutIOUringMmap(t *testing.T) {
+	skipUnsupportedTCP(t)
+	boss, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{
+		Size:         1,
+		PollerConfig: transport.Config{Backend: transport.DefaultBackend()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shutdownGroup(t, boss)
+	workers, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{
+		Size:         1,
+		PollerConfig: transport.Config{Backend: transport.DefaultBackend()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shutdownGroup(t, workers)
+
+	cfg := tcp.DefaultConfig()
+	cfg.IOUringFixedBuffers = true
+	_, err = bootstrap.NewServerBootstrap().
+		Group(boss, workers).
+		Transport(tcp.NewTransport(cfg)).
+		ChildInitializer(func(ch channel.Channel) error {
+			return ch.Pipeline().AddLast("discard", discardHandler{})
+		}).
+		BindContext(context.Background(), "127.0.0.1:0")
+	if !errors.Is(err, tcp.ErrUnsupportedFixedBuffers) {
+		t.Fatalf("bind err=%v, want %v", err, tcp.ErrUnsupportedFixedBuffers)
+	}
 }
 
 func startTCPServer(t *testing.T, initializer bootstrap.ChildInitializer) bootstrap.Server {

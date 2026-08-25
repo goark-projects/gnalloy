@@ -39,7 +39,7 @@ try {
     if (-not $SkipBench) {
         Write-Host "== benchmarks: buffer/channel/codec/queue/timer/transport/tcp"
         foreach ($package in @("./buffer", "./channel", "./codec", "./queue", "./timer", "./transport/tcp")) {
-            & go @("test", "-run", "^$", "-bench", ".", $package)
+            & go @("test", "-run", "^$", "-bench", ".", "-benchmem", $package)
         }
     }
 

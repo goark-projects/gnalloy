@@ -5,7 +5,10 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,20 +72,37 @@ func BenchmarkLengthFieldTCPRoundTrip(b *testing.B) {
 
 func startTCPBenchmarkServer(b *testing.B, cfg tcp.Config, initializer bootstrap.ChildInitializer) bootstrap.Server {
 	b.Helper()
+	backend := benchmarkBackend(b)
+	pollerConfig := transport.Config{
+		Backend:          backend,
+		Entries:          uint32(benchmarkEnvInt("GNALLOY_BENCH_IOURING_ENTRIES", 0)),
+		SQPoll:           benchmarkEnvBool("GNALLOY_BENCH_IOURING_SQPOLL"),
+		MultishotAccept:  benchmarkEnvBool("GNALLOY_BENCH_IOURING_MULTISHOT_ACCEPT"),
+		SQPollIdleMillis: uint32(benchmarkEnvInt("GNALLOY_BENCH_IOURING_SQPOLL_IDLE_MS", 0)),
+	}
+	if benchmarkEnvBool("GNALLOY_BENCH_MMAP") {
+		cfg.AllocatorFactory = tcp.NewMmapAllocatorFactory(buffer.MmapAllocatorConfig{
+			BlockSize: benchmarkEnvInt("GNALLOY_BENCH_MMAP_BLOCK_SIZE", 4096),
+			Blocks:    benchmarkEnvInt("GNALLOY_BENCH_MMAP_BLOCKS", 4096),
+		}, true)
+	}
+	cfg.IOUringFixedBuffers = benchmarkEnvBool("GNALLOY_BENCH_IOURING_FIXED_BUFFERS")
+	workerCount := benchmarkEnvInt("GNALLOY_BENCH_WORKERS", runtime.GOMAXPROCS(0))
+
 	boss, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{
 		Size:         1,
-		PollerConfig: transport.Config{Backend: transport.DefaultBackend()},
+		PollerConfig: pollerConfig,
 	})
 	if err != nil {
-		b.Fatal(err)
+		b.Skip(err)
 	}
 	workers, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{
-		Size:         runtime.GOMAXPROCS(0),
-		PollerConfig: transport.Config{Backend: transport.DefaultBackend()},
+		Size:         workerCount,
+		PollerConfig: pollerConfig,
 	})
 	if err != nil {
 		_ = boss.Close()
-		b.Fatal(err)
+		b.Skip(err)
 	}
 
 	server, err := bootstrap.NewServerBootstrap().
@@ -102,6 +122,46 @@ func startTCPBenchmarkServer(b *testing.B, cfg tcp.Config, initializer bootstrap
 		shutdownBenchmarkGroup(b, boss)
 	})
 	return server
+}
+
+func benchmarkBackend(b *testing.B) transport.BackendKind {
+	b.Helper()
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GNALLOY_BENCH_BACKEND"))) {
+	case "", "default":
+		return transport.DefaultBackend()
+	case "epoll":
+		return transport.BackendEpoll
+	case "iouring", "io_uring":
+		return transport.BackendIOUring
+	case "kqueue":
+		return transport.BackendKqueue
+	case "iocp":
+		return transport.BackendIOCP
+	default:
+		b.Fatalf("unsupported GNALLOY_BENCH_BACKEND=%q", os.Getenv("GNALLOY_BENCH_BACKEND"))
+		return 0
+	}
+}
+
+func benchmarkEnvBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func benchmarkEnvInt(name string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }
 
 func dialTCPBenchmark(b *testing.B, address string) net.Conn {

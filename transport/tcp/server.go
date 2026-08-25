@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -56,11 +57,21 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 		workerGroup:       cfg.WorkerGroup,
 		childInitializer:  cfg.ChildInitializer,
 		allocatorFactory:  t.cfg.AllocatorFactory,
-		allocators:        make(map[transport.EventLoopID]buffer.Allocator, cfg.WorkerGroup.Size()),
+		allocators:        make(map[transport.EventLoopID]allocatorState, cfg.WorkerGroup.Size()),
 		active:            make(map[transport.ChannelID]activeChild, 1024),
 		transportIDSource: t,
 		acceptors:         make([]*acceptor, 0, len(listeners)),
 		bossLoops:         make([]*transport.EventLoop, 0, len(listeners)),
+	}
+
+	if opts.iouringFixed {
+		for _, worker := range cfg.WorkerGroup.Loops() {
+			if _, err := server.allocatorFor(worker); err != nil {
+				closeListenSockets(listeners)
+				_ = server.closeAllocators()
+				return nil, err
+			}
+		}
 	}
 
 	for _, ls := range listeners {
@@ -124,7 +135,7 @@ type Server struct {
 	acceptors []*acceptor
 
 	allocMu    sync.Mutex
-	allocators map[transport.EventLoopID]buffer.Allocator
+	allocators map[transport.EventLoopID]allocatorState
 
 	activeMu sync.Mutex
 	active   map[transport.ChannelID]activeChild
@@ -137,6 +148,12 @@ type Server struct {
 type activeChild struct {
 	loop *transport.EventLoop
 	ch   *channel.Unsafe
+}
+
+type allocatorState struct {
+	loop         *transport.EventLoop
+	alloc        buffer.Allocator
+	fixedBuffers bool
 }
 
 func (s *Server) Addr() string {
@@ -206,11 +223,11 @@ func (s *Server) AllocatorStats() []buffer.AllocatorStats {
 	sort.Slice(ids, func(i int, j int) bool { return ids[i] < ids[j] })
 	stats := make([]buffer.AllocatorStats, 0, len(ids))
 	for _, id := range ids {
-		alloc := s.allocators[id]
-		if alloc == nil {
+		state := s.allocators[id]
+		if state.alloc == nil {
 			continue
 		}
-		if observed, ok := alloc.(buffer.StatAllocator); ok {
+		if observed, ok := state.alloc.(buffer.StatAllocator); ok {
 			stats = append(stats, observed.Stats())
 			continue
 		}
@@ -303,8 +320,8 @@ func (s *Server) allocatorFor(loop *transport.EventLoop) (buffer.Allocator, erro
 	if s.closed.Load() || s.allocators == nil {
 		return nil, ErrServerClosed
 	}
-	if alloc := s.allocators[loop.ID()]; alloc != nil {
-		return alloc, nil
+	if state := s.allocators[loop.ID()]; state.alloc != nil {
+		return state.alloc, nil
 	}
 	var (
 		alloc buffer.Allocator
@@ -318,29 +335,79 @@ func (s *Server) allocatorFor(loop *transport.EventLoop) (buffer.Allocator, erro
 	if err != nil {
 		return nil, err
 	}
-	s.allocators[loop.ID()] = alloc
+	state := allocatorState{loop: loop, alloc: alloc}
+	if s.options.iouringFixed {
+		if err := s.registerFixedBuffers(loop, alloc); err != nil {
+			_ = alloc.Close()
+			return nil, err
+		}
+		state.fixedBuffers = true
+	}
+	s.allocators[loop.ID()] = state
 	return alloc, nil
+}
+
+func (s *Server) registerFixedBuffers(loop *transport.EventLoop, alloc buffer.Allocator) error {
+	if loop == nil || loop.Poller().Backend() != transport.BackendIOUring {
+		return ErrUnsupportedFixedBuffers
+	}
+	provider, ok := alloc.(buffer.FixedBufferProvider)
+	if !ok {
+		return ErrUnsupportedFixedBuffers
+	}
+	buffers := provider.FixedBuffers()
+	if len(buffers) == 0 {
+		return ErrUnsupportedFixedBuffers
+	}
+	registrar, ok := loop.Poller().(transport.BufferRegistrar)
+	if !ok {
+		return ErrUnsupportedFixedBuffers
+	}
+	return loop.Invoke(context.Background(), func() error {
+		return registrar.RegisterBuffers(buffers)
+	})
 }
 
 func (s *Server) closeAllocators() error {
 	s.allocMu.Lock()
-	allocators := make([]buffer.Allocator, 0, len(s.allocators))
-	for id, alloc := range s.allocators {
+	states := make([]allocatorState, 0, len(s.allocators))
+	for id, state := range s.allocators {
 		delete(s.allocators, id)
-		if alloc != nil {
-			allocators = append(allocators, alloc)
+		if state.alloc != nil {
+			states = append(states, state)
 		}
 	}
 	s.allocators = nil
 	s.allocMu.Unlock()
 
 	var first error
-	for _, alloc := range allocators {
-		if err := alloc.Close(); err != nil && first == nil {
+	for _, state := range states {
+		if err := s.unregisterFixedBuffers(state); err != nil && first == nil {
+			first = err
+			continue
+		}
+		if err := state.alloc.Close(); err != nil && first == nil {
 			first = err
 		}
 	}
 	return first
+}
+
+func (s *Server) unregisterFixedBuffers(state allocatorState) error {
+	if !state.fixedBuffers || state.loop == nil {
+		return nil
+	}
+	registrar, ok := state.loop.Poller().(transport.BufferRegistrar)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), closeControlTimeout)
+	defer cancel()
+	err := state.loop.Invoke(ctx, registrar.UnregisterBuffers)
+	if errors.Is(err, transport.ErrClosedPoller) {
+		return nil
+	}
+	return err
 }
 
 func closeListenSockets(listeners []listenSocket) {

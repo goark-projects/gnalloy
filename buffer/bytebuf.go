@@ -26,6 +26,7 @@ type ByteBuf interface {
 	ReadUnsigned(offset int, length int, order ByteOrder) (uint64, error)
 	WriteBytes(src []byte) (int, error)
 	Bytes() []byte
+	ReadableSlices(dst [][]byte) [][]byte
 	WritableBytesView() []byte
 	AdvanceWriter(n int) error
 	SkipBytes(n int) error
@@ -47,6 +48,10 @@ const (
 
 type releaser interface {
 	releaseDirect(buf *DirectByteBuf)
+}
+
+type fixedBufferOwner interface {
+	fixedBufferIndex(buf *DirectByteBuf) (uint16, bool)
 }
 
 // DirectByteBuf 是连续内存 ByteBuf，底层可来自堆、slab 或 mmap arena。
@@ -227,6 +232,13 @@ func (b *DirectByteBuf) Bytes() []byte {
 	return b.data[b.readerIndex:b.writerIndex]
 }
 
+func (b *DirectByteBuf) ReadableSlices(dst [][]byte) [][]byte {
+	if b.refs.Load() <= 0 || b.readerIndex == b.writerIndex {
+		return dst
+	}
+	return append(dst, b.data[b.readerIndex:b.writerIndex])
+}
+
 func (b *DirectByteBuf) WritableBytesView() []byte {
 	if b.refs.Load() <= 0 {
 		return nil
@@ -308,6 +320,17 @@ func (b *DirectByteBuf) Release() bool {
 
 func (b *DirectByteBuf) RefCnt() int32 {
 	return b.refs.Load()
+}
+
+func (b *DirectByteBuf) FixedBufferIndex() (uint16, bool) {
+	if b.refs.Load() <= 0 {
+		return 0, false
+	}
+	owner, ok := b.owner.(fixedBufferOwner)
+	if !ok {
+		return 0, false
+	}
+	return owner.fixedBufferIndex(b)
 }
 
 func readUnsignedFrom(src []byte, order ByteOrder) uint64 {

@@ -34,6 +34,14 @@ func (nativeReadWriter) Write(fd transport.FDRef, src []byte) (int, bool, error)
 	return n, false, err
 }
 
+func (nativeReadWriter) Writev(fd transport.FDRef, src [][]byte) (int, bool, error) {
+	n, err := unix.Writev(fd.FD, src)
+	if isAgain(err) {
+		return n, true, nil
+	}
+	return n, false, err
+}
+
 func (nativeReadWriter) Close(fd transport.FDRef) error {
 	return closeFD(fd)
 }

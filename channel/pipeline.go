@@ -41,6 +41,10 @@ func (p *Pipeline) AddLast(name string, h Handler) error {
 	ctx.next = p.tail
 	p.tail.prev = ctx
 	p.names[name] = ctx
+	if err := p.callHandlerAdded(ctx); err != nil {
+		_ = p.unlink(ctx)
+		return err
+	}
 	return nil
 }
 
@@ -58,6 +62,10 @@ func (p *Pipeline) AddFirst(name string, h Handler) error {
 	ctx.next = next
 	next.prev = ctx
 	p.names[name] = ctx
+	if err := p.callHandlerAdded(ctx); err != nil {
+		_ = p.unlink(ctx)
+		return err
+	}
 	return nil
 }
 
@@ -66,12 +74,7 @@ func (p *Pipeline) Remove(name string) error {
 	if !ok {
 		return ErrHandlerNotFound
 	}
-	ctx.prev.next = ctx.next
-	ctx.next.prev = ctx.prev
-	ctx.prev = nil
-	ctx.next = nil
-	delete(p.names, name)
-	return nil
+	return p.unlink(ctx)
 }
 
 func (p *Pipeline) Context(name string) (*HandlerContext, bool) {
@@ -83,8 +86,20 @@ func (p *Pipeline) FireChannelActive() {
 	p.head.FireChannelActive()
 }
 
+func (p *Pipeline) FireChannelRegistered() {
+	p.head.FireChannelRegistered()
+}
+
+func (p *Pipeline) FireChannelUnregistered() {
+	p.head.FireChannelUnregistered()
+}
+
 func (p *Pipeline) FireChannelRead(msg any) {
 	p.head.FireChannelRead(msg)
+}
+
+func (p *Pipeline) FireChannelReadComplete() {
+	p.head.FireChannelReadComplete()
 }
 
 func (p *Pipeline) FireChannelInactive() {
@@ -95,20 +110,73 @@ func (p *Pipeline) FireChannelWritabilityChanged() {
 	p.head.FireChannelWritabilityChanged()
 }
 
+func (p *Pipeline) FireUserEventTriggered(event any) {
+	p.head.FireUserEventTriggered(event)
+}
+
 func (p *Pipeline) FireExceptionCaught(err error) {
 	p.head.FireExceptionCaught(err)
+}
+
+func (p *Pipeline) FireFlushComplete() {
+	p.head.FireFlushComplete()
+}
+
+func (p *Pipeline) WriteFuture(msg any) Future {
+	return p.tail.WriteFuture(msg)
 }
 
 func (p *Pipeline) Write(msg any) error {
 	return p.tail.Write(msg)
 }
 
+func (p *Pipeline) FlushFuture() Future {
+	return p.tail.FlushFuture()
+}
+
 func (p *Pipeline) Flush() error {
 	return p.tail.Flush()
 }
 
+func (p *Pipeline) WriteAndFlushFuture(msg any) Future {
+	writeFuture := p.WriteFuture(msg)
+	if writeFuture.Err() != nil {
+		return writeFuture
+	}
+	flushFuture := p.FlushFuture()
+	return flushFuture
+}
+
+func (p *Pipeline) CloseFuture() Future {
+	return p.tail.CloseFuture()
+}
+
 func (p *Pipeline) Close() error {
 	return p.tail.Close()
+}
+
+func (p *Pipeline) callHandlerAdded(ctx *HandlerContext) error {
+	if h, ok := ctx.handler.(HandlerAddedHandler); ok {
+		return h.HandlerAdded(ctx)
+	}
+	return nil
+}
+
+func (p *Pipeline) unlink(ctx *HandlerContext) error {
+	if ctx == nil || ctx == p.head || ctx == p.tail {
+		return ErrHandlerNotFound
+	}
+	if h, ok := ctx.handler.(HandlerRemovedHandler); ok {
+		if err := h.HandlerRemoved(ctx); err != nil {
+			return err
+		}
+	}
+	ctx.prev.next = ctx.next
+	ctx.next.prev = ctx.prev
+	ctx.prev = nil
+	ctx.next = nil
+	delete(p.names, ctx.name)
+	return nil
 }
 
 type headHandler struct{}
@@ -118,6 +186,10 @@ type tailHandler struct{}
 func (tailHandler) ChannelRead(_ *HandlerContext, msg any) {
 	if buf, ok := msg.(buffer.ByteBuf); ok {
 		buf.Release()
+		return
+	}
+	if releasable, ok := msg.(interface{ Release() }); ok {
+		releasable.Release()
 	}
 }
 

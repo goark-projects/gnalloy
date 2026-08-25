@@ -1,0 +1,146 @@
+package channel
+
+import (
+	"testing"
+	"time"
+
+	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/transport"
+)
+
+type lifecycleRecorder struct {
+	events []string
+}
+
+func (r *lifecycleRecorder) HandlerAdded(*HandlerContext) error {
+	r.events = append(r.events, "added")
+	return nil
+}
+
+func (r *lifecycleRecorder) HandlerRemoved(*HandlerContext) error {
+	r.events = append(r.events, "removed")
+	return nil
+}
+
+func (r *lifecycleRecorder) ChannelRegistered(ctx *HandlerContext) {
+	r.events = append(r.events, "registered")
+	ctx.FireChannelRegistered()
+}
+
+func (r *lifecycleRecorder) ChannelUnregistered(ctx *HandlerContext) {
+	r.events = append(r.events, "unregistered")
+	ctx.FireChannelUnregistered()
+}
+
+func (r *lifecycleRecorder) ChannelReadComplete(ctx *HandlerContext) {
+	r.events = append(r.events, "readComplete")
+	ctx.FireChannelReadComplete()
+}
+
+func (r *lifecycleRecorder) FlushComplete(ctx *HandlerContext) {
+	r.events = append(r.events, "flushComplete")
+	ctx.FireFlushComplete()
+}
+
+func TestPipelineLifecycleHandlers(t *testing.T) {
+	recorder := &lifecycleRecorder{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureSink{})
+	if err := ch.Pipeline().AddLast("life", recorder); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.events) != 1 || recorder.events[0] != "added" {
+		t.Fatalf("events=%v", recorder.events)
+	}
+	ch.Pipeline().FireChannelRegistered()
+	ch.Pipeline().FireChannelReadComplete()
+	ch.Pipeline().FireFlushComplete()
+	ch.Pipeline().FireChannelUnregistered()
+	if err := ch.Pipeline().Remove("life"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"added", "registered", "readComplete", "flushComplete", "unregistered", "removed"}
+	if len(recorder.events) != len(want) {
+		t.Fatalf("events=%v", recorder.events)
+	}
+	for i := range want {
+		if recorder.events[i] != want[i] {
+			t.Fatalf("events=%v want=%v", recorder.events, want)
+		}
+	}
+}
+
+func TestPromiseListenersRunBeforeAndAfterCompletion(t *testing.T) {
+	promise := NewPromise()
+	before := make(chan error, 1)
+	after := make(chan error, 1)
+	promise.AddListener(func(f Future) {
+		before <- f.Err()
+	})
+	if !promise.SetSuccess() {
+		t.Fatal("first completion should succeed")
+	}
+	promise.AddListener(func(f Future) {
+		after <- f.Err()
+	})
+	select {
+	case err := <-before:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("listener registered before completion did not run")
+	}
+	select {
+	case err := <-after:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("listener registered after completion did not run")
+	}
+	if promise.SetFailure(ErrPromiseFailed) {
+		t.Fatal("second completion should be ignored")
+	}
+}
+
+func TestUnsafeWriteFutureCompletesAfterDrain(t *testing.T) {
+	rw := &partialWriteRW{steps: []writeStep{{n: 2, again: true}, {n: 2}}}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     &fakeReadyPoller{},
+		ReadWriter: rw,
+	})
+	buf := buffer.NewHeapBuffer(4)
+	_, _ = buf.WriteBytes([]byte("ping"))
+	future := ch.WriteFuture(buf)
+	if future.IsDone() {
+		t.Fatal("write future should wait for drain")
+	}
+	flushFuture := ch.FlushFuture()
+	if flushFuture.IsDone() {
+		t.Fatal("flush future should wait for drain")
+	}
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
+	if err := future.Await(); err != nil {
+		t.Fatal(err)
+	}
+	if err := flushFuture.Await(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnsafeCloseFutureCompletesOnInactive(t *testing.T) {
+	ch, _ := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     &fakeReadyPoller{},
+		ReadWriter: &partialWriteRW{},
+	})
+	future := ch.CloseFuture()
+	if err := future.Await(); err != nil {
+		t.Fatal(err)
+	}
+}
