@@ -101,6 +101,36 @@ func TestPacketDecoderDecodesPublishAndRetainsPayload(t *testing.T) {
 	}
 }
 
+func TestPacketDecoderRejectsQoS1PublishWithZeroPacketID(t *testing.T) {
+	payload := testBuf([]byte{0, 1, 'a', 0, 0, 'x'})
+	defer payload.Release()
+
+	_, err := DecodePacket(NewFrame(PacketPublish, 2, payload))
+	if !errors.Is(err, codec.ErrInvalidFrameLength) {
+		t.Fatalf("err=%v, want ErrInvalidFrameLength", err)
+	}
+}
+
+func TestPacketDecoderDecodesUnsubscribe(t *testing.T) {
+	collector := &packetCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("packet", NewPacketDecoder())
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	payload := testBuf([]byte{0, 7, 0, 8, 's', 'e', 'n', 's', 'o', 'r', '/', '1'})
+	ch.Pipeline().FireChannelRead(NewFrame(PacketUnsubscribe, 2, payload))
+	if len(collector.packets) != 1 {
+		t.Fatalf("packets=%d, want 1", len(collector.packets))
+	}
+	packet, ok := collector.packets[0].(UnsubscribePacket)
+	if !ok {
+		t.Fatalf("packet type=%T, want UnsubscribePacket", collector.packets[0])
+	}
+	if packet.PacketID != 7 || len(packet.Topics) != 1 || packet.Topics[0] != "sensor/1" {
+		t.Fatalf("packet=%+v", packet)
+	}
+}
+
 func TestPacketEncoderWritesPublishFrame(t *testing.T) {
 	sink := &outboundSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
@@ -119,6 +149,20 @@ func TestPacketEncoderWritesPublishFrame(t *testing.T) {
 	}
 	if string(sink.writes[1].Bytes()) != string([]byte{0, 1, 'a', 'b', 'c'}) {
 		t.Fatalf("payload=%v", sink.writes[1].Bytes())
+	}
+}
+
+func TestPacketEncoderRejectsQoS1PublishWithoutPacketID(t *testing.T) {
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("packet", NewPacketEncoder())
+
+	payload := testBuf([]byte("x"))
+	err := ch.Write(PublishPacket{Topic: "a", QoS: QoSAtLeastOnce.Byte(), Payload: payload})
+	if !errors.Is(err, codec.ErrInvalidFrameLength) {
+		t.Fatalf("err=%v, want ErrInvalidFrameLength", err)
+	}
+	if payload.RefCnt() != 0 {
+		t.Fatalf("payload ref=%d, want released", payload.RefCnt())
 	}
 }
 
@@ -147,6 +191,59 @@ func TestPacketEncoderWritesSubscribeFrame(t *testing.T) {
 	}
 }
 
+func TestPacketEncoderWritesUnsubscribeFrame(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("prepender", NewFramePrepender())
+	_ = ch.Pipeline().AddLast("packet", NewPacketEncoder())
+	defer sink.release()
+
+	err := ch.Write(UnsubscribePacket{PacketID: 7, Topics: []string{"sensor/1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want 2", len(sink.writes))
+	}
+	if string(sink.writes[0].Bytes()) != string([]byte{0xa2, 0x0c}) {
+		t.Fatalf("header=%v", sink.writes[0].Bytes())
+	}
+	if string(sink.writes[1].Bytes()) != string([]byte{0, 7, 0, 8, 's', 'e', 'n', 's', 'o', 'r', '/', '1'}) {
+		t.Fatalf("payload=%v", sink.writes[1].Bytes())
+	}
+}
+
+func TestPacketEncoderWritesUnsubAckFrame(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("prepender", NewFramePrepender())
+	_ = ch.Pipeline().AddLast("packet", NewPacketEncoder())
+	defer sink.release()
+
+	if err := ch.Write(UnsubAckPacket{PacketID: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want 2", len(sink.writes))
+	}
+	if string(sink.writes[0].Bytes()) != string([]byte{0xb0, 0x02}) {
+		t.Fatalf("header=%v", sink.writes[0].Bytes())
+	}
+	if string(sink.writes[1].Bytes()) != string([]byte{0, 7}) {
+		t.Fatalf("payload=%v", sink.writes[1].Bytes())
+	}
+}
+
+func TestSubscribeDecoderRejectsReservedOptions(t *testing.T) {
+	payload := testBuf([]byte{0, 7, 0, 1, 'a', 0x04})
+	defer payload.Release()
+
+	_, err := DecodePacket(NewFrame(PacketSubscribe, 2, payload))
+	if !errors.Is(err, codec.ErrInvalidFrameLength) {
+		t.Fatalf("err=%v, want ErrInvalidFrameLength", err)
+	}
+}
+
 func TestPacketEncoderRejectsOversizedPublishTopic(t *testing.T) {
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
 	_ = ch.Pipeline().AddLast("packet", NewPacketEncoder())
@@ -158,6 +255,41 @@ func TestPacketEncoderRejectsOversizedPublishTopic(t *testing.T) {
 	}
 	if payload.RefCnt() != 0 {
 		t.Fatalf("payload ref=%d, want released", payload.RefCnt())
+	}
+}
+
+func TestConnectFrameWritesMQTT5PropertyLength(t *testing.T) {
+	var ctx *channel.HandlerContext
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("capture", handlerAddedFunc(func(c *channel.HandlerContext) error {
+		ctx = c
+		return nil
+	}))
+
+	frame, err := NewConnectFrame(ctx, ConnectPacket{
+		ProtocolLevel:    ProtocolVersion5.Byte(),
+		ClientID:         "c",
+		CleanSession:     true,
+		KeepAliveSeconds: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer frame.Release()
+	want := []byte{0, 4, 'M', 'Q', 'T', 'T', 5, 2, 0, 30, 0, 0, 1, 'c'}
+	if string(frame.Payload.Bytes()) != string(want) {
+		t.Fatalf("payload=%v, want %v", frame.Payload.Bytes(), want)
+	}
+}
+
+func TestMQTT5PropertiesEmpty(t *testing.T) {
+	var empty MQTT5Properties
+	if !empty.Empty() {
+		t.Fatalf("empty properties should be empty")
+	}
+	props := MQTT5Properties{ReasonString: "bye"}
+	if props.Empty() {
+		t.Fatalf("properties with reason string should not be empty")
 	}
 }
 
@@ -234,4 +366,10 @@ func testBuf(data []byte) buffer.ByteBuf {
 	buf := buffer.NewHeapBuffer(len(data))
 	_, _ = buf.WriteBytes(data)
 	return buf
+}
+
+type handlerAddedFunc func(*channel.HandlerContext) error
+
+func (f handlerAddedFunc) HandlerAdded(ctx *channel.HandlerContext) error {
+	return f(ctx)
 }

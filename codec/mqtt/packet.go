@@ -1,6 +1,9 @@
 package mqtt
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/codec"
@@ -9,6 +12,7 @@ import (
 const (
 	mqttProtocolName    = "MQTT"
 	mqttProtocolLevel31 = 4
+	mqttProtocolLevel5  = 5
 )
 
 type ConnectPacket struct {
@@ -24,20 +28,23 @@ type ConnectPacket struct {
 	WillPayload      []byte
 	Username         string
 	Password         []byte
+	Properties       MQTT5Properties
 }
 
 type ConnAckPacket struct {
 	SessionPresent bool
 	ReturnCode     byte
+	Properties     MQTT5Properties
 }
 
 type PublishPacket struct {
-	Dup      bool
-	QoS      byte
-	Retain   bool
-	Topic    string
-	PacketID uint16
-	Payload  buffer.ByteBuf
+	Dup        bool
+	QoS        byte
+	Retain     bool
+	Topic      string
+	PacketID   uint16
+	Payload    buffer.ByteBuf
+	Properties MQTT5Properties
 }
 
 func (p PublishPacket) Release() {
@@ -59,11 +66,25 @@ type Subscription struct {
 type SubscribePacket struct {
 	PacketID      uint16
 	Subscriptions []Subscription
+	Properties    MQTT5Properties
 }
 
 type SubAckPacket struct {
 	PacketID    uint16
 	ReturnCodes []byte
+	Properties  MQTT5Properties
+}
+
+type UnsubscribePacket struct {
+	PacketID   uint16
+	Topics     []string
+	Properties MQTT5Properties
+}
+
+type UnsubAckPacket struct {
+	PacketID    uint16
+	ReturnCodes []byte
+	Properties  MQTT5Properties
 }
 
 type PingReqPacket struct{}
@@ -123,12 +144,16 @@ func DecodePacket(frame Frame) (any, error) {
 		return decodeConnAck(frame)
 	case PacketPublish:
 		return decodePublish(frame)
-	case PacketPubAck, PacketPubRec, PacketPubRel, PacketPubComp, PacketUnsubAck:
+	case PacketPubAck, PacketPubRec, PacketPubRel, PacketPubComp:
 		return decodePacketID(frame)
 	case PacketSubscribe:
 		return decodeSubscribe(frame)
 	case PacketSubAck:
 		return decodeSubAck(frame)
+	case PacketUnsubscribe:
+		return decodeUnsubscribe(frame)
+	case PacketUnsubAck:
+		return decodeUnsubAck(frame)
 	case PacketPingReq:
 		if frame.Flags() != 0 || frame.RemainingLength() != 0 {
 			return nil, codec.ErrInvalidFrameLength
@@ -169,6 +194,12 @@ func EncodePacket(ctx *channel.HandlerContext, msg any) (Frame, bool, error) {
 	case SubAckPacket:
 		frame, err := NewSubAckFrame(ctx, packet)
 		return frame, true, err
+	case UnsubscribePacket:
+		frame, err := NewUnsubscribeFrame(ctx, packet)
+		return frame, true, err
+	case UnsubAckPacket:
+		frame, err := NewUnsubAckFrame(ctx, packet)
+		return frame, true, err
 	case PingReqPacket:
 		return NewFrame(PacketPingReq, 0, nil), true, nil
 	case PingRespPacket:
@@ -192,6 +223,9 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 	if packet.WillQoS > 2 || (!packet.WillFlag && (packet.WillQoS != 0 || packet.WillRetain)) {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
+	if protocolLevel != mqttProtocolLevel31 && protocolLevel != mqttProtocolLevel5 {
+		return Frame{}, codec.ErrInvalidFrameLength
+	}
 	if !validMQTTString(protocolName) || !validMQTTString(packet.ClientID) || !validMQTTString(packet.Username) || !validMQTTBinary(packet.Password) {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
@@ -207,6 +241,9 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 	}
 	if packet.Password != nil {
 		size += mqttBinarySize(packet.Password)
+	}
+	if protocolLevel == mqttProtocolLevel5 {
+		size += 1
 	}
 	payload, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
@@ -236,6 +273,12 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 	if _, err := payload.WriteBytes([]byte{protocolLevel, flags, byte(packet.KeepAliveSeconds >> 8), byte(packet.KeepAliveSeconds)}); err != nil {
 		payload.Release()
 		return Frame{}, err
+	}
+	if protocolLevel == mqttProtocolLevel5 {
+		if err := writeVariableByteInteger(payload, 0); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
 	}
 	if err := writeMQTTString(payload, packet.ClientID); err != nil {
 		payload.Release()
@@ -267,6 +310,9 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 }
 
 func NewConnAckFrame(ctx *channel.HandlerContext, packet ConnAckPacket) (Frame, error) {
+	if !validConnAckReturnCode(packet.ReturnCode) {
+		return Frame{}, codec.ErrInvalidFrameLength
+	}
 	payload, err := ctx.Channel().Allocator().Acquire(2)
 	if err != nil {
 		return Frame{}, err
@@ -283,7 +329,7 @@ func NewConnAckFrame(ctx *channel.HandlerContext, packet ConnAckPacket) (Frame, 
 }
 
 func NewPublishFrame(ctx *channel.HandlerContext, packet PublishPacket) (Frame, error) {
-	if packet.Topic == "" || !validMQTTString(packet.Topic) || packet.QoS > 2 || (packet.QoS == 0 && packet.PacketID != 0) {
+	if packet.Topic == "" || !validMQTTString(packet.Topic) || !validQoS(packet.QoS) || (packet.QoS == QoSAtMostOnce.Byte() && packet.PacketID != 0) || (packet.QoS > QoSAtMostOnce.Byte() && packet.PacketID == 0) {
 		if packet.Payload != nil {
 			packet.Payload.Release()
 		}
@@ -343,9 +389,9 @@ func NewPacketIDFrame(ctx *channel.HandlerContext, packetType byte, packetID uin
 	if packetID == 0 {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
-	flags := byte(0)
-	if packetType == PacketPubRel || packetType == PacketSubscribe || packetType == PacketUnsubscribe {
-		flags = 2
+	flags, ok := packetIDFlags(packetType)
+	if !ok {
+		return Frame{}, codec.ErrInvalidFrameLength
 	}
 	payload, err := ctx.Channel().Allocator().Acquire(2)
 	if err != nil {
@@ -364,7 +410,7 @@ func NewSubscribeFrame(ctx *channel.HandlerContext, packet SubscribePacket) (Fra
 	}
 	size := 2
 	for _, sub := range packet.Subscriptions {
-		if sub.Topic == "" || !validMQTTString(sub.Topic) || sub.QoS > 2 {
+		if sub.Topic == "" || !validMQTTString(sub.Topic) || !validQoS(sub.QoS) {
 			return Frame{}, codec.ErrInvalidFrameLength
 		}
 		size += mqttStringSize(sub.Topic) + 1
@@ -390,9 +436,77 @@ func NewSubscribeFrame(ctx *channel.HandlerContext, packet SubscribePacket) (Fra
 	return NewFrame(PacketSubscribe, 2, payload), nil
 }
 
+func NewUnsubscribeFrame(ctx *channel.HandlerContext, packet UnsubscribePacket) (Frame, error) {
+	if packet.PacketID == 0 || len(packet.Topics) == 0 {
+		return Frame{}, codec.ErrInvalidFrameLength
+	}
+	size := 2
+	for _, topic := range packet.Topics {
+		if topic == "" || !validMQTTString(topic) {
+			return Frame{}, codec.ErrInvalidFrameLength
+		}
+		size += mqttStringSize(topic)
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(size)
+	if err != nil {
+		return Frame{}, err
+	}
+	if err := writeUint16(payload, packet.PacketID); err != nil {
+		payload.Release()
+		return Frame{}, err
+	}
+	for _, topic := range packet.Topics {
+		if err := writeMQTTString(payload, topic); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
+	}
+	return NewFrame(PacketUnsubscribe, 2, payload), nil
+}
+
+func NewUnsubAckFrame(ctx *channel.HandlerContext, packet UnsubAckPacket) (Frame, error) {
+	if packet.PacketID == 0 {
+		return Frame{}, codec.ErrInvalidFrameLength
+	}
+	for _, code := range packet.ReturnCodes {
+		if !validUnsubAckReturnCode(code) {
+			return Frame{}, codec.ErrInvalidFrameLength
+		}
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(2 + len(packet.ReturnCodes))
+	if err != nil {
+		return Frame{}, err
+	}
+	if err := writeUint16(payload, packet.PacketID); err != nil {
+		payload.Release()
+		return Frame{}, err
+	}
+	if _, err := payload.WriteBytes(packet.ReturnCodes); err != nil {
+		payload.Release()
+		return Frame{}, err
+	}
+	return NewFrame(PacketUnsubAck, 0, payload), nil
+}
+
+func packetIDFlags(packetType byte) (byte, bool) {
+	switch packetType {
+	case PacketPubAck, PacketPubRec, PacketPubComp, PacketUnsubAck:
+		return 0, true
+	case PacketPubRel:
+		return 2, true
+	default:
+		return 0, false
+	}
+}
+
 func NewSubAckFrame(ctx *channel.HandlerContext, packet SubAckPacket) (Frame, error) {
 	if packet.PacketID == 0 {
 		return Frame{}, codec.ErrInvalidFrameLength
+	}
+	for _, code := range packet.ReturnCodes {
+		if !validSubAckReturnCode(code) {
+			return Frame{}, codec.ErrInvalidFrameLength
+		}
 	}
 	payload, err := ctx.Channel().Allocator().Acquire(2 + len(packet.ReturnCodes))
 	if err != nil {
@@ -435,6 +549,9 @@ func decodeConnect(frame Frame) (ConnectPacket, error) {
 	if err != nil {
 		return ConnectPacket{}, err
 	}
+	if protocolName != mqttProtocolName || (level != mqttProtocolLevel31 && level != mqttProtocolLevel5) {
+		return ConnectPacket{}, codec.ErrInvalidFrameLength
+	}
 	if flags&0x01 != 0 {
 		return ConnectPacket{}, codec.ErrInvalidFrameLength
 	}
@@ -445,6 +562,16 @@ func decodeConnect(frame Frame) (ConnectPacket, error) {
 		return ConnectPacket{}, codec.ErrInvalidFrameLength
 	}
 	idx = next + 4
+	if level == mqttProtocolLevel5 {
+		propertyLength, n, ok, err := readVariableByteInteger(frame.Payload, idx)
+		if err != nil || !ok {
+			return ConnectPacket{}, codec.ErrInvalidFrameLength
+		}
+		idx += n + propertyLength
+		if idx > frame.Payload.WriterIndex() {
+			return ConnectPacket{}, codec.ErrInvalidFrameLength
+		}
+	}
 	clientID, idx, err := readMQTTString(frame.Payload, idx)
 	if err != nil {
 		return ConnectPacket{}, err
@@ -510,11 +637,17 @@ func decodePublish(frame Frame) (PublishPacket, error) {
 	if err != nil {
 		return PublishPacket{}, err
 	}
+	if topic == "" {
+		return PublishPacket{}, codec.ErrInvalidFrameLength
+	}
 	packet := PublishPacket{Dup: flags&0x08 != 0, QoS: qos, Retain: flags&0x01 != 0, Topic: topic}
 	if qos > 0 {
 		packet.PacketID, err = readUint16(frame.Payload, idx)
 		if err != nil {
 			return PublishPacket{}, err
+		}
+		if packet.PacketID == 0 {
+			return PublishPacket{}, codec.ErrInvalidFrameLength
 		}
 		idx += 2
 	}
@@ -528,9 +661,9 @@ func decodePublish(frame Frame) (PublishPacket, error) {
 }
 
 func decodePacketID(frame Frame) (PacketIDPacket, error) {
-	expectedFlags := byte(0)
-	if frame.PacketType() == PacketPubRel {
-		expectedFlags = 2
+	expectedFlags, ok := packetIDFlags(frame.PacketType())
+	if !ok {
+		return PacketIDPacket{}, codec.ErrInvalidFrameLength
 	}
 	if frame.Flags() != expectedFlags || frame.Payload == nil || frame.Payload.ReadableBytes() != 2 {
 		return PacketIDPacket{}, codec.ErrInvalidFrameLength
@@ -565,10 +698,10 @@ func decodeSubscribe(frame Frame) (SubscribePacket, error) {
 			return SubscribePacket{}, codec.ErrInvalidFrameLength
 		}
 		qos, _ := frame.Payload.GetByte(next)
-		if topic == "" || qos > 2 {
+		if topic == "" || !validSubscribeOptions(qos) {
 			return SubscribePacket{}, codec.ErrInvalidFrameLength
 		}
-		packet.Subscriptions = append(packet.Subscriptions, Subscription{Topic: topic, QoS: qos})
+		packet.Subscriptions = append(packet.Subscriptions, Subscription{Topic: topic, QoS: qos & 0x03})
 		idx = next + 1
 	}
 	if len(packet.Subscriptions) == 0 {
@@ -590,8 +723,59 @@ func decodeSubAck(frame Frame) (SubAckPacket, error) {
 	codes := make([]byte, codesLen)
 	for i := 0; i < codesLen; i++ {
 		codes[i], _ = frame.Payload.GetByte(start + i)
+		if !validSubAckReturnCode(codes[i]) {
+			return SubAckPacket{}, codec.ErrInvalidFrameLength
+		}
 	}
 	return SubAckPacket{PacketID: id, ReturnCodes: codes}, nil
+}
+
+func decodeUnsubscribe(frame Frame) (UnsubscribePacket, error) {
+	if frame.Flags() != 2 || frame.Payload == nil || frame.Payload.ReadableBytes() < 5 {
+		return UnsubscribePacket{}, codec.ErrInvalidFrameLength
+	}
+	idx := frame.Payload.ReaderIndex()
+	id, err := readUint16(frame.Payload, idx)
+	if err != nil || id == 0 {
+		return UnsubscribePacket{}, codec.ErrInvalidFrameLength
+	}
+	idx += 2
+	packet := UnsubscribePacket{PacketID: id}
+	for idx < frame.Payload.WriterIndex() {
+		topic, next, err := readMQTTString(frame.Payload, idx)
+		if err != nil {
+			return UnsubscribePacket{}, err
+		}
+		if topic == "" {
+			return UnsubscribePacket{}, codec.ErrInvalidFrameLength
+		}
+		packet.Topics = append(packet.Topics, topic)
+		idx = next
+	}
+	if len(packet.Topics) == 0 {
+		return UnsubscribePacket{}, codec.ErrInvalidFrameLength
+	}
+	return packet, nil
+}
+
+func decodeUnsubAck(frame Frame) (UnsubAckPacket, error) {
+	if frame.Flags() != 0 || frame.Payload == nil || frame.Payload.ReadableBytes() < 2 {
+		return UnsubAckPacket{}, codec.ErrInvalidFrameLength
+	}
+	id, err := readUint16(frame.Payload, frame.Payload.ReaderIndex())
+	if err != nil || id == 0 {
+		return UnsubAckPacket{}, codec.ErrInvalidFrameLength
+	}
+	start := frame.Payload.ReaderIndex() + 2
+	codesLen := frame.Payload.WriterIndex() - start
+	codes := make([]byte, codesLen)
+	for i := 0; i < codesLen; i++ {
+		codes[i], _ = frame.Payload.GetByte(start + i)
+		if !validUnsubAckReturnCode(codes[i]) {
+			return UnsubAckPacket{}, codec.ErrInvalidFrameLength
+		}
+	}
+	return UnsubAckPacket{PacketID: id, ReturnCodes: codes}, nil
 }
 
 func mqttStringSize(s string) int {
@@ -603,7 +787,7 @@ func mqttBinarySize(data []byte) int {
 }
 
 func validMQTTString(s string) bool {
-	return len(s) <= 0xffff
+	return len(s) <= 0xffff && utf8.ValidString(s) && !strings.ContainsRune(s, '\x00')
 }
 
 func validMQTTBinary(data []byte) bool {
@@ -655,6 +839,56 @@ func readMQTTBinary(buf buffer.ByteBuf, index int) ([]byte, int, error) {
 		out[i], _ = buf.GetByte(start + i)
 	}
 	return out, end, nil
+}
+
+func validQoS(qos byte) bool {
+	return qos <= QoSExactlyOnce.Byte()
+}
+
+func validSubscribeOptions(options byte) bool {
+	return options&0xfc == 0 && validQoS(options&0x03)
+}
+
+func validConnAckReturnCode(code byte) bool {
+	return code <= 5
+}
+
+func validSubAckReturnCode(code byte) bool {
+	return code == QoSAtMostOnce.Byte() || code == QoSAtLeastOnce.Byte() || code == QoSExactlyOnce.Byte() || code == 0x80
+}
+
+func validUnsubAckReturnCode(code byte) bool {
+	return code == 0x00 || code == 0x11 || code == 0x80
+}
+
+func writeVariableByteInteger(buf buffer.ByteBuf, value int) error {
+	if value < 0 || value > maxRemainingLength {
+		return codec.ErrInvalidLengthField
+	}
+	var tmp [4]byte
+	n := putRemainingLength(tmp[:], value)
+	_, err := buf.WriteBytes(tmp[:n])
+	return err
+}
+
+func readVariableByteInteger(buf buffer.ByteBuf, index int) (int, int, bool, error) {
+	multiplier := 1
+	value := 0
+	for i := 0; i < 4; i++ {
+		if index+i >= buf.WriterIndex() {
+			return 0, 0, false, nil
+		}
+		encoded, ok := buf.GetByte(index + i)
+		if !ok {
+			return 0, 0, false, nil
+		}
+		value += int(encoded&127) * multiplier
+		if encoded&128 == 0 {
+			return value, i + 1, true, nil
+		}
+		multiplier *= 128
+	}
+	return 0, 0, false, codec.ErrInvalidLengthField
 }
 
 func writeUint16(buf buffer.ByteBuf, value uint16) error {
