@@ -189,7 +189,8 @@ func TestMessageToPacketEncoderReleasesPayloadOnWriteError(t *testing.T) {
 
 func TestEndpointReleasesCompletionBufferAfterClose(t *testing.T) {
 	buf := newRawTestBuf("late")
-	ep := &endpoint{closed: true}
+	ep := &endpoint{}
+	ep.closed.Store(true)
 
 	ep.HandleEvent(transport.PollEvent{
 		Model: transport.PollerCompletion,

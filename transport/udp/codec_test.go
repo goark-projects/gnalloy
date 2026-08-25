@@ -163,7 +163,8 @@ func TestMessageToDatagramEncoderReleasesPayloadOnWriteError(t *testing.T) {
 
 func TestEndpointReleasesCompletionBufferAfterClose(t *testing.T) {
 	buf := newUDPTestBuf("late")
-	ep := &endpoint{closed: true}
+	ep := &endpoint{}
+	ep.closed.Store(true)
 
 	ep.HandleEvent(transport.PollEvent{
 		Model: transport.PollerCompletion,

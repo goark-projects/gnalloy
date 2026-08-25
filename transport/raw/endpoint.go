@@ -21,8 +21,8 @@ type endpoint struct {
 	writeInterest  bool
 	readPending    bool
 	writePending   bool
-	closed         bool
-	inactiveFired  bool
+	closed         atomic.Bool
+	inactiveFired  atomic.Bool
 	outboundBytes  atomic.Int64
 
 	outHead *outboundPacket
@@ -73,7 +73,7 @@ func (e *endpoint) initBackpressure(w transport.WriteBufferWatermark) {
 }
 
 func (e *endpoint) HandleEvent(ev transport.PollEvent) {
-	if e.closed {
+	if e.closed.Load() {
 		if ev.Model == transport.PollerCompletion {
 			releasePollEvent(ev)
 		}
@@ -118,7 +118,7 @@ func (e *endpoint) Write(msg any) error {
 		packet.Release()
 		return ErrInvalidPacket
 	}
-	if e.closed {
+	if e.closed.Load() {
 		packet.Release()
 		return ErrServerClosed
 	}
@@ -144,7 +144,7 @@ func (e *endpoint) Write(msg any) error {
 }
 
 func (e *endpoint) Flush() error {
-	if e.closed {
+	if e.closed.Load() {
 		return ErrServerClosed
 	}
 	if e.loop != nil && e.loop.Poller().Model() == transport.PollerCompletion {
@@ -154,7 +154,7 @@ func (e *endpoint) Flush() error {
 }
 
 func (e *endpoint) Read() error {
-	if e.closed {
+	if e.closed.Load() {
 		return ErrServerClosed
 	}
 	if e.loop != nil && e.loop.Poller().Model() == transport.PollerCompletion {
@@ -188,10 +188,9 @@ func (e *endpoint) WriteBufferWatermark() transport.WriteBufferWatermark {
 }
 
 func (e *endpoint) Close() error {
-	if e.closed {
+	if !e.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	e.closed = true
 	e.closeWritability()
 	e.releaseOutbound()
 	err := closeFD(e.fd)
@@ -209,7 +208,7 @@ func (e *endpoint) readReady() {
 		return
 	}
 	read := false
-	for !e.closed {
+	for !e.closed.Load() {
 		buf, err := e.alloc.Acquire(e.readBufferSize)
 		if err != nil {
 			e.fireException(err)
@@ -278,7 +277,7 @@ func (e *endpoint) handleReadCompletion(ev transport.PollEvent) {
 	if read {
 		e.ch.Pipeline().FireChannelReadComplete()
 	}
-	if !e.closed && e.AutoRead() {
+	if !e.closed.Load() && e.AutoRead() {
 		if err := e.submitReadCompletion(); err != nil {
 			e.fireException(err)
 			_ = e.Close()
@@ -310,7 +309,7 @@ func (e *endpoint) handleWriteCompletion(ev transport.PollEvent) {
 }
 
 func (e *endpoint) submitReadCompletion() error {
-	if e.closed || e.readPending || e.alloc == nil {
+	if e.closed.Load() || e.readPending || e.alloc == nil {
 		return nil
 	}
 	buf, err := e.alloc.Acquire(e.readBufferSize)
@@ -334,7 +333,7 @@ func (e *endpoint) submitReadCompletion() error {
 }
 
 func (e *endpoint) submitWriteCompletion() error {
-	if e.closed || e.writePending || e.outHead == nil {
+	if e.closed.Load() || e.writePending || e.outHead == nil {
 		return nil
 	}
 	addr, err := addressToSocketAddress(e.outHead.packet.Addr)
@@ -438,7 +437,7 @@ func (e *endpoint) releaseOutbound() {
 }
 
 func (e *endpoint) updateWritability() {
-	if e.closed {
+	if e.closed.Load() {
 		e.closeWritability()
 		return
 	}
@@ -489,10 +488,9 @@ func (e *endpoint) fireException(err error) {
 }
 
 func (e *endpoint) fireInactiveOnce() {
-	if e.inactiveFired {
+	if !e.inactiveFired.CompareAndSwap(false, true) {
 		return
 	}
-	e.inactiveFired = true
 	if e.ch != nil {
 		e.ch.Pipeline().FireChannelInactive()
 	}
