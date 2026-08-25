@@ -38,8 +38,8 @@ blocks:
   HTTP/1.x, HTTP/2 binary frames and stream state, Protobuf varint32 frames,
   MQTT frames, Redis RESP frames, and WebSocket frames.
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`, and
-  the `Unsafe` bridge that normalizes readiness/completion events before they
-  enter business handlers.
+  `FileRegion` fallback encoding; the `Unsafe` bridge normalizes
+  readiness/completion events before they enter business handlers.
 - `channel/pool`: small Channel reuse pool with explicit factory, health check,
   return, discard, and close semantics.
 - `handler/timeout`: time-wheel based `IdleStateHandler`,
