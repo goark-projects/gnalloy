@@ -31,9 +31,10 @@ blocks:
   codecs, combined duplex handler, length-field, delimiter, line,
   fixed-length, matching outbound frame encoders, string, and byte-slice
   codecs.
-- `codec/http1`, `codec/protobuf`, `codec/mqtt`, `codec/redis`, and
-  `codec/websocket`: first protocol codec slice for HTTP/1.x, Protobuf
-  varint32 frames, MQTT frames, Redis RESP frames, and WebSocket frames.
+- `codec/http1`, `codec/http2`, `codec/protobuf`, `codec/mqtt`,
+  `codec/redis`, and `codec/websocket`: first protocol codec slice for
+  HTTP/1.x, HTTP/2 binary frames and stream state, Protobuf varint32 frames,
+  MQTT frames, Redis RESP frames, and WebSocket frames.
 - `channel`: inbound/outbound pipeline contracts and the `Unsafe` bridge that
   normalizes readiness/completion events before they enter business handlers.
 - `handler/timeout`: time-wheel based `IdleStateHandler`,
