@@ -23,6 +23,7 @@ const (
 	PacketPingReq     byte = 12
 	PacketPingResp    byte = 13
 	PacketDisconnect  byte = 14
+	PacketAuth        byte = 15
 )
 
 type FrameDecoder struct {

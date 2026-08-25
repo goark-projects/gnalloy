@@ -293,6 +293,124 @@ func TestMQTT5PropertiesEmpty(t *testing.T) {
 	}
 }
 
+func TestMQTT5ConnectPropertiesRoundTrip(t *testing.T) {
+	ctx := mqttTestContext(t)
+	frame, err := NewConnectFrame(ctx, ConnectPacket{
+		ProtocolLevel:    ProtocolVersion5.Byte(),
+		ClientID:         "cid",
+		CleanSession:     true,
+		KeepAliveSeconds: 30,
+		Properties: MQTT5Properties{
+			SessionExpiryInterval:    60,
+			HasSessionExpiryInterval: true,
+			UserProperties:           []UserProperty{{Key: "k", Value: "v"}},
+		},
+		WillFlag:    true,
+		WillTopic:   "will/topic",
+		WillPayload: []byte("payload"),
+		WillProperties: MQTT5Properties{
+			WillDelayInterval:    10,
+			HasWillDelayInterval: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer frame.Release()
+
+	packet, err := DecodePacket(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connect := packet.(ConnectPacket)
+	if connect.ProtocolLevel != ProtocolVersion5.Byte() || connect.Properties.SessionExpiryInterval != 60 || len(connect.Properties.UserProperties) != 1 {
+		t.Fatalf("connect=%+v", connect)
+	}
+	if !connect.WillFlag || connect.WillProperties.WillDelayInterval != 10 || connect.WillTopic != "will/topic" || string(connect.WillPayload) != "payload" {
+		t.Fatalf("will=%+v", connect)
+	}
+}
+
+func TestMQTT5PublishPropertiesRoundTrip(t *testing.T) {
+	ctx := mqttTestContext(t)
+	payload := testBuf([]byte("bc"))
+	frame, err := NewPublishFrame(ctx, PublishPacket{
+		ProtocolLevel: ProtocolVersion5.Byte(),
+		Topic:         "a",
+		Payload:       payload,
+		Properties: MQTT5Properties{
+			PayloadFormatIndicator:    1,
+			HasPayloadFormatIndicator: true,
+			ContentType:               "text/plain",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer frame.Release()
+
+	packet, err := DecodePacketWithVersion(frame, ProtocolVersion5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish := packet.(PublishPacket)
+	defer publish.Release()
+	if publish.ProtocolLevel != ProtocolVersion5.Byte() || publish.Topic != "a" || publish.Properties.PayloadFormatIndicator != 1 || publish.Properties.ContentType != "text/plain" {
+		t.Fatalf("publish=%+v", publish)
+	}
+	if string(publish.Payload.Bytes()) != "bc" {
+		t.Fatalf("payload=%q", publish.Payload.Bytes())
+	}
+}
+
+func TestMQTT5AckReasonAndPropertiesRoundTrip(t *testing.T) {
+	ctx := mqttTestContext(t)
+	frame, err := newPacketIDFrame(ctx, PacketIDPacket{
+		Type:          PacketPubAck,
+		PacketID:      7,
+		ReasonCode:    ReasonPacketIdentifierInUse.Byte(),
+		ProtocolLevel: ProtocolVersion5.Byte(),
+		Properties:    MQTT5Properties{ReasonString: "busy"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer frame.Release()
+
+	packet, err := DecodePacketWithVersion(frame, ProtocolVersion5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ack := packet.(PacketIDPacket)
+	if ack.PacketID != 7 || ack.ReasonCode != ReasonPacketIdentifierInUse.Byte() || ack.Properties.ReasonString != "busy" {
+		t.Fatalf("ack=%+v", ack)
+	}
+}
+
+func TestMQTT5AuthRoundTrip(t *testing.T) {
+	ctx := mqttTestContext(t)
+	frame, err := NewAuthFrame(ctx, AuthPacket{
+		ReasonCode: ReasonSuccess.Byte(),
+		Properties: MQTT5Properties{
+			AuthenticationMethod: "token",
+			AuthenticationData:   []byte("abc"),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer frame.Release()
+
+	packet, err := DecodePacketWithVersion(frame, ProtocolVersion5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := packet.(AuthPacket)
+	if auth.Properties.AuthenticationMethod != "token" || string(auth.Properties.AuthenticationData) != "abc" {
+		t.Fatalf("auth=%+v", auth)
+	}
+}
+
 func TestFramePrepender(t *testing.T) {
 	sink := &outboundSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
@@ -366,6 +484,22 @@ func testBuf(data []byte) buffer.ByteBuf {
 	buf := buffer.NewHeapBuffer(len(data))
 	_, _ = buf.WriteBytes(data)
 	return buf
+}
+
+func mqttTestContext(t *testing.T) *channel.HandlerContext {
+	t.Helper()
+	var ctx *channel.HandlerContext
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("capture", handlerAddedFunc(func(c *channel.HandlerContext) error {
+		ctx = c
+		return nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if ctx == nil {
+		t.Fatal("missing handler context")
+	}
+	return ctx
 }
 
 type handlerAddedFunc func(*channel.HandlerContext) error

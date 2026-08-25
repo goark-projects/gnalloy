@@ -109,31 +109,50 @@ type UserProperty struct {
 
 // MQTT5Properties 是 MQTT 5 属性的 Go 化容器，后续完整编解码基于该结构扩展。
 type MQTT5Properties struct {
-	PayloadFormatIndicator    byte
-	HasPayloadFormatIndicator bool
-	MessageExpiryInterval     uint32
-	HasMessageExpiryInterval  bool
-	ContentType               string
-	ResponseTopic             string
-	CorrelationData           []byte
-	SubscriptionIdentifier    uint32
-	HasSubscriptionIdentifier bool
-	SessionExpiryInterval     uint32
-	HasSessionExpiryInterval  bool
-	ReceiveMaximum            uint16
-	HasReceiveMaximum         bool
-	TopicAliasMaximum         uint16
-	HasTopicAliasMaximum      bool
-	TopicAlias                uint16
-	HasTopicAlias             bool
-	MaximumQoS                byte
-	HasMaximumQoS             bool
-	RetainAvailable           bool
-	HasRetainAvailable        bool
-	MaximumPacketSize         uint32
-	HasMaximumPacketSize      bool
-	ReasonString              string
-	UserProperties            []UserProperty
+	PayloadFormatIndicator     byte
+	HasPayloadFormatIndicator  bool
+	MessageExpiryInterval      uint32
+	HasMessageExpiryInterval   bool
+	ContentType                string
+	ResponseTopic              string
+	CorrelationData            []byte
+	SubscriptionIdentifier     uint32
+	HasSubscriptionIdentifier  bool
+	SessionExpiryInterval      uint32
+	HasSessionExpiryInterval   bool
+	AssignedClientIdentifier   string
+	ServerKeepAlive            uint16
+	HasServerKeepAlive         bool
+	AuthenticationMethod       string
+	AuthenticationData         []byte
+	RequestProblemInformation  bool
+	HasRequestProblemInfo      bool
+	WillDelayInterval          uint32
+	HasWillDelayInterval       bool
+	RequestResponseInfo        bool
+	HasRequestResponseInfo     bool
+	ResponseInformation        string
+	ServerReference            string
+	ReceiveMaximum             uint16
+	HasReceiveMaximum          bool
+	TopicAliasMaximum          uint16
+	HasTopicAliasMaximum       bool
+	TopicAlias                 uint16
+	HasTopicAlias              bool
+	MaximumQoS                 byte
+	HasMaximumQoS              bool
+	RetainAvailable            bool
+	HasRetainAvailable         bool
+	MaximumPacketSize          uint32
+	HasMaximumPacketSize       bool
+	WildcardSubscription       bool
+	HasWildcardSubscription    bool
+	SubscriptionIDAvailable    bool
+	HasSubscriptionIDAvailable bool
+	SharedSubscription         bool
+	HasSharedSubscription      bool
+	ReasonString               string
+	UserProperties             []UserProperty
 }
 
 func (p MQTT5Properties) Empty() bool {
@@ -144,12 +163,24 @@ func (p MQTT5Properties) Empty() bool {
 		len(p.CorrelationData) == 0 &&
 		!p.HasSubscriptionIdentifier &&
 		!p.HasSessionExpiryInterval &&
+		p.AssignedClientIdentifier == "" &&
+		!p.HasServerKeepAlive &&
+		p.AuthenticationMethod == "" &&
+		len(p.AuthenticationData) == 0 &&
+		!p.HasRequestProblemInfo &&
+		!p.HasWillDelayInterval &&
+		!p.HasRequestResponseInfo &&
+		p.ResponseInformation == "" &&
+		p.ServerReference == "" &&
 		!p.HasReceiveMaximum &&
 		!p.HasTopicAliasMaximum &&
 		!p.HasTopicAlias &&
 		!p.HasMaximumQoS &&
 		!p.HasRetainAvailable &&
 		!p.HasMaximumPacketSize &&
+		!p.HasWildcardSubscription &&
+		!p.HasSubscriptionIDAvailable &&
+		!p.HasSharedSubscription &&
 		p.ReasonString == "" &&
 		len(p.UserProperties) == 0
 }

@@ -29,22 +29,25 @@ type ConnectPacket struct {
 	Username         string
 	Password         []byte
 	Properties       MQTT5Properties
+	WillProperties   MQTT5Properties
 }
 
 type ConnAckPacket struct {
+	ProtocolLevel  byte
 	SessionPresent bool
 	ReturnCode     byte
 	Properties     MQTT5Properties
 }
 
 type PublishPacket struct {
-	Dup        bool
-	QoS        byte
-	Retain     bool
-	Topic      string
-	PacketID   uint16
-	Payload    buffer.ByteBuf
-	Properties MQTT5Properties
+	Dup           bool
+	QoS           byte
+	Retain        bool
+	Topic         string
+	PacketID      uint16
+	Payload       buffer.ByteBuf
+	Properties    MQTT5Properties
+	ProtocolLevel byte
 }
 
 func (p PublishPacket) Release() {
@@ -54,8 +57,11 @@ func (p PublishPacket) Release() {
 }
 
 type PacketIDPacket struct {
-	Type     byte
-	PacketID uint16
+	Type          byte
+	PacketID      uint16
+	ReasonCode    byte
+	Properties    MQTT5Properties
+	ProtocolLevel byte
 }
 
 type Subscription struct {
@@ -67,36 +73,57 @@ type SubscribePacket struct {
 	PacketID      uint16
 	Subscriptions []Subscription
 	Properties    MQTT5Properties
+	ProtocolLevel byte
 }
 
 type SubAckPacket struct {
-	PacketID    uint16
-	ReturnCodes []byte
-	Properties  MQTT5Properties
+	PacketID      uint16
+	ReturnCodes   []byte
+	Properties    MQTT5Properties
+	ProtocolLevel byte
 }
 
 type UnsubscribePacket struct {
-	PacketID   uint16
-	Topics     []string
-	Properties MQTT5Properties
+	PacketID      uint16
+	Topics        []string
+	Properties    MQTT5Properties
+	ProtocolLevel byte
 }
 
 type UnsubAckPacket struct {
-	PacketID    uint16
-	ReturnCodes []byte
-	Properties  MQTT5Properties
+	PacketID      uint16
+	ReturnCodes   []byte
+	Properties    MQTT5Properties
+	ProtocolLevel byte
 }
 
 type PingReqPacket struct{}
 type PingRespPacket struct{}
-type DisconnectPacket struct{}
+type DisconnectPacket struct {
+	ReasonCode    byte
+	Properties    MQTT5Properties
+	ProtocolLevel byte
+}
+type AuthPacket struct {
+	ReasonCode byte
+	Properties MQTT5Properties
+}
 
 type PacketDecoder struct {
 	*codec.MessageToMessageDecoder
+	version byte
 }
 
 func NewPacketDecoder() *PacketDecoder {
-	d := &PacketDecoder{}
+	return NewPacketDecoderWithVersion(ProtocolVersion311)
+}
+
+func NewPacketDecoderWithVersion(version ProtocolVersion) *PacketDecoder {
+	level := version.Byte()
+	if level == 0 {
+		level = mqttProtocolLevel31
+	}
+	d := &PacketDecoder{version: level}
 	d.MessageToMessageDecoder = codec.NewMessageToMessageDecoder(d)
 	return d
 }
@@ -107,7 +134,7 @@ func (d *PacketDecoder) AcceptInboundMessage(msg any) bool {
 }
 
 func (d *PacketDecoder) Decode(_ *channel.HandlerContext, msg any, out *codec.MessageList) error {
-	packet, err := DecodePacket(msg.(Frame))
+	packet, err := DecodePacketWithVersion(msg.(Frame), ProtocolVersion(d.version))
 	if err != nil {
 		return err
 	}
@@ -137,23 +164,28 @@ func (e *PacketEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 }
 
 func DecodePacket(frame Frame) (any, error) {
+	return DecodePacketWithVersion(frame, ProtocolVersion311)
+}
+
+func DecodePacketWithVersion(frame Frame, version ProtocolVersion) (any, error) {
+	mqtt5 := version.Byte() == mqttProtocolLevel5
 	switch frame.PacketType() {
 	case PacketConnect:
 		return decodeConnect(frame)
 	case PacketConnAck:
-		return decodeConnAck(frame)
+		return decodeConnAck(frame, mqtt5)
 	case PacketPublish:
-		return decodePublish(frame)
+		return decodePublish(frame, mqtt5)
 	case PacketPubAck, PacketPubRec, PacketPubRel, PacketPubComp:
-		return decodePacketID(frame)
+		return decodePacketID(frame, mqtt5)
 	case PacketSubscribe:
-		return decodeSubscribe(frame)
+		return decodeSubscribe(frame, mqtt5)
 	case PacketSubAck:
-		return decodeSubAck(frame)
+		return decodeSubAck(frame, mqtt5)
 	case PacketUnsubscribe:
-		return decodeUnsubscribe(frame)
+		return decodeUnsubscribe(frame, mqtt5)
 	case PacketUnsubAck:
-		return decodeUnsubAck(frame)
+		return decodeUnsubAck(frame, mqtt5)
 	case PacketPingReq:
 		if frame.Flags() != 0 || frame.RemainingLength() != 0 {
 			return nil, codec.ErrInvalidFrameLength
@@ -165,10 +197,9 @@ func DecodePacket(frame Frame) (any, error) {
 		}
 		return PingRespPacket{}, nil
 	case PacketDisconnect:
-		if frame.Flags() != 0 || frame.RemainingLength() != 0 {
-			return nil, codec.ErrInvalidFrameLength
-		}
-		return DisconnectPacket{}, nil
+		return decodeDisconnect(frame, mqtt5)
+	case PacketAuth:
+		return decodeAuth(frame, mqtt5)
 	default:
 		return nil, codec.ErrInvalidFrameLength
 	}
@@ -186,7 +217,7 @@ func EncodePacket(ctx *channel.HandlerContext, msg any) (Frame, bool, error) {
 		frame, err := NewPublishFrame(ctx, packet)
 		return frame, true, err
 	case PacketIDPacket:
-		frame, err := NewPacketIDFrame(ctx, packet.Type, packet.PacketID)
+		frame, err := newPacketIDFrame(ctx, packet)
 		return frame, true, err
 	case SubscribePacket:
 		frame, err := NewSubscribeFrame(ctx, packet)
@@ -205,7 +236,11 @@ func EncodePacket(ctx *channel.HandlerContext, msg any) (Frame, bool, error) {
 	case PingRespPacket:
 		return NewFrame(PacketPingResp, 0, nil), true, nil
 	case DisconnectPacket:
-		return NewFrame(PacketDisconnect, 0, nil), true, nil
+		frame, err := NewDisconnectFrame(ctx, packet)
+		return frame, true, err
+	case AuthPacket:
+		frame, err := NewAuthFrame(ctx, packet)
+		return frame, true, err
 	default:
 		return Frame{}, false, nil
 	}
@@ -218,7 +253,11 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 	}
 	protocolLevel := packet.ProtocolLevel
 	if protocolLevel == 0 {
-		protocolLevel = mqttProtocolLevel31
+		if !packet.Properties.Empty() || !packet.WillProperties.Empty() {
+			protocolLevel = mqttProtocolLevel5
+		} else {
+			protocolLevel = mqttProtocolLevel31
+		}
 	}
 	if packet.WillQoS > 2 || (!packet.WillFlag && (packet.WillQoS != 0 || packet.WillRetain)) {
 		return Frame{}, codec.ErrInvalidFrameLength
@@ -234,6 +273,9 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 	}
 	size := mqttStringSize(protocolName) + 4 + mqttStringSize(packet.ClientID)
 	if packet.WillFlag {
+		if protocolLevel == mqttProtocolLevel5 {
+			size += mqttPropertiesSize(packet.WillProperties)
+		}
 		size += mqttStringSize(packet.WillTopic) + mqttBinarySize(packet.WillPayload)
 	}
 	if packet.Username != "" {
@@ -243,7 +285,7 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 		size += mqttBinarySize(packet.Password)
 	}
 	if protocolLevel == mqttProtocolLevel5 {
-		size += 1
+		size += mqttPropertiesSize(packet.Properties)
 	}
 	payload, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
@@ -275,7 +317,7 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 		return Frame{}, err
 	}
 	if protocolLevel == mqttProtocolLevel5 {
-		if err := writeVariableByteInteger(payload, 0); err != nil {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
 			payload.Release()
 			return Frame{}, err
 		}
@@ -285,6 +327,12 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 		return Frame{}, err
 	}
 	if packet.WillFlag {
+		if protocolLevel == mqttProtocolLevel5 {
+			if err := writeMQTT5Properties(payload, packet.WillProperties); err != nil {
+				payload.Release()
+				return Frame{}, err
+			}
+		}
 		if err := writeMQTTString(payload, packet.WillTopic); err != nil {
 			payload.Release()
 			return Frame{}, err
@@ -310,10 +358,15 @@ func NewConnectFrame(ctx *channel.HandlerContext, packet ConnectPacket) (Frame, 
 }
 
 func NewConnAckFrame(ctx *channel.HandlerContext, packet ConnAckPacket) (Frame, error) {
-	if !validConnAckReturnCode(packet.ReturnCode) {
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || !packet.Properties.Empty() || packet.ReturnCode > 5
+	if !validConnAckReturnCode(packet.ReturnCode, mqtt5) {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
-	payload, err := ctx.Channel().Allocator().Acquire(2)
+	size := 2
+	if mqtt5 {
+		size += mqttPropertiesSize(packet.Properties)
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return Frame{}, err
 	}
@@ -324,6 +377,12 @@ func NewConnAckFrame(ctx *channel.HandlerContext, packet ConnAckPacket) (Frame, 
 	if _, err := payload.WriteBytes([]byte{ackFlags, packet.ReturnCode}); err != nil {
 		payload.Release()
 		return Frame{}, err
+	}
+	if mqtt5 {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
 	}
 	return NewFrame(PacketConnAck, 0, payload), nil
 }
@@ -338,6 +397,10 @@ func NewPublishFrame(ctx *channel.HandlerContext, packet PublishPacket) (Frame, 
 	headSize := mqttStringSize(packet.Topic)
 	if packet.QoS > 0 {
 		headSize += 2
+	}
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || !packet.Properties.Empty()
+	if mqtt5 {
+		headSize += mqttPropertiesSize(packet.Properties)
 	}
 	head, err := ctx.Channel().Allocator().Acquire(headSize)
 	if err != nil {
@@ -369,6 +432,15 @@ func NewPublishFrame(ctx *channel.HandlerContext, packet PublishPacket) (Frame, 
 			return Frame{}, err
 		}
 	}
+	if mqtt5 {
+		if err := writeMQTT5Properties(head, packet.Properties); err != nil {
+			head.Release()
+			if packet.Payload != nil {
+				packet.Payload.Release()
+			}
+			return Frame{}, err
+		}
+	}
 	payload := buffer.NewCompositeByteBuf()
 	payload.Append(head)
 	if packet.Payload != nil {
@@ -386,22 +458,46 @@ func NewPublishFrame(ctx *channel.HandlerContext, packet PublishPacket) (Frame, 
 }
 
 func NewPacketIDFrame(ctx *channel.HandlerContext, packetType byte, packetID uint16) (Frame, error) {
-	if packetID == 0 {
+	return newPacketIDFrame(ctx, PacketIDPacket{Type: packetType, PacketID: packetID})
+}
+
+func newPacketIDFrame(ctx *channel.HandlerContext, packet PacketIDPacket) (Frame, error) {
+	if packet.PacketID == 0 {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
-	flags, ok := packetIDFlags(packetType)
+	flags, ok := packetIDFlags(packet.Type)
 	if !ok {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
-	payload, err := ctx.Channel().Allocator().Acquire(2)
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || packet.ReasonCode != 0 || !packet.Properties.Empty()
+	size := 2
+	if mqtt5 {
+		size++
+		if !packet.Properties.Empty() {
+			size += mqttPropertiesSize(packet.Properties)
+		}
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return Frame{}, err
 	}
-	if err := writeUint16(payload, packetID); err != nil {
+	if err := writeUint16(payload, packet.PacketID); err != nil {
 		payload.Release()
 		return Frame{}, err
 	}
-	return NewFrame(packetType, flags, payload), nil
+	if mqtt5 {
+		if err := writeByte(payload, packet.ReasonCode); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
+		if !packet.Properties.Empty() {
+			if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+				payload.Release()
+				return Frame{}, err
+			}
+		}
+	}
+	return NewFrame(packet.Type, flags, payload), nil
 }
 
 func NewSubscribeFrame(ctx *channel.HandlerContext, packet SubscribePacket) (Frame, error) {
@@ -409,6 +505,10 @@ func NewSubscribeFrame(ctx *channel.HandlerContext, packet SubscribePacket) (Fra
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
 	size := 2
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || !packet.Properties.Empty()
+	if mqtt5 {
+		size += mqttPropertiesSize(packet.Properties)
+	}
 	for _, sub := range packet.Subscriptions {
 		if sub.Topic == "" || !validMQTTString(sub.Topic) || !validQoS(sub.QoS) {
 			return Frame{}, codec.ErrInvalidFrameLength
@@ -422,6 +522,12 @@ func NewSubscribeFrame(ctx *channel.HandlerContext, packet SubscribePacket) (Fra
 	if err := writeUint16(payload, packet.PacketID); err != nil {
 		payload.Release()
 		return Frame{}, err
+	}
+	if mqtt5 {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
 	}
 	for _, sub := range packet.Subscriptions {
 		if err := writeMQTTString(payload, sub.Topic); err != nil {
@@ -441,6 +547,10 @@ func NewUnsubscribeFrame(ctx *channel.HandlerContext, packet UnsubscribePacket) 
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
 	size := 2
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || !packet.Properties.Empty()
+	if mqtt5 {
+		size += mqttPropertiesSize(packet.Properties)
+	}
 	for _, topic := range packet.Topics {
 		if topic == "" || !validMQTTString(topic) {
 			return Frame{}, codec.ErrInvalidFrameLength
@@ -455,6 +565,12 @@ func NewUnsubscribeFrame(ctx *channel.HandlerContext, packet UnsubscribePacket) 
 		payload.Release()
 		return Frame{}, err
 	}
+	if mqtt5 {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
+	}
 	for _, topic := range packet.Topics {
 		if err := writeMQTTString(payload, topic); err != nil {
 			payload.Release()
@@ -468,18 +584,29 @@ func NewUnsubAckFrame(ctx *channel.HandlerContext, packet UnsubAckPacket) (Frame
 	if packet.PacketID == 0 {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || !packet.Properties.Empty()
 	for _, code := range packet.ReturnCodes {
-		if !validUnsubAckReturnCode(code) {
+		if !validUnsubAckReturnCode(code, mqtt5) {
 			return Frame{}, codec.ErrInvalidFrameLength
 		}
 	}
-	payload, err := ctx.Channel().Allocator().Acquire(2 + len(packet.ReturnCodes))
+	size := 2 + len(packet.ReturnCodes)
+	if mqtt5 {
+		size += mqttPropertiesSize(packet.Properties)
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return Frame{}, err
 	}
 	if err := writeUint16(payload, packet.PacketID); err != nil {
 		payload.Release()
 		return Frame{}, err
+	}
+	if mqtt5 {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
 	}
 	if _, err := payload.WriteBytes(packet.ReturnCodes); err != nil {
 		payload.Release()
@@ -503,18 +630,29 @@ func NewSubAckFrame(ctx *channel.HandlerContext, packet SubAckPacket) (Frame, er
 	if packet.PacketID == 0 {
 		return Frame{}, codec.ErrInvalidFrameLength
 	}
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || !packet.Properties.Empty()
 	for _, code := range packet.ReturnCodes {
-		if !validSubAckReturnCode(code) {
+		if !validSubAckReturnCode(code, mqtt5) {
 			return Frame{}, codec.ErrInvalidFrameLength
 		}
 	}
-	payload, err := ctx.Channel().Allocator().Acquire(2 + len(packet.ReturnCodes))
+	size := 2 + len(packet.ReturnCodes)
+	if mqtt5 {
+		size += mqttPropertiesSize(packet.Properties)
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return Frame{}, err
 	}
 	if err := writeUint16(payload, packet.PacketID); err != nil {
 		payload.Release()
 		return Frame{}, err
+	}
+	if mqtt5 {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
 	}
 	if _, err := payload.WriteBytes(packet.ReturnCodes); err != nil {
 		payload.Release()
@@ -529,6 +667,54 @@ func PingReq() Frame {
 
 func Disconnect() Frame {
 	return NewFrame(PacketDisconnect, 0, nil)
+}
+
+func NewDisconnectFrame(ctx *channel.HandlerContext, packet DisconnectPacket) (Frame, error) {
+	mqtt5 := packet.ProtocolLevel == mqttProtocolLevel5 || packet.ReasonCode != 0 || !packet.Properties.Empty()
+	if !mqtt5 {
+		return NewFrame(PacketDisconnect, 0, nil), nil
+	}
+	size := 1
+	if !packet.Properties.Empty() {
+		size += mqttPropertiesSize(packet.Properties)
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(size)
+	if err != nil {
+		return Frame{}, err
+	}
+	if err := writeByte(payload, packet.ReasonCode); err != nil {
+		payload.Release()
+		return Frame{}, err
+	}
+	if !packet.Properties.Empty() {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
+	}
+	return NewFrame(PacketDisconnect, 0, payload), nil
+}
+
+func NewAuthFrame(ctx *channel.HandlerContext, packet AuthPacket) (Frame, error) {
+	size := 1
+	if !packet.Properties.Empty() {
+		size += mqttPropertiesSize(packet.Properties)
+	}
+	payload, err := ctx.Channel().Allocator().Acquire(size)
+	if err != nil {
+		return Frame{}, err
+	}
+	if err := writeByte(payload, packet.ReasonCode); err != nil {
+		payload.Release()
+		return Frame{}, err
+	}
+	if !packet.Properties.Empty() {
+		if err := writeMQTT5Properties(payload, packet.Properties); err != nil {
+			payload.Release()
+			return Frame{}, err
+		}
+	}
+	return NewFrame(PacketAuth, 0, payload), nil
 }
 
 func decodeConnect(frame Frame) (ConnectPacket, error) {
@@ -562,14 +748,11 @@ func decodeConnect(frame Frame) (ConnectPacket, error) {
 		return ConnectPacket{}, codec.ErrInvalidFrameLength
 	}
 	idx = next + 4
+	var properties MQTT5Properties
 	if level == mqttProtocolLevel5 {
-		propertyLength, n, ok, err := readVariableByteInteger(frame.Payload, idx)
-		if err != nil || !ok {
-			return ConnectPacket{}, codec.ErrInvalidFrameLength
-		}
-		idx += n + propertyLength
-		if idx > frame.Payload.WriterIndex() {
-			return ConnectPacket{}, codec.ErrInvalidFrameLength
+		properties, idx, err = readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return ConnectPacket{}, err
 		}
 	}
 	clientID, idx, err := readMQTTString(frame.Payload, idx)
@@ -585,8 +768,15 @@ func decodeConnect(frame Frame) (ConnectPacket, error) {
 		WillFlag:         willFlag,
 		WillQoS:          willQoS,
 		WillRetain:       willRetain,
+		Properties:       properties,
 	}
 	if willFlag {
+		if level == mqttProtocolLevel5 {
+			packet.WillProperties, idx, err = readMQTT5Properties(frame.Payload, idx)
+			if err != nil {
+				return ConnectPacket{}, err
+			}
+		}
 		packet.WillTopic, idx, err = readMQTTString(frame.Payload, idx)
 		if err != nil {
 			return ConnectPacket{}, err
@@ -614,8 +804,8 @@ func decodeConnect(frame Frame) (ConnectPacket, error) {
 	return packet, nil
 }
 
-func decodeConnAck(frame Frame) (ConnAckPacket, error) {
-	if frame.Flags() != 0 || frame.Payload == nil || frame.Payload.ReadableBytes() != 2 {
+func decodeConnAck(frame Frame, mqtt5 bool) (ConnAckPacket, error) {
+	if frame.Flags() != 0 || frame.Payload == nil || frame.Payload.ReadableBytes() < 2 {
 		return ConnAckPacket{}, codec.ErrInvalidFrameLength
 	}
 	idx := frame.Payload.ReaderIndex()
@@ -624,10 +814,26 @@ func decodeConnAck(frame Frame) (ConnAckPacket, error) {
 	if flags&0xfe != 0 {
 		return ConnAckPacket{}, codec.ErrInvalidFrameLength
 	}
-	return ConnAckPacket{SessionPresent: flags&1 != 0, ReturnCode: code}, nil
+	if !validConnAckReturnCode(code, mqtt5) {
+		return ConnAckPacket{}, codec.ErrInvalidFrameLength
+	}
+	packet := ConnAckPacket{SessionPresent: flags&1 != 0, ReturnCode: code}
+	idx += 2
+	if idx < frame.Payload.WriterIndex() {
+		props, next, err := readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return ConnAckPacket{}, err
+		}
+		if next != frame.Payload.WriterIndex() {
+			return ConnAckPacket{}, codec.ErrInvalidFrameLength
+		}
+		packet.ProtocolLevel = mqttProtocolLevel5
+		packet.Properties = props
+	}
+	return packet, nil
 }
 
-func decodePublish(frame Frame) (PublishPacket, error) {
+func decodePublish(frame Frame, mqtt5 bool) (PublishPacket, error) {
 	flags := frame.Flags()
 	qos := (flags >> 1) & 0x03
 	if qos == 3 || frame.Payload == nil {
@@ -651,6 +857,13 @@ func decodePublish(frame Frame) (PublishPacket, error) {
 		}
 		idx += 2
 	}
+	if mqtt5 {
+		packet.Properties, idx, err = readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return PublishPacket{}, err
+		}
+		packet.ProtocolLevel = mqttProtocolLevel5
+	}
 	if frame.Payload.WriterIndex() > idx {
 		packet.Payload, err = frame.Payload.Slice(idx, frame.Payload.WriterIndex()-idx)
 		if err != nil {
@@ -660,12 +873,12 @@ func decodePublish(frame Frame) (PublishPacket, error) {
 	return packet, nil
 }
 
-func decodePacketID(frame Frame) (PacketIDPacket, error) {
+func decodePacketID(frame Frame, mqtt5 bool) (PacketIDPacket, error) {
 	expectedFlags, ok := packetIDFlags(frame.PacketType())
 	if !ok {
 		return PacketIDPacket{}, codec.ErrInvalidFrameLength
 	}
-	if frame.Flags() != expectedFlags || frame.Payload == nil || frame.Payload.ReadableBytes() != 2 {
+	if frame.Flags() != expectedFlags || frame.Payload == nil || frame.Payload.ReadableBytes() < 2 {
 		return PacketIDPacket{}, codec.ErrInvalidFrameLength
 	}
 	id, err := readUint16(frame.Payload, frame.Payload.ReaderIndex())
@@ -675,10 +888,34 @@ func decodePacketID(frame Frame) (PacketIDPacket, error) {
 	if id == 0 {
 		return PacketIDPacket{}, codec.ErrInvalidFrameLength
 	}
-	return PacketIDPacket{Type: frame.PacketType(), PacketID: id}, nil
+	packet := PacketIDPacket{Type: frame.PacketType(), PacketID: id}
+	idx := frame.Payload.ReaderIndex() + 2
+	if idx == frame.Payload.WriterIndex() {
+		return packet, nil
+	}
+	if !mqtt5 {
+		return PacketIDPacket{}, codec.ErrInvalidFrameLength
+	}
+	packet.ProtocolLevel = mqttProtocolLevel5
+	reason, ok := frame.Payload.GetByte(idx)
+	if !ok {
+		return PacketIDPacket{}, codec.ErrInvalidFrameLength
+	}
+	packet.ReasonCode = reason
+	idx++
+	if idx < frame.Payload.WriterIndex() {
+		packet.Properties, idx, err = readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return PacketIDPacket{}, err
+		}
+		if idx != frame.Payload.WriterIndex() {
+			return PacketIDPacket{}, codec.ErrInvalidFrameLength
+		}
+	}
+	return packet, nil
 }
 
-func decodeSubscribe(frame Frame) (SubscribePacket, error) {
+func decodeSubscribe(frame Frame, mqtt5 bool) (SubscribePacket, error) {
 	if frame.Flags() != 2 || frame.Payload == nil || frame.Payload.ReadableBytes() < 5 {
 		return SubscribePacket{}, codec.ErrInvalidFrameLength
 	}
@@ -689,6 +926,13 @@ func decodeSubscribe(frame Frame) (SubscribePacket, error) {
 	}
 	idx += 2
 	packet := SubscribePacket{PacketID: id}
+	if mqtt5 {
+		packet.Properties, idx, err = readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return SubscribePacket{}, err
+		}
+		packet.ProtocolLevel = mqttProtocolLevel5
+	}
 	for idx < frame.Payload.WriterIndex() {
 		topic, next, err := readMQTTString(frame.Payload, idx)
 		if err != nil {
@@ -710,7 +954,7 @@ func decodeSubscribe(frame Frame) (SubscribePacket, error) {
 	return packet, nil
 }
 
-func decodeSubAck(frame Frame) (SubAckPacket, error) {
+func decodeSubAck(frame Frame, mqtt5 bool) (SubAckPacket, error) {
 	if frame.Flags() != 0 || frame.Payload == nil || frame.Payload.ReadableBytes() < 2 {
 		return SubAckPacket{}, codec.ErrInvalidFrameLength
 	}
@@ -719,18 +963,27 @@ func decodeSubAck(frame Frame) (SubAckPacket, error) {
 		return SubAckPacket{}, codec.ErrInvalidFrameLength
 	}
 	start := frame.Payload.ReaderIndex() + 2
+	packet := SubAckPacket{PacketID: id}
+	if mqtt5 {
+		packet.Properties, start, err = readMQTT5Properties(frame.Payload, start)
+		if err != nil {
+			return SubAckPacket{}, err
+		}
+		packet.ProtocolLevel = mqttProtocolLevel5
+	}
 	codesLen := frame.Payload.WriterIndex() - start
 	codes := make([]byte, codesLen)
 	for i := 0; i < codesLen; i++ {
 		codes[i], _ = frame.Payload.GetByte(start + i)
-		if !validSubAckReturnCode(codes[i]) {
+		if !validSubAckReturnCode(codes[i], mqtt5) {
 			return SubAckPacket{}, codec.ErrInvalidFrameLength
 		}
 	}
-	return SubAckPacket{PacketID: id, ReturnCodes: codes}, nil
+	packet.ReturnCodes = codes
+	return packet, nil
 }
 
-func decodeUnsubscribe(frame Frame) (UnsubscribePacket, error) {
+func decodeUnsubscribe(frame Frame, mqtt5 bool) (UnsubscribePacket, error) {
 	if frame.Flags() != 2 || frame.Payload == nil || frame.Payload.ReadableBytes() < 5 {
 		return UnsubscribePacket{}, codec.ErrInvalidFrameLength
 	}
@@ -741,6 +994,13 @@ func decodeUnsubscribe(frame Frame) (UnsubscribePacket, error) {
 	}
 	idx += 2
 	packet := UnsubscribePacket{PacketID: id}
+	if mqtt5 {
+		packet.Properties, idx, err = readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return UnsubscribePacket{}, err
+		}
+		packet.ProtocolLevel = mqttProtocolLevel5
+	}
 	for idx < frame.Payload.WriterIndex() {
 		topic, next, err := readMQTTString(frame.Payload, idx)
 		if err != nil {
@@ -758,7 +1018,7 @@ func decodeUnsubscribe(frame Frame) (UnsubscribePacket, error) {
 	return packet, nil
 }
 
-func decodeUnsubAck(frame Frame) (UnsubAckPacket, error) {
+func decodeUnsubAck(frame Frame, mqtt5 bool) (UnsubAckPacket, error) {
 	if frame.Flags() != 0 || frame.Payload == nil || frame.Payload.ReadableBytes() < 2 {
 		return UnsubAckPacket{}, codec.ErrInvalidFrameLength
 	}
@@ -767,15 +1027,84 @@ func decodeUnsubAck(frame Frame) (UnsubAckPacket, error) {
 		return UnsubAckPacket{}, codec.ErrInvalidFrameLength
 	}
 	start := frame.Payload.ReaderIndex() + 2
+	packet := UnsubAckPacket{PacketID: id}
+	if mqtt5 {
+		packet.Properties, start, err = readMQTT5Properties(frame.Payload, start)
+		if err != nil {
+			return UnsubAckPacket{}, err
+		}
+		packet.ProtocolLevel = mqttProtocolLevel5
+	}
 	codesLen := frame.Payload.WriterIndex() - start
 	codes := make([]byte, codesLen)
 	for i := 0; i < codesLen; i++ {
 		codes[i], _ = frame.Payload.GetByte(start + i)
-		if !validUnsubAckReturnCode(codes[i]) {
+		if !validUnsubAckReturnCode(codes[i], mqtt5) {
 			return UnsubAckPacket{}, codec.ErrInvalidFrameLength
 		}
 	}
-	return UnsubAckPacket{PacketID: id, ReturnCodes: codes}, nil
+	packet.ReturnCodes = codes
+	return packet, nil
+}
+
+func decodeDisconnect(frame Frame, mqtt5 bool) (DisconnectPacket, error) {
+	if frame.Flags() != 0 {
+		return DisconnectPacket{}, codec.ErrInvalidFrameLength
+	}
+	if frame.RemainingLength() == 0 {
+		return DisconnectPacket{}, nil
+	}
+	if !mqtt5 || frame.Payload == nil {
+		return DisconnectPacket{}, codec.ErrInvalidFrameLength
+	}
+	idx := frame.Payload.ReaderIndex()
+	reason, ok := frame.Payload.GetByte(idx)
+	if !ok {
+		return DisconnectPacket{}, codec.ErrInvalidFrameLength
+	}
+	packet := DisconnectPacket{ReasonCode: reason, ProtocolLevel: mqttProtocolLevel5}
+	idx++
+	if idx < frame.Payload.WriterIndex() {
+		var err error
+		packet.Properties, idx, err = readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return DisconnectPacket{}, err
+		}
+		if idx != frame.Payload.WriterIndex() {
+			return DisconnectPacket{}, codec.ErrInvalidFrameLength
+		}
+	}
+	return packet, nil
+}
+
+func decodeAuth(frame Frame, mqtt5 bool) (AuthPacket, error) {
+	if frame.Flags() != 0 || !mqtt5 {
+		return AuthPacket{}, codec.ErrInvalidFrameLength
+	}
+	if frame.RemainingLength() == 0 {
+		return AuthPacket{}, nil
+	}
+	if frame.Payload == nil {
+		return AuthPacket{}, codec.ErrInvalidFrameLength
+	}
+	idx := frame.Payload.ReaderIndex()
+	reason, ok := frame.Payload.GetByte(idx)
+	if !ok {
+		return AuthPacket{}, codec.ErrInvalidFrameLength
+	}
+	packet := AuthPacket{ReasonCode: reason}
+	idx++
+	if idx < frame.Payload.WriterIndex() {
+		var err error
+		packet.Properties, idx, err = readMQTT5Properties(frame.Payload, idx)
+		if err != nil {
+			return AuthPacket{}, err
+		}
+		if idx != frame.Payload.WriterIndex() {
+			return AuthPacket{}, codec.ErrInvalidFrameLength
+		}
+	}
+	return packet, nil
 }
 
 func mqttStringSize(s string) int {
@@ -849,15 +1178,24 @@ func validSubscribeOptions(options byte) bool {
 	return options&0xfc == 0 && validQoS(options&0x03)
 }
 
-func validConnAckReturnCode(code byte) bool {
+func validConnAckReturnCode(code byte, mqtt5 bool) bool {
+	if mqtt5 {
+		return code == 0 || code >= 0x80
+	}
 	return code <= 5
 }
 
-func validSubAckReturnCode(code byte) bool {
+func validSubAckReturnCode(code byte, mqtt5 bool) bool {
+	if mqtt5 {
+		return code <= QoSExactlyOnce.Byte() || code >= 0x80
+	}
 	return code == QoSAtMostOnce.Byte() || code == QoSAtLeastOnce.Byte() || code == QoSExactlyOnce.Byte() || code == 0x80
 }
 
-func validUnsubAckReturnCode(code byte) bool {
+func validUnsubAckReturnCode(code byte, mqtt5 bool) bool {
+	if mqtt5 {
+		return code == 0x00 || code == 0x11 || code >= 0x80
+	}
 	return code == 0x00 || code == 0x11 || code == 0x80
 }
 
@@ -869,6 +1207,15 @@ func writeVariableByteInteger(buf buffer.ByteBuf, value int) error {
 	n := putRemainingLength(tmp[:], value)
 	_, err := buf.WriteBytes(tmp[:n])
 	return err
+}
+
+func variableByteIntegerSize(value int) int {
+	size := 1
+	for value >= 128 {
+		value /= 128
+		size++
+	}
+	return size
 }
 
 func readVariableByteInteger(buf buffer.ByteBuf, index int) (int, int, bool, error) {
@@ -896,6 +1243,16 @@ func writeUint16(buf buffer.ByteBuf, value uint16) error {
 	return err
 }
 
+func writeUint32(buf buffer.ByteBuf, value uint32) error {
+	_, err := buf.WriteBytes([]byte{byte(value >> 24), byte(value >> 16), byte(value >> 8), byte(value)})
+	return err
+}
+
+func writeByte(buf buffer.ByteBuf, value byte) error {
+	_, err := buf.WriteBytes([]byte{value})
+	return err
+}
+
 func readUint16(buf buffer.ByteBuf, index int) (uint16, error) {
 	if index+2 > buf.WriterIndex() {
 		return 0, codec.ErrInvalidFrameLength
@@ -909,4 +1266,19 @@ func readUint16(buf buffer.ByteBuf, index int) (uint16, error) {
 		return 0, codec.ErrInvalidFrameLength
 	}
 	return uint16(hi)<<8 | uint16(lo), nil
+}
+
+func readUint32(buf buffer.ByteBuf, index int) (uint32, error) {
+	if index+4 > buf.WriterIndex() {
+		return 0, codec.ErrInvalidFrameLength
+	}
+	var out uint32
+	for i := 0; i < 4; i++ {
+		b, ok := buf.GetByte(index + i)
+		if !ok {
+			return 0, codec.ErrInvalidFrameLength
+		}
+		out = (out << 8) | uint32(b)
+	}
+	return out, nil
 }
