@@ -168,7 +168,88 @@ func (d *RequestDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composit
 	return req, nil
 }
 
+type ResponseDecoder struct {
+	*codec.ByteToMessageDecoder
+	maxHeaderBytes int
+	maxBodyBytes   int
+}
+
+func NewResponseDecoder(maxHeaderBytes int, maxBodyBytes int) (*ResponseDecoder, error) {
+	if maxHeaderBytes <= 0 || maxBodyBytes < 0 {
+		return nil, codec.ErrInvalidFrameLength
+	}
+	d := &ResponseDecoder{maxHeaderBytes: maxHeaderBytes, maxBodyBytes: maxBodyBytes}
+	d.ByteToMessageDecoder = codec.NewByteToMessageDecoder(d)
+	return d, nil
+}
+
+func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf) (any, error) {
+	headerEnd, ok := findHeaderEnd(in)
+	if !ok {
+		if in.ReadableBytes() > d.maxHeaderBytes {
+			return nil, codec.ErrFrameTooLong
+		}
+		return nil, nil
+	}
+	reader := in.ReaderIndex()
+	headerBytes := headerEnd - reader + 4
+	if headerBytes > d.maxHeaderBytes {
+		return nil, codec.ErrFrameTooLong
+	}
+	header, err := stringSlice(in, reader, headerBytes)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := parseResponseHeader(header)
+	if err != nil {
+		return nil, err
+	}
+	bodyLength := contentLength(resp.Headers)
+	if resp.Headers.ContainsToken("Transfer-Encoding", "chunked") {
+		body, total, ok, err := d.decodeChunkedBody(ctx, in, reader+headerBytes)
+		if err != nil || !ok {
+			return nil, err
+		}
+		resp.Body = body
+		resp.Headers.Del("Transfer-Encoding")
+		resp.Headers.Set("Content-Length", strconv.Itoa(body.ReadableBytes()))
+		if err := in.SkipBytes(headerBytes + total); err != nil {
+			resp.Release()
+			return nil, err
+		}
+		return resp, nil
+	}
+	if bodyLength < 0 || bodyLength > d.maxBodyBytes {
+		return nil, codec.ErrFrameTooLong
+	}
+	total := headerBytes + bodyLength
+	if in.ReadableBytes() < total {
+		return nil, nil
+	}
+	if bodyLength > 0 {
+		resp.Body, err = in.Slice(reader+headerBytes, bodyLength)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := in.SkipBytes(total); err != nil {
+		if resp.Body != nil {
+			resp.Body.Release()
+		}
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (d *ResponseDecoder) decodeChunkedBody(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf, index int) (buffer.ByteBuf, int, bool, error) {
+	return decodeChunkedBody(ctx, in, index, d.maxBodyBytes)
+}
+
 func (d *RequestDecoder) decodeChunkedBody(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf, index int) (buffer.ByteBuf, int, bool, error) {
+	return decodeChunkedBody(ctx, in, index, d.maxBodyBytes)
+}
+
+func decodeChunkedBody(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf, index int, maxBodyBytes int) (buffer.ByteBuf, int, bool, error) {
 	total := 0
 	aggregate, err := ctx.Channel().Allocator().Acquire(1)
 	if err != nil {
@@ -202,7 +283,7 @@ func (d *RequestDecoder) decodeChunkedBody(ctx *channel.HandlerContext, in *buff
 			total += 2
 			return aggregate, total, true, nil
 		}
-		if aggregate.ReadableBytes()+chunkSize > d.maxBodyBytes {
+		if aggregate.ReadableBytes()+chunkSize > maxBodyBytes {
 			aggregate.Release()
 			return nil, 0, false, codec.ErrFrameTooLong
 		}
@@ -246,6 +327,87 @@ func (d *RequestDecoder) decodeChunkedBody(ctx *channel.HandlerContext, in *buff
 		}
 		total += 2
 	}
+}
+
+type RequestEncoder struct{}
+
+func NewRequestEncoder() *RequestEncoder {
+	return &RequestEncoder{}
+}
+
+func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
+	req, ok := msg.(Request)
+	if !ok {
+		return ctx.Write(msg)
+	}
+	method := req.Method
+	if method == "" {
+		method = "GET"
+	}
+	uri := req.URI
+	if uri == "" {
+		uri = "/"
+	}
+	version := req.Version
+	if version == "" {
+		version = "HTTP/1.1"
+	}
+	var builder strings.Builder
+	builder.WriteString(method)
+	builder.WriteByte(' ')
+	builder.WriteString(uri)
+	builder.WriteByte(' ')
+	builder.WriteString(version)
+	builder.WriteString("\r\n")
+	hasContentLength := false
+	chunked := req.Headers.ContainsToken("Transfer-Encoding", "chunked")
+	for k, v := range req.Headers {
+		if strings.EqualFold(k, "Content-Length") {
+			hasContentLength = true
+		}
+		builder.WriteString(k)
+		builder.WriteString(": ")
+		builder.WriteString(v)
+		builder.WriteString("\r\n")
+	}
+	if req.Body != nil && !hasContentLength && !chunked {
+		builder.WriteString("Content-Length: ")
+		builder.WriteString(strconv.Itoa(req.Body.ReadableBytes()))
+		builder.WriteString("\r\n")
+	}
+	builder.WriteString("\r\n")
+	header := builder.String()
+	out, err := ctx.Channel().Allocator().Acquire(len(header))
+	if err != nil {
+		if req.Body != nil {
+			req.Body.Release()
+		}
+		return err
+	}
+	if _, err := out.WriteBytes([]byte(header)); err != nil {
+		out.Release()
+		if req.Body != nil {
+			req.Body.Release()
+		}
+		return err
+	}
+	if err := ctx.Write(out); err != nil {
+		out.Release()
+		if req.Body != nil {
+			req.Body.Release()
+		}
+		return err
+	}
+	if req.Body != nil {
+		if chunked {
+			if err := writeChunkedData(ctx, req.Body); err != nil {
+				return err
+			}
+			return writeLastChunk(ctx, nil)
+		}
+		return ctx.Write(req.Body)
+	}
+	return nil
 }
 
 type ResponseEncoder struct{}
@@ -492,6 +654,37 @@ func parseRequestHeader(src string) (Request, error) {
 		req.Headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
 	return req, nil
+}
+
+func parseResponseHeader(src string) (Response, error) {
+	lines := strings.Split(src, "\r\n")
+	if len(lines) == 0 {
+		return Response{}, codec.ErrInvalidFrameLength
+	}
+	parts := strings.SplitN(lines[0], " ", 3)
+	if len(parts) < 2 {
+		return Response{}, codec.ErrInvalidFrameLength
+	}
+	statusCode, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return Response{}, codec.ErrInvalidFrameLength
+	}
+	reason := ""
+	if len(parts) == 3 {
+		reason = parts[2]
+	}
+	resp := Response{Version: parts[0], StatusCode: statusCode, Reason: reason, Headers: make(Headers, len(lines))}
+	for _, line := range lines[1:] {
+		if line == "" {
+			break
+		}
+		k, v, ok := strings.Cut(line, ":")
+		if !ok {
+			return Response{}, codec.ErrInvalidFrameLength
+		}
+		resp.Headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return resp, nil
 }
 
 func contentLength(headers Headers) int {

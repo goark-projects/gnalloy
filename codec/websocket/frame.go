@@ -1,6 +1,8 @@
 package websocket
 
 import (
+	"encoding/binary"
+
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/codec"
@@ -31,14 +33,36 @@ func (f Frame) Release() {
 
 type FrameDecoder struct {
 	*codec.ByteToMessageDecoder
-	maxFrameLength int
+	maxFrameLength     int
+	expectMaskedFrames bool
+	allowMaskedFrames  bool
 }
 
 func NewFrameDecoder(maxFrameLength int) (*FrameDecoder, error) {
+	return newFrameDecoder(maxFrameLength, false, true)
+}
+
+func NewServerFrameDecoder(maxFrameLength int) (*FrameDecoder, error) {
+	return newFrameDecoder(maxFrameLength, true, true)
+}
+
+func NewClientFrameDecoder(maxFrameLength int) (*FrameDecoder, error) {
+	return newFrameDecoder(maxFrameLength, false, false)
+}
+
+func NewFrameDecoderWithMaskPolicy(maxFrameLength int, expectMaskedFrames bool, allowMaskedFrames bool) (*FrameDecoder, error) {
+	return newFrameDecoder(maxFrameLength, expectMaskedFrames, allowMaskedFrames)
+}
+
+func newFrameDecoder(maxFrameLength int, expectMaskedFrames bool, allowMaskedFrames bool) (*FrameDecoder, error) {
 	if maxFrameLength <= 0 {
 		return nil, codec.ErrInvalidFrameLength
 	}
-	d := &FrameDecoder{maxFrameLength: maxFrameLength}
+	d := &FrameDecoder{
+		maxFrameLength:     maxFrameLength,
+		expectMaskedFrames: expectMaskedFrames,
+		allowMaskedFrames:  allowMaskedFrames,
+	}
 	d.ByteToMessageDecoder = codec.NewByteToMessageDecoder(d)
 	return d, nil
 }
@@ -56,6 +80,12 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 		return nil, codec.ErrInvalidFrameLength
 	}
 	masked := b1&0x80 != 0
+	if d.expectMaskedFrames && !masked {
+		return nil, ErrMaskMismatch
+	}
+	if !d.allowMaskedFrames && masked {
+		return nil, ErrMaskMismatch
+	}
 	payloadLength := int(b1 & 0x7f)
 	headerLength := 2
 	if payloadLength == 126 {
@@ -110,13 +140,19 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 			return nil, err
 		}
 		if masked {
-			payload, err = unmask(ctx, part, mask)
-			part.Release()
+			payload, err = unmask(part, mask)
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			payload = part
+		}
+	}
+	if opcode == OpcodeClose && payload != nil && payload.ReadableBytes() >= 2 {
+		status := binary.BigEndian.Uint16(payload.Bytes()[:2])
+		if !IsValidCloseStatusCode(status) {
+			payload.Release()
+			return nil, ErrCloseStatusInvalid
 		}
 	}
 	if err := in.SkipBytes(total); err != nil {
@@ -142,6 +178,12 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	payloadLength := 0
 	if frame.Payload != nil {
 		payloadLength = frame.Payload.ReadableBytes()
+	}
+	if err := validateOutboundFrame(frame, payloadLength); err != nil {
+		if frame.Payload != nil {
+			frame.Payload.Release()
+		}
+		return err
 	}
 	headerLength := websocketHeaderLength(payloadLength, frame.Masked)
 	header, err := ctx.Channel().Allocator().Acquire(headerLength)
@@ -179,20 +221,15 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	return ctx.Write(masked)
 }
 
-func unmask(ctx *channel.HandlerContext, in buffer.ByteBuf, key [4]byte) (buffer.ByteBuf, error) {
-	out, err := ctx.Channel().Allocator().Acquire(in.ReadableBytes())
-	if err != nil {
-		return nil, err
+func unmask(in buffer.ByteBuf, key [4]byte) (buffer.ByteBuf, error) {
+	offset := 0
+	for _, data := range in.ReadableSlices(nil) {
+		for i := range data {
+			data[i] ^= key[(offset+i)&3]
+		}
+		offset += len(data)
 	}
-	if _, err := out.WriteBytes(in.Bytes()); err != nil {
-		out.Release()
-		return nil, err
-	}
-	data := out.Bytes()
-	for i := range data {
-		data[i] ^= key[i&3]
-	}
-	return out, nil
+	return in, nil
 }
 
 func maskCopy(ctx *channel.HandlerContext, in buffer.ByteBuf, key [4]byte) (buffer.ByteBuf, error) {
@@ -260,6 +297,33 @@ func writeWebSocketHeader(out buffer.ByteBuf, frame Frame, payloadLength int) er
 		return err
 	}
 	return nil
+}
+
+func validateOutboundFrame(frame Frame, payloadLength int) error {
+	if frame.Opcode == OpcodeClose && payloadLength >= 2 && frame.Payload != nil {
+		status := binary.BigEndian.Uint16(frame.Payload.Bytes()[:2])
+		if !IsValidCloseStatusCode(status) {
+			return ErrCloseStatusInvalid
+		}
+	}
+	if isControlOpcode(frame.Opcode) && (!frame.Final || payloadLength > 125 || (frame.Opcode == OpcodeClose && payloadLength == 1)) {
+		return ErrControlFrameInvalid
+	}
+	return nil
+}
+
+func IsValidCloseStatusCode(code uint16) bool {
+	if code < 1000 || code >= 5000 {
+		return false
+	}
+	switch code {
+	case 1004, 1005, 1006, 1015:
+		return false
+	}
+	if code >= 1016 && code < 3000 {
+		return false
+	}
+	return true
 }
 
 func isKnownOpcode(opcode byte) bool {

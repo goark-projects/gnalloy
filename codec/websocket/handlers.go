@@ -145,7 +145,13 @@ type CloseStatus struct {
 }
 
 func NewCloseFrame(ctx *channel.HandlerContext, code uint16, reason string) (Frame, error) {
+	if !IsValidCloseStatusCode(code) {
+		return Frame{}, ErrCloseStatusInvalid
+	}
 	size := 2 + len(reason)
+	if size > 125 {
+		return Frame{}, ErrControlFrameInvalid
+	}
 	payload, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return Frame{}, err

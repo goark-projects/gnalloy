@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -17,6 +18,14 @@ func (c *frameCollector) ChannelRead(_ *channel.HandlerContext, msg any) {
 	if frame, ok := msg.(Frame); ok {
 		c.frames = append(c.frames, frame)
 	}
+}
+
+type errorCollector struct {
+	errs []error
+}
+
+func (c *errorCollector) ExceptionCaught(_ *channel.HandlerContext, err error) {
+	c.errs = append(c.errs, err)
 }
 
 func TestFrameDecoderMaskedPayload(t *testing.T) {
@@ -41,6 +50,54 @@ func TestFrameDecoderMaskedPayload(t *testing.T) {
 	}
 }
 
+func TestServerFrameDecoderRejectsUnmaskedClientFrame(t *testing.T) {
+	decoder, err := NewServerFrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("errors", errs)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x81, 0x02, 'h', 'i'}))
+	if len(errs.errs) != 1 || !errors.Is(errs.errs[0], ErrMaskMismatch) {
+		t.Fatalf("errs=%v, want ErrMaskMismatch", errs.errs)
+	}
+}
+
+func TestClientFrameDecoderRejectsMaskedServerFrame(t *testing.T) {
+	decoder, err := NewClientFrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("errors", errs)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x81, 0x82, 1, 2, 3, 4, 'h' ^ 1, 'i' ^ 2}))
+	if len(errs.errs) != 1 || !errors.Is(errs.errs[0], ErrMaskMismatch) {
+		t.Fatalf("errs=%v, want ErrMaskMismatch", errs.errs)
+	}
+}
+
+func TestFrameDecoderRejectsInvalidCloseStatus(t *testing.T) {
+	decoder, err := NewServerFrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("errors", errs)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x88, 0x82, 0, 0, 0, 0, 0x03, 0xed}))
+	if len(errs.errs) != 1 || !errors.Is(errs.errs[0], ErrCloseStatusInvalid) {
+		t.Fatalf("errs=%v, want ErrCloseStatusInvalid", errs.errs)
+	}
+}
+
 func TestFrameEncoder(t *testing.T) {
 	sink := &outboundSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
@@ -55,6 +112,18 @@ func TestFrameEncoder(t *testing.T) {
 	}
 	if string(sink.writes[0].Bytes()) != string([]byte{0x81, 0x02}) || string(sink.writes[1].Bytes()) != "hi" {
 		t.Fatalf("writes=%q,%q", sink.writes[0].Bytes(), sink.writes[1].Bytes())
+	}
+}
+
+func TestNewCloseFrameRejectsInvalidStatus(t *testing.T) {
+	var ctx *channel.HandlerContext
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("capture", handlerAddedFunc(func(c *channel.HandlerContext) error {
+		ctx = c
+		return nil
+	}))
+	if _, err := NewCloseFrame(ctx, 1005, ""); !errors.Is(err, ErrCloseStatusInvalid) {
+		t.Fatalf("err=%v, want ErrCloseStatusInvalid", err)
 	}
 }
 
@@ -201,4 +270,10 @@ type eventCollector struct {
 
 func (c *eventCollector) UserEventTriggered(_ *channel.HandlerContext, event any) {
 	c.events = append(c.events, event)
+}
+
+type handlerAddedFunc func(*channel.HandlerContext) error
+
+func (f handlerAddedFunc) HandlerAdded(ctx *channel.HandlerContext) error {
+	return f(ctx)
 }
