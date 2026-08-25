@@ -8,6 +8,7 @@ import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/codec/http1"
+	"goark.dev/gnalloy/handler/timeout"
 )
 
 type frameCollector struct {
@@ -177,6 +178,85 @@ func TestServerHandshakeWritesSwitchingProtocolsAndRemovesHTTPHandlers(t *testin
 	}
 }
 
+func TestClientHandshakeWritesRequestAndValidatesResponse(t *testing.T) {
+	sink := &outboundSink{}
+	events := &eventCollector{}
+	handshake, err := NewClientHandshakeHandler(ClientHandshakeConfig{
+		URL:            "ws://example.com/chat?room=1",
+		Headers:        http1.Headers{"Sec-WebSocket-Protocol": "chat"},
+		RemoveHandlers: []string{"handshake"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", http1.NewRequestEncoder())
+	_ = ch.Pipeline().AddLast("handshake", handshake)
+	_ = ch.Pipeline().AddLast("events", events)
+	defer sink.release()
+
+	ch.Pipeline().FireChannelActive()
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
+	}
+	header := string(sink.writes[0].Bytes())
+	for _, part := range []string{
+		"GET /chat?room=1 HTTP/1.1\r\n",
+		"Host: example.com\r\n",
+		"Upgrade: websocket\r\n",
+		"Connection: Upgrade\r\n",
+		"Sec-WebSocket-Key: " + handshake.Key() + "\r\n",
+		"Sec-WebSocket-Version: 13\r\n",
+		"Sec-WebSocket-Protocol: chat\r\n",
+	} {
+		if !strings.Contains(header, part) {
+			t.Fatalf("request header missing %q in %q", part, header)
+		}
+	}
+
+	ch.Pipeline().FireChannelRead(http1.Response{
+		StatusCode: 101,
+		Reason:     "Switching Protocols",
+		Headers: http1.Headers{
+			"Upgrade":              "websocket",
+			"Connection":           "Upgrade",
+			"Sec-WebSocket-Accept": AcceptKey(handshake.Key()),
+		},
+	})
+	if _, ok := ch.Pipeline().Context("handshake"); ok {
+		t.Fatalf("handshake should be removed after client upgrade")
+	}
+	if len(events.events) != 1 {
+		t.Fatalf("events=%d, want 1", len(events.events))
+	}
+	complete, ok := events.events[0].(HandshakeComplete)
+	if !ok || complete.URI != "/chat?room=1" {
+		t.Fatalf("event=%+v", events.events[0])
+	}
+}
+
+func TestClientHandshakeRejectsInvalidResponse(t *testing.T) {
+	sink := &outboundSink{}
+	errs := &errorCollector{}
+	handshake, err := NewClientHandshakeHandler(ClientHandshakeConfig{URL: "ws://example.com/ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", http1.NewRequestEncoder())
+	_ = ch.Pipeline().AddLast("handshake", handshake)
+	_ = ch.Pipeline().AddLast("errors", errs)
+	defer sink.release()
+
+	ch.Pipeline().FireChannelRead(http1.Response{StatusCode: 200, Reason: "OK", Headers: http1.Headers{}})
+	if len(errs.errs) != 1 || !errors.Is(errs.errs[0], ErrInvalidHandshake) {
+		t.Fatalf("errs=%v, want ErrInvalidHandshake", errs.errs)
+	}
+	if sink.closes != 1 {
+		t.Fatalf("closes=%d, want 1", sink.closes)
+	}
+}
+
 func TestControlFrameHandlerRespondsToPing(t *testing.T) {
 	sink := &outboundSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
@@ -209,6 +289,112 @@ func TestControlFrameHandlerEchoesCloseAndClosesChannel(t *testing.T) {
 	}
 	if status, ok := ParseCloseStatus(Frame{Opcode: OpcodeClose, Payload: sink.writes[1]}); !ok || status.Code != 1000 {
 		t.Fatalf("close status=%+v ok=%v", status, ok)
+	}
+}
+
+func TestControlFrameHandlerTracksOutboundCloseState(t *testing.T) {
+	sink := &outboundSink{}
+	events := &eventCollector{}
+	control := NewControlFrameHandler()
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewFrameEncoder())
+	_ = ch.Pipeline().AddLast("control", control)
+	_ = ch.Pipeline().AddLast("events", events)
+	defer sink.release()
+
+	if err := ch.Write(Frame{Final: true, Opcode: OpcodeClose, Payload: testBuf([]byte{0x03, 0xe8})}); err != nil {
+		t.Fatal(err)
+	}
+	if control.CloseState() != CloseStateCloseSent {
+		t.Fatalf("state=%d, want CloseStateCloseSent", control.CloseState())
+	}
+	ch.Pipeline().FireChannelRead(Frame{Final: true, Opcode: OpcodeClose, Payload: testBuf([]byte{0x03, 0xe8})})
+	if control.CloseState() != CloseStateClosed {
+		t.Fatalf("state=%d, want CloseStateClosed", control.CloseState())
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want only outbound close frame", len(sink.writes))
+	}
+	if sink.closes != 1 {
+		t.Fatalf("closes=%d, want 1", sink.closes)
+	}
+	if len(events.events) != 2 {
+		t.Fatalf("events=%d, want 2", len(events.events))
+	}
+}
+
+func TestUTF8ValidatorAcceptsFragmentedText(t *testing.T) {
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("utf8", NewUTF8Validator())
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(Frame{Final: false, Opcode: OpcodeText, Payload: testBuf([]byte{0xe4, 0xbd})})
+	ch.Pipeline().FireChannelRead(Frame{Final: true, Opcode: OpcodeContinuation, Payload: testBuf([]byte{0xa0})})
+	if len(collector.frames) != 2 {
+		t.Fatalf("frames=%d, want 2", len(collector.frames))
+	}
+	for _, frame := range collector.frames {
+		frame.Release()
+	}
+}
+
+func TestUTF8ValidatorClosesOnInvalidText(t *testing.T) {
+	sink := &outboundSink{}
+	errs := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewFrameEncoder())
+	_ = ch.Pipeline().AddLast("utf8", NewUTF8Validator())
+	_ = ch.Pipeline().AddLast("errors", errs)
+	defer sink.release()
+
+	ch.Pipeline().FireChannelRead(Frame{Final: true, Opcode: OpcodeText, Payload: testBuf([]byte{0xff})})
+	if len(errs.errs) != 1 || !errors.Is(errs.errs[0], ErrInvalidUTF8) {
+		t.Fatalf("errs=%v, want ErrInvalidUTF8", errs.errs)
+	}
+	if sink.closes != 1 {
+		t.Fatalf("closes=%d, want 1", sink.closes)
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want close header and payload", len(sink.writes))
+	}
+	if status, ok := ParseCloseStatus(Frame{Opcode: OpcodeClose, Payload: sink.writes[1]}); !ok || status.Code != CloseStatusInvalidFrameData {
+		t.Fatalf("status=%+v ok=%v", status, ok)
+	}
+}
+
+func TestIdleHandlerWritesPingOnWriterIdle(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewFrameEncoder())
+	_ = ch.Pipeline().AddLast("idle", NewIdleHandler([]byte("hb"), 0, ""))
+	defer sink.release()
+
+	ch.Pipeline().FireUserEventTriggered(timeout.IdleStateEvent{State: timeout.WriterIdle, First: true})
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want ping header and payload", len(sink.writes))
+	}
+	if string(sink.writes[0].Bytes()) != string([]byte{0x89, 0x02}) || string(sink.writes[1].Bytes()) != "hb" {
+		t.Fatalf("ping writes=%q,%q", sink.writes[0].Bytes(), sink.writes[1].Bytes())
+	}
+}
+
+func TestIdleHandlerClosesOnReaderIdle(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewFrameEncoder())
+	_ = ch.Pipeline().AddLast("idle", NewIdleHandler(nil, 0, "idle"))
+	defer sink.release()
+
+	ch.Pipeline().FireUserEventTriggered(timeout.IdleStateEvent{State: timeout.ReaderIdle, First: true})
+	if sink.closes != 1 {
+		t.Fatalf("closes=%d, want 1", sink.closes)
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want close header and payload", len(sink.writes))
+	}
+	if status, ok := ParseCloseStatus(Frame{Opcode: OpcodeClose, Payload: sink.writes[1]}); !ok || status.Code != CloseStatusGoingAway || status.Reason != "idle" {
+		t.Fatalf("status=%+v ok=%v", status, ok)
 	}
 }
 
