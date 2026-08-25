@@ -5,6 +5,7 @@ package buffer
 import (
 	"errors"
 	"testing"
+	"unsafe"
 )
 
 func TestMmapAllocatorRejectsInvalidAndOverflowSizes(t *testing.T) {
@@ -95,6 +96,63 @@ func TestMmapAllocatorExposesFixedBuffers(t *testing.T) {
 	}
 	slice.Release()
 	buf.Release()
+}
+
+func TestMmapAllocatorFixedBufferPointerStable(t *testing.T) {
+	alloc, err := NewMmapAllocator(MmapAllocatorConfig{BlockSize: 1024, Blocks: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer alloc.Close()
+
+	fixed := alloc.(FixedBufferProvider).FixedBuffers()
+	buf, err := alloc.Acquire(128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer buf.Release()
+	idx, ok := FixedBufferIndex(buf)
+	if !ok {
+		t.Fatalf("fixed index not available")
+	}
+	view := buf.WritableBytesView()
+	if len(view) == 0 {
+		t.Fatalf("writable view is empty")
+	}
+	got := uintptr(unsafe.Pointer(&view[0]))
+	want := uintptr(unsafe.Pointer(&fixed[idx][0]))
+	if got != want {
+		t.Fatalf("buffer pointer=%#x, fixed pointer=%#x", got, want)
+	}
+}
+
+func TestMmapAllocatorAcquireReleaseAllocationBudget(t *testing.T) {
+	alloc, err := NewMmapAllocator(MmapAllocatorConfig{BlockSize: 4096, Blocks: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer alloc.Close()
+	warm, err := alloc.Acquire(4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm.Release()
+
+	var runErr error
+	allocs := testing.AllocsPerRun(1000, func() {
+		buf, err := alloc.Acquire(4096)
+		if err != nil {
+			runErr = err
+			return
+		}
+		buf.Release()
+	})
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+	if allocs != 0 {
+		t.Fatalf("allocs/run=%f, want 0", allocs)
+	}
 }
 
 func TestMmapAllocatorDirectDoubleReleaseDoesNotCorruptFreeList(t *testing.T) {
