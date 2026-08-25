@@ -46,6 +46,8 @@ blocks:
 - `handler/tls`: Go-native TLS handler backed by `crypto/tls`, exposing
   plaintext `ByteBuf` to business handlers while preserving SNI and ALPN
   negotiation events.
+- `handler/proxy`: HTTP CONNECT client handler plus SOCKS5 and HAProxy v1/v2
+  wire helpers for proxy negotiation and source-address metadata.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `resolver/dns`: Go-native DNS resolver with system fallback, explicit
   exchanger hooks, UDP query support, and A/AAAA lookup helpers.
