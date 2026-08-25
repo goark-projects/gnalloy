@@ -60,7 +60,7 @@ func Register(fs *flag.FlagSet, defaultAddr string) *Options {
 	}
 
 	fs.StringVar(&opts.Addr, "addr", opts.Addr, "listen address")
-	fs.StringVar(&opts.BackendName, "backend", opts.BackendName, "poller backend: default, epoll, iouring, kqueue, iocp, memory")
+	fs.StringVar(&opts.BackendName, "backend", opts.BackendName, "poller backend: default, std, epoll, iouring, kqueue, iocp, memory")
 	fs.IntVar(&opts.Boss, "boss", opts.Boss, "boss event loop count")
 	fs.IntVar(&opts.Workers, "workers", opts.Workers, "worker event loop count")
 	fs.BoolVar(&opts.ReusePort, "reuseport", opts.ReusePort, "enable SO_REUSEPORT when supported")
@@ -210,6 +210,8 @@ func ParseBackend(name string) (transport.BackendKind, error) {
 		return transport.DefaultBackend(), nil
 	case "memory":
 		return transport.BackendMemory, nil
+	case "std":
+		return transport.BackendStd, nil
 	case "epoll":
 		return transport.BackendEpoll, nil
 	case "iouring", "io_uring":

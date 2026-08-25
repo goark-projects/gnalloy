@@ -13,6 +13,7 @@ func TestParseBackendNames(t *testing.T) {
 		want transport.BackendKind
 	}{
 		{name: "memory", want: transport.BackendMemory},
+		{name: "std", want: transport.BackendStd},
 		{name: "epoll", want: transport.BackendEpoll},
 		{name: "iouring", want: transport.BackendIOUring},
 		{name: "io_uring", want: transport.BackendIOUring},

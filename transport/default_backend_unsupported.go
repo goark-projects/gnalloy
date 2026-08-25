@@ -3,5 +3,5 @@
 package transport
 
 func DefaultBackend() BackendKind {
-	return BackendMemory
+	return BackendStd
 }

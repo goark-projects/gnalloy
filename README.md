@@ -63,7 +63,8 @@ blocks:
   and Windows `WSASocket/bind/listen` with IOCP `AcceptEx` request support.
   Linux/macOS/BSD can enable `SO_REUSEPORT` to create one listen socket per
   Boss `EventLoop`.
-- `transport/poller`: backend-neutral Poller API, ready for future extraction.
+- `transport/poller`: backend-neutral Poller API, including a cross-platform
+  `std` readiness fallback.
 - `transport/poller/epoll`: Linux epoll ET readiness backend.
 - `transport/poller/iouring`: Linux io_uring completion backend with
   accept/read/write/close SQE support, configurable ring entries and optional
@@ -108,7 +109,7 @@ go test ./...
 Example flags shared by the TCP examples:
 
 - `-addr`: listen address.
-- `-backend`: `default`, `epoll`, `iouring`, `kqueue`, `iocp`, or `memory`.
+- `-backend`: `default`, `std`, `epoll`, `iouring`, `kqueue`, `iocp`, or `memory`.
 - `-boss`: Boss EventLoop count.
 - `-workers`: Worker EventLoop count.
 - `-reuseport`: enable `SO_REUSEPORT` on supported Unix platforms.
@@ -206,6 +207,7 @@ Backend matrix:
 | `iouring` | Linux | completion / Proactor | implemented for accept/read/write/close |
 | `kqueue` | macOS/BSD | readiness / Reactor | implemented |
 | `iocp` | Windows | completion / Proactor | implemented for AcceptEx/WSARecv/WSASend/close |
+| `std` | all | readiness / polling fallback | implemented |
 | `memory` | all | in-process test poller | implemented for tests |
 
 Current validation boundary:
