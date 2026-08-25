@@ -27,8 +27,10 @@ blocks:
 - `buffer`: reference-counted `ByteBuf`, zero-copy slices, readable slice views,
   composite buffers, heap allocator, and Linux mmap slab allocator.
 - `codec`: Netty-style codec foundations including `ByteToMessageDecoder`,
-  `MessageToByteEncoder`, message-to-message codecs, combined duplex handler,
-  length-field, delimiter, line, fixed-length, string, and byte-slice codecs.
+  composite/merge cumulators, `MessageToByteEncoder`, message-to-message
+  codecs, combined duplex handler, length-field, delimiter, line,
+  fixed-length, matching outbound frame encoders, string, and byte-slice
+  codecs.
 - `codec/http1`, `codec/protobuf`, `codec/mqtt`, `codec/redis`, and
   `codec/websocket`: first protocol codec slice for HTTP/1.x, Protobuf
   varint32 frames, MQTT frames, Redis RESP frames, and WebSocket frames.
@@ -64,6 +66,26 @@ go run ./examples/echo -addr :9000 -backend default -workers 4
 go run ./examples/length-field -addr :9001 -backend default -workers 4
 go run ./examples/line-frame -addr :9003 -backend default -workers 4
 go run ./examples/fixed-length -addr :9004 -backend default -workers 4 -frame-length 4
+```
+
+Codec parity:
+
+- Netty codec 对齐清单见 `docs/netty-codec-parity.md`。
+
+Verification:
+
+```bash
+go test ./...
+./scripts/verify-bench.sh
+GROUPS=codec,queue,timer ./scripts/verify-bench.sh
+```
+
+PowerShell:
+
+```powershell
+go test ./...
+.\scripts\verify-bench.ps1
+.\scripts\verify-bench.ps1 -Groups codec,queue,timer
 ```
 
 Example flags shared by the TCP examples:
