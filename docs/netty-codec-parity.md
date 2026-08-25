@@ -47,6 +47,7 @@
 | `StringEncoder` | `codec.StringEncoder` | done | 使用只读 string view 写入 `ByteBuf`。 |
 | `Base64Encoder` | `codec.Base64Encoder` | done | 支持标准和 URL dialect。 |
 | `Base64Decoder` | `codec.Base64Decoder` | done | 解码失败走 `ExceptionCaught`。 |
+| `JdkZlibEncoder/JdkZlibDecoder` | `codec/compression` | done | 支持 gzip/zlib，解码器提供最大解压大小限制。 |
 | `ByteBufUtil` | `buffer` 工具函数 | done | 覆盖 hex dump、equals、compare、index 等基础能力。 |
 
 ## 协议 codec
@@ -67,7 +68,7 @@
 
 | Netty 模块 | 状态 | 原因 |
 | --- | --- | --- |
-| compression (`zlib`, `brotli`, `snappy`, `lz4`) | defer | 涉及外部算法依赖，应拆成独立扩展包。 |
+| compression (`brotli`, `snappy`, `lz4`) | defer | 涉及外部算法依赖，应拆成独立扩展包。 |
 | serialization/marshalling | skip | Go 生态不应在核心网络层绑定对象序列化框架。 |
 | socks/smtp/stomp | planned | 可独立协议包实现，不应堵塞核心 I/O 和 frame 层。 |
 | TLS/SslHandler | defer | 应先稳定底层 fd 与 `crypto/tls` 或平台 TLS 的边界。 |

@@ -31,6 +31,8 @@ blocks:
   codecs, combined duplex handler, length-field, delimiter, line,
   fixed-length, matching outbound frame encoders, string, and byte-slice
   codecs.
+- `codec/compression`: gzip and zlib ByteBuf encoders/decoders backed by the
+  Go standard library, with explicit decoded-size limits.
 - `codec/dns`, `codec/http1`, `codec/http2`, `codec/protobuf`, `codec/mqtt`,
   `codec/redis`, and `codec/websocket`: first protocol codec slice for DNS,
   HTTP/1.x, HTTP/2 binary frames and stream state, Protobuf varint32 frames,
