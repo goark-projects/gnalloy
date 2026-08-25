@@ -11,6 +11,7 @@ import (
 	"goark.dev/gnalloy/bootstrap"
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/codec"
 	ipcodec "goark.dev/gnalloy/codec/ip"
 	"goark.dev/gnalloy/examples/internal/exampleconfig"
 	"goark.dev/gnalloy/transport"
@@ -24,6 +25,7 @@ func main() {
 	sourceText := fs.String("source", "127.0.0.1", "source ip address in encoded ip header")
 	protocol := fs.Int("protocol", 253, "custom ip protocol number")
 	payloadText := fs.String("payload", "gnalloy-custom-ip", "custom protocol payload")
+	formatText := fs.String("format", "ip", "wire format: ip or payload")
 	_ = fs.Parse(os.Args[1:])
 	if err := opts.Resolve(); err != nil {
 		fatal(err)
@@ -32,6 +34,10 @@ func main() {
 	source := net.ParseIP(*sourceText)
 	if target == nil || source == nil {
 		fatal(fmt.Errorf("invalid source or target ip"))
+	}
+	format, rawProtocol, headerIncluded, err := resolveFormat(*formatText, *protocol)
+	if err != nil {
+		fatal(err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -44,9 +50,9 @@ func main() {
 	defer shutdown(workers)
 
 	cfg := raw.DefaultConfig()
-	cfg.Protocol = raw.ProtocolRaw
+	cfg.Protocol = rawProtocol
 	cfg.Family = raw.FamilyIPv4
-	cfg.HeaderIncluded = true
+	cfg.HeaderIncluded = headerIncluded
 	cfg.ReadBufferSize = opts.ReadBufferSize
 	cfg.WriteBufferWatermark = opts.WriteBufferWatermark()
 
@@ -55,17 +61,28 @@ func main() {
 		Group(boss, workers).
 		Transport(raw.NewTransport(cfg)).
 		ChildInitializer(func(ch channel.Channel) error {
-			if err := ch.Pipeline().AddLast("rawPacketEncoder", raw.NewMessageToPacketEncoderFunc(func(any) bool { return false }, nil)); err != nil {
-				return err
-			}
-			if err := ch.Pipeline().AddLast("ipEncoder", ipcodec.NewEncoder()); err != nil {
+			protocolCodec := ipcodec.NewProtocolCodecFunc(
+				ipcodec.ProtocolCodecConfig{
+					Protocol:     *protocol,
+					PacketFormat: format,
+					Version:      ipcodec.Version4,
+					Source:       source,
+				},
+				nil,
+				nil,
+				func(msg any) bool {
+					_, ok := msg.(string)
+					return ok
+				},
+				encodeStringPayload,
+			)
+			if err := ch.Pipeline().AddLast("customProtocol", protocolCodec); err != nil {
 				return err
 			}
 			return ch.Pipeline().AddLast("sender", &customSender{
 				target:   raw.Address{IP: target},
-				source:   source,
 				protocol: *protocol,
-				payload:  []byte(*payloadText),
+				payload:  *payloadText,
 				done:     done,
 			})
 		}).
@@ -78,42 +95,47 @@ func main() {
 	if err := <-done; err != nil {
 		fatal(err)
 	}
-	fmt.Printf("sent custom ip protocol=%d from=%s to=%s bytes=%d\n", *protocol, source, target, len(*payloadText))
+	fmt.Printf("sent custom ip protocol=%d format=%s from=%s to=%s bytes=%d\n", *protocol, *formatText, source, target, len(*payloadText))
 }
 
 type customSender struct {
 	target   raw.Address
-	source   net.IP
 	protocol int
-	payload  []byte
+	payload  string
 	done     chan<- error
 }
 
 func (s *customSender) ChannelActive(ctx *channel.HandlerContext) {
-	payload := buffer.ByteBuf(buffer.NewHeapBuffer(0))
-	if len(s.payload) > 0 {
-		var err error
-		payload, err = ctx.Channel().Allocator().Acquire(len(s.payload))
-		if err != nil {
-			s.done <- err
-			return
-		}
-		if _, err := payload.WriteBytes(s.payload); err != nil {
-			payload.Release()
-			s.done <- err
-			return
-		}
+	s.done <- ctx.Channel().WriteAndFlush(raw.Addressed{Message: s.payload, Addr: s.target, Protocol: s.protocol})
+}
+
+func encodeStringPayload(ctx *channel.HandlerContext, msg any, out *codec.MessageList) error {
+	text := msg.(string)
+	if text == "" {
+		out.Add(buffer.NewHeapBuffer(0))
+		return nil
 	}
-	packet := ipcodec.Packet{
-		Header: ipcodec.Header{
-			Version:     ipcodec.Version4,
-			Protocol:    s.protocol,
-			Source:      s.source,
-			Destination: s.target.IP,
-		},
-		Payload: payload,
+	buf, err := ctx.Channel().Allocator().Acquire(len(text))
+	if err != nil {
+		return err
 	}
-	s.done <- ctx.Channel().WriteAndFlush(raw.Addressed{Message: packet, Addr: s.target, Protocol: raw.ProtocolRaw})
+	if _, err := buf.WriteBytes([]byte(text)); err != nil {
+		buf.Release()
+		return err
+	}
+	out.Add(buf)
+	return nil
+}
+
+func resolveFormat(text string, protocol int) (ipcodec.PacketFormat, int, bool, error) {
+	switch text {
+	case "payload":
+		return ipcodec.PacketFormatPayload, protocol, false, nil
+	case "ip":
+		return ipcodec.PacketFormatIP, raw.ProtocolRaw, true, nil
+	default:
+		return 0, 0, false, fmt.Errorf("invalid format %q", text)
+	}
 }
 
 func shutdown(group *transport.EventLoopGroup) {
