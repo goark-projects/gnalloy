@@ -62,11 +62,18 @@
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |
 | `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame；HPACK 保持独立边界。 |
 | `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE 和未知扩展帧。 |
+| `BinaryMemcache*` | `codec/memcache` | done | 支持 Memcached binary request/response header、extras、key、value、opaque 和 CAS。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧能力。 |
 | `MQTT` | `codec/mqtt` | done | 支持 MQTT 3.1.1/MQTT5 固定头、结构化包、属性、原因码、AUTH 和零拷贝 PUBLISH payload。 |
 | `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | done | 支持 DNS wire message、name 压缩、A/AAAA/NS/CNAME/PTR/MX/TXT/SRV/SOA/OPT 常用记录和 resolver。 |
+| `SmtpRequest/ResponseEncoder/Decoder` | `codec/smtp` | done | 支持 SMTP request、multiline response 和 DATA dot-stuffing。 |
+| `Socks4/Socks5` | `codec/socks` | done | 支持 SOCKS4a、SOCKS5 greeting、method selection、command request/reply 和 IPv4/domain/IPv6 地址。 |
+| `StompSubframeDecoder/Encoder` | `codec/stomp` | done | 支持 STOMP 1.2 frame、heartbeat、header escape、content-length 和 NUL body。 |
+| `RtspRequest/ResponseDecoder/Encoder` | `codec/rtsp` | done | 支持 RTSP/1.0 请求、响应、header 和 Content-Length body。 |
+| `XmlFrameDecoder/XmlDecoder` | `codec/xml` | done | 支持完整 XML document 切帧和 Go 化 token 流。 |
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
+| `SslHandler` | `handler/tls` | done | 基于 `crypto/tls` 的 pipeline TLS handler，保持和 TCP/QUIC 等传输入口一致。 |
 
 ## 延后或独立扩展
 
@@ -74,9 +81,6 @@
 | --- | --- | --- |
 | compression (`brotli`, `snappy`, `lz4`) | defer | 涉及外部算法依赖，应拆成独立扩展包。 |
 | serialization/marshalling | skip | Go 生态不应在核心网络层绑定对象序列化框架。 |
-| socks/smtp/stomp | planned | 可独立协议包实现，不应堵塞核心 I/O 和 frame 层。 |
-| TLS/SslHandler | defer | 应先稳定底层 fd 与 `crypto/tls` 或平台 TLS 的边界。 |
-| HTTP/2/HTTP/3 | defer | HTTP/3 与 QUIC 状态机强相关，需独立里程碑。 |
 
 ## 热路径约束
 
