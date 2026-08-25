@@ -198,7 +198,11 @@ func (e *TypedFrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	if !ok {
 		return ctx.Write(msg)
 	}
-	return ctx.Write(frame)
+	if err := ctx.Write(frame); err != nil {
+		frame.Release()
+		return err
+	}
+	return nil
 }
 
 func EncodeTypedFrame(ctx *channel.HandlerContext, msg any) (Frame, bool, error) {

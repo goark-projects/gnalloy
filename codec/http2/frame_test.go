@@ -226,6 +226,25 @@ func TestTypedFrameEncoderKeepsDataPayloadZeroCopy(t *testing.T) {
 	}
 }
 
+func TestTypedFrameEncoderReleasesFrameOnWriteError(t *testing.T) {
+	writeErr := errors.New("write failed")
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), failingSink{err: writeErr})
+	if err := ch.Pipeline().AddLast("typed", NewTypedFrameEncoder()); err != nil {
+		t.Fatal(err)
+	}
+
+	body := buffer.NewHeapBuffer(4)
+	_, _ = body.WriteBytes([]byte("data"))
+	err := ch.Write(DataFrame{StreamID: 1, Data: body})
+	if !errors.Is(err, writeErr) {
+		t.Fatalf("err=%v, want %v", err, writeErr)
+	}
+	if refs := body.RefCnt(); refs != 0 {
+		body.Release()
+		t.Fatalf("body refs=%d, want 0", refs)
+	}
+}
+
 func TestStreamStateTransitions(t *testing.T) {
 	s := NewStream(1)
 	if !s.ID.ClientInitiated() || s.State != StreamIdle {
@@ -271,6 +290,14 @@ func (s *captureSink) Write(msg any) error {
 
 func (s *captureSink) Flush() error { return nil }
 func (s *captureSink) Close() error { return nil }
+
+type failingSink struct {
+	err error
+}
+
+func (s failingSink) Write(any) error { return s.err }
+func (s failingSink) Flush() error    { return nil }
+func (s failingSink) Close() error    { return nil }
 
 type frameRecorder struct {
 	msg any
