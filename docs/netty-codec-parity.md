@@ -60,6 +60,7 @@
 | `SpdyFrameDecoder/Encoder` | `codec/spdy` | done | 支持 SPDY/3 data、SYN、RST、SETTINGS、PING、GOAWAY、HEADERS、WINDOW_UPDATE 和未知控制帧。 |
 | `HttpObjectDecoder/Encoder` | `codec/http1` | partial | 已有 HTTP/1.x 基础解析，完整聚合/分块后续扩展。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | partial | 已有 frame 和握手基础，扩展压缩和控制帧策略后续补齐。 |
+| `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE 和未知扩展帧。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧能力。 |
 | `MQTT` | `codec/mqtt` | partial | 已有 MQTT frame 基础。 |
 | `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | partial | 已有 DNS wire message 编解码、name 压缩解析、A/AAAA resolver；高级 record 类型后续扩展。 |
