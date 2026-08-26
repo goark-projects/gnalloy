@@ -43,14 +43,13 @@ func TestNewClientTokenStoreRejectsInvalidCapacity(t *testing.T) {
 	}
 }
 
-func TestEvaluateCapabilitiesReportsExplicitWebTransportBoundary(t *testing.T) {
+func TestEvaluateCapabilitiesReportsWebTransportWhenEnabled(t *testing.T) {
 	caps, err := EvaluateCapabilities(EndpointRoleClient, Config{
 		TLS: &tls.Config{
 			ClientSessionCache: tls.NewLRUClientSessionCache(8),
 		},
-		Enable0RTT:                       true,
-		EnableDatagrams:                  true,
-		EnableStreamResetPartialDelivery: true,
+		Enable0RTT:         true,
+		EnableWebTransport: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,15 +69,18 @@ func TestEvaluateCapabilitiesReportsExplicitWebTransportBoundary(t *testing.T) {
 	if !caps.StreamResetPartialDelivery.Supported || !caps.StreamResetPartialDelivery.Enabled {
 		t.Fatalf("stream reset partial delivery=%+v", caps.StreamResetPartialDelivery)
 	}
-	if caps.WebTransport.Supported || caps.WebTransport.Enabled || caps.WebTransport.Reason == "" {
-		t.Fatalf("webtransport boundary=%+v", caps.WebTransport)
+	if !caps.WebTransport.Supported || !caps.WebTransport.Enabled {
+		t.Fatalf("webtransport=%+v", caps.WebTransport)
 	}
 }
 
-func TestNormalizeConfigRejectsUnsupportedWebTransport(t *testing.T) {
-	_, err := NormalizeConfig(Config{TLS: &tls.Config{}, EnableWebTransport: true})
-	if !errors.Is(err, ErrUnsupportedWebTransport) {
-		t.Fatalf("err=%v, want ErrUnsupportedWebTransport", err)
+func TestNormalizeConfigEnablesWebTransportPrerequisites(t *testing.T) {
+	cfg, err := NormalizeConfig(Config{TLS: &tls.Config{}, EnableWebTransport: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.EnableDatagrams || !cfg.EnableStreamResetPartialDelivery {
+		t.Fatalf("datagrams=%v reset=%v, want enabled", cfg.EnableDatagrams, cfg.EnableStreamResetPartialDelivery)
 	}
 }
 

@@ -14,6 +14,8 @@ const (
 	StreamTypePush         StreamType = 0x01
 	StreamTypeQPACKEncoder StreamType = 0x02
 	StreamTypeQPACKDecoder StreamType = 0x03
+	// StreamTypeWebTransport 是 WebTransport over HTTP/3 的单向 stream type。
+	StreamTypeWebTransport StreamType = 0x54
 )
 
 // StreamTypeFrame 表示 QUIC 单向 stream 的首个类型前缀。

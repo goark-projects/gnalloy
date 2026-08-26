@@ -64,10 +64,12 @@ func EvaluateCapabilities(role EndpointRole, cfg Config) (CapabilitySet, error) 
 			Enabled:   normalized.public.EnableStreamResetPartialDelivery,
 		},
 		WebTransport: FeatureCapability{
-			Supported: false,
-			Enabled:   false,
-			Reason:    "WebTransport 需要 HTTP/3 extended CONNECT、session、datagram 语义，当前适配层未暴露该会话模型",
+			Supported: true,
+			Enabled:   normalized.public.EnableWebTransport,
 		},
+	}
+	if !caps.WebTransport.Enabled {
+		caps.WebTransport.Reason = "配置未启用 WebTransport；HTTP/3 会话语义由 transport/webtransport 提供"
 	}
 	caps.SessionResumption = sessionResumptionCapability(role, normalized.public)
 	caps.ZeroRTT = zeroRTTCapability(role, normalized.public, caps.SessionResumption)

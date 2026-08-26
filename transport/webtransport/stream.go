@@ -1,4 +1,4 @@
-package http3
+package webtransport
 
 import (
 	"context"
@@ -10,6 +10,18 @@ import (
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/transport"
 	"goark.dev/gnalloy/transport/quic/rfc9000"
+)
+
+// StreamKind 描述 WebTransport stream 的方向。
+type StreamKind uint8
+
+const (
+	// StreamKindBidirectional 表示 WebTransport 双向 stream。
+	StreamKindBidirectional StreamKind = iota + 1
+	// StreamKindLocalUnidirectional 表示本端发起的 WebTransport 单向发送 stream。
+	StreamKindLocalUnidirectional
+	// StreamKindRemoteUnidirectional 表示对端发起的 WebTransport 单向接收 stream。
+	StreamKindRemoteUnidirectional
 )
 
 type streamReader interface {
@@ -27,29 +39,29 @@ type streamIdentifier interface {
 	ID() rfc9000.StreamID
 }
 
-type streamChannelConfig struct {
+type streamConfig struct {
 	ID             transport.ChannelID
 	Kind           StreamKind
 	Allocator      buffer.Allocator
 	ReadBufferSize int
 	Reader         streamReader
 	Writer         streamWriter
-	Initializer    func(channel.Channel) error
+	SessionID      uint64
 }
 
-// StreamChannel 是绑定到单条 QUIC stream 的 gnalloy Channel。
-type StreamChannel struct {
+// Stream 是绑定到单条 WebTransport stream 的 gnalloy Channel。
+type Stream struct {
 	kind           StreamKind
 	streamID       rfc9000.StreamID
+	sessionID      uint64
 	ch             *channel.LocalChannel
 	reader         streamReader
-	sink           *streamSink
 	readBufferSize int
 	closed         atomic.Bool
 	inactive       atomic.Bool
 }
 
-func newStreamChannel(cfg streamChannelConfig) (*StreamChannel, error) {
+func newStream(cfg streamConfig) (*Stream, error) {
 	if cfg.Reader == nil && cfg.Writer == nil {
 		return nil, ErrInvalidStream
 	}
@@ -62,94 +74,93 @@ func newStreamChannel(cfg streamChannelConfig) (*StreamChannel, error) {
 		readBufferSize = defaultReadBufferSize
 	}
 	sink := &streamSink{writer: cfg.Writer}
-	out := &StreamChannel{
+	out := &Stream{
 		kind:           cfg.Kind,
 		streamID:       streamIDOf(cfg.Reader, cfg.Writer),
+		sessionID:      cfg.SessionID,
 		reader:         cfg.Reader,
-		sink:           sink,
 		readBufferSize: readBufferSize,
 	}
 	out.ch = channel.NewLocalChannel(cfg.ID, alloc, sink)
-	if cfg.Initializer != nil {
-		if err := cfg.Initializer(out.ch); err != nil {
-			_ = sink.Close()
-			return nil, err
-		}
-	}
 	out.ch.Pipeline().FireChannelRegistered()
 	out.ch.Pipeline().FireChannelActive()
 	return out, nil
 }
 
-// Kind 返回 stream 的 HTTP/3 协议角色。
-func (c *StreamChannel) Kind() StreamKind {
-	if c == nil {
+// Kind 返回 WebTransport stream 的方向。
+func (s *Stream) Kind() StreamKind {
+	if s == nil {
 		return 0
 	}
-	return c.kind
+	return s.kind
 }
 
-// StreamID 返回底层 QUIC stream 标识。
-func (c *StreamChannel) StreamID() rfc9000.StreamID {
-	if c == nil {
+// StreamID 返回底层 QUIC stream ID。
+func (s *Stream) StreamID() rfc9000.StreamID {
+	if s == nil {
 		return -1
 	}
-	return c.streamID
+	return s.streamID
+}
+
+// SessionID 返回该 stream 归属的 WebTransport session ID。
+func (s *Stream) SessionID() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.sessionID
 }
 
 // Channel 返回业务可见的 gnalloy Channel。
-func (c *StreamChannel) Channel() channel.Channel {
-	if c == nil {
+func (s *Stream) Channel() channel.Channel {
+	if s == nil {
 		return nil
 	}
-	return c.ch
+	return s.ch
 }
 
-// ReadOnce 从 QUIC stream 读取一次数据并注入 Pipeline。
-func (c *StreamChannel) ReadOnce(ctx context.Context) (int, error) {
-	if c == nil || c.ch == nil {
+// ReadOnce 从 QUIC stream 读取一次 payload 并注入 Pipeline。
+func (s *Stream) ReadOnce(ctx context.Context) (int, error) {
+	if s == nil || s.ch == nil {
 		return 0, ErrInvalidStream
 	}
-	if c.reader == nil {
+	if s.reader == nil {
 		return 0, ErrReadUnsupported
 	}
-	if c.closed.Load() {
+	if s.closed.Load() {
 		return 0, ErrClosed
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx = normalizeContext(ctx)
 	select {
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	default:
 	}
-	buf, err := c.ch.Allocator().Acquire(c.readBufferSize)
+	buf, err := s.ch.Allocator().Acquire(s.readBufferSize)
 	if err != nil {
 		return 0, err
 	}
-	view := buf.WritableBytesView()
-	n, readErr := c.reader.Read(view)
+	n, readErr := s.reader.Read(buf.WritableBytesView())
 	if n > 0 {
 		if err := buf.AdvanceWriter(n); err != nil {
 			buf.Release()
 			return n, err
 		}
-		c.ch.Pipeline().FireChannelRead(buf)
-		c.ch.Pipeline().FireChannelReadComplete()
+		s.ch.Pipeline().FireChannelRead(buf)
+		s.ch.Pipeline().FireChannelReadComplete()
 	} else {
 		buf.Release()
 	}
 	if errors.Is(readErr, io.EOF) {
-		c.fireInactiveOnce(false)
+		s.fireInactiveOnce(false)
 	}
 	return n, readErr
 }
 
-// ReadLoop 持续读取 QUIC stream，直到上下文结束、EOF 或底层错误。
-func (c *StreamChannel) ReadLoop(ctx context.Context) error {
+// ReadLoop 持续读取 WebTransport stream，直到上下文结束、EOF 或底层错误。
+func (s *Stream) ReadLoop(ctx context.Context) error {
 	for {
-		_, err := c.ReadOnce(ctx)
+		_, err := s.ReadOnce(ctx)
 		if err == nil {
 			continue
 		}
@@ -160,29 +171,29 @@ func (c *StreamChannel) ReadLoop(ctx context.Context) error {
 	}
 }
 
-// Close 关闭 stream channel，并向 Pipeline 发布 inactive/unregistered 生命周期事件。
-func (c *StreamChannel) Close() error {
-	if c == nil {
+// Close 关闭 WebTransport stream channel，并发布 inactive/unregistered 生命周期事件。
+func (s *Stream) Close() error {
+	if s == nil {
 		return ErrInvalidStream
 	}
-	if c.closed.Swap(true) {
+	if s.closed.Swap(true) {
 		return nil
 	}
-	err := c.ch.Close()
-	c.fireInactiveOnce(true)
+	err := s.ch.Close()
+	s.fireInactiveOnce(true)
 	return err
 }
 
-func (c *StreamChannel) fireInactiveOnce(cancelRead bool) {
-	if c == nil || c.ch == nil || !c.inactive.CompareAndSwap(false, true) {
+func (s *Stream) fireInactiveOnce(cancelRead bool) {
+	if s == nil || s.ch == nil || !s.inactive.CompareAndSwap(false, true) {
 		return
 	}
-	if cancelRead && c.reader != nil {
-		c.reader.CancelRead(0)
+	if cancelRead && s.reader != nil {
+		s.reader.CancelRead(0)
 	}
-	c.closed.Store(true)
-	c.ch.Pipeline().FireChannelInactive()
-	c.ch.Pipeline().FireChannelUnregistered()
+	s.closed.Store(true)
+	s.ch.Pipeline().FireChannelInactive()
+	s.ch.Pipeline().FireChannelUnregistered()
 }
 
 func streamIDOf(reader streamReader, writer streamWriter) rfc9000.StreamID {

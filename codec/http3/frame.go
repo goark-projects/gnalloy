@@ -20,6 +20,8 @@ const (
 	FrameMaxPushID            FrameType = 0x0d
 	FramePriorityUpdateStream FrameType = 0x0f
 	FramePriorityUpdatePush   FrameType = 0x10
+	// FrameWTStream 是 WebTransport over HTTP/3 的双向 stream 前缀帧类型。
+	FrameWTStream FrameType = 0x41
 )
 
 type DataFrame struct {

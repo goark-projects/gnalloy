@@ -17,7 +17,7 @@ var (
 	Err0RTTDisabled = errors.New("gnalloy/transport/quic/rfc9000: 0-rtt disabled")
 	// ErrMissingSessionCache 表示客户端 0-RTT 缺少可复用的 TLS session cache。
 	ErrMissingSessionCache = errors.New("gnalloy/transport/quic/rfc9000: missing session cache")
-	// ErrUnsupportedWebTransport 表示当前 RFC9000 适配层尚未暴露 WebTransport 会话语义。
+	// ErrUnsupportedWebTransport 保留给不具备 WebTransport prerequisites 的外部适配器复用。
 	ErrUnsupportedWebTransport = errors.New("gnalloy/transport/quic/rfc9000: unsupported webtransport")
 	// ErrClosed 表示适配对象已经关闭或没有绑定底层实现。
 	ErrClosed = errors.New("gnalloy/transport/quic/rfc9000: closed")

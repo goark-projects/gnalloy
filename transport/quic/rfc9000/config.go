@@ -72,7 +72,7 @@ type Config struct {
 	ClientTokenStoreMaxOrigins int
 	// ClientTokenStoreTokensPerOrigin 控制每个 origin 保留的 NEW_TOKEN 数；0 在 0-RTT 开启时使用默认值。
 	ClientTokenStoreTokensPerOrigin int
-	// EnableWebTransport 请求 WebTransport 会话能力；当前适配层会显式返回 ErrUnsupportedWebTransport。
+	// EnableWebTransport 启用 WebTransport over HTTP/3 所需的 QUIC datagram 和 reset 扩展。
 	EnableWebTransport bool
 }
 
@@ -167,7 +167,8 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 		return normalizedConfig{}, fmt.Errorf("%w: initial packet size below RFC minimum", ErrInvalidConfig)
 	}
 	if out.EnableWebTransport {
-		return normalizedConfig{}, ErrUnsupportedWebTransport
+		out.EnableDatagrams = true
+		out.EnableStreamResetPartialDelivery = true
 	}
 	if err := normalizeClientTokenStore(&out); err != nil {
 		return normalizedConfig{}, err
