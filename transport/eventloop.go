@@ -54,6 +54,7 @@ type EventLoop struct {
 	pinCPU      bool
 
 	channels map[ChannelID]EventHandler
+	locals   eventLoopLocalRegistry
 	closed   atomic.Bool
 }
 
@@ -235,8 +236,15 @@ func (l *EventLoop) Close() error {
 		}
 		_ = ch.Close()
 	}
+	var first error
+	if err := l.locals.closeAll(); err != nil && first == nil {
+		first = err
+	}
 	l.timer.Close()
-	return l.poller.Close()
+	if err := l.poller.Close(); err != nil && first == nil {
+		first = err
+	}
+	return first
 }
 
 func (l *EventLoop) drainTasks() {

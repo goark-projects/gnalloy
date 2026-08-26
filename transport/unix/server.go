@@ -196,11 +196,7 @@ func (s *Server) AllocatorStats() []buffer.AllocatorStats {
 		if state.alloc == nil {
 			continue
 		}
-		if observed, ok := state.alloc.(buffer.StatAllocator); ok {
-			stats = append(stats, observed.Stats())
-			continue
-		}
-		stats = append(stats, buffer.AllocatorStats{})
+		stats = append(stats, transport.AllocatorStatsForEventLoop(id, state.alloc))
 	}
 	return stats
 }

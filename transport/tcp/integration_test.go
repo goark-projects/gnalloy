@@ -327,6 +327,9 @@ func TestTCPServerExposesAllocatorStats(t *testing.T) {
 	if len(stats) != 1 {
 		t.Fatalf("stats len=%d, want 1", len(stats))
 	}
+	if !stats[0].EventLoopLocal || stats[0].EventLoopID != 0 {
+		t.Fatalf("event loop stats=%+v, want loop-local id 0", stats[0])
+	}
 	if stats[0].OffHeap {
 		t.Fatalf("heap allocator stats marked off-heap: %+v", stats[0])
 	}

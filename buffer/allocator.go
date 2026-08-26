@@ -39,6 +39,11 @@ type AllocatorStats struct {
 	Free      int
 	Closed    bool
 	OffHeap   bool
+
+	// EventLoopID 是 allocator 所属 EventLoop 的低基数观测标签。
+	// EventLoopLocal 为 false 时该字段没有归属语义。
+	EventLoopID    uint32
+	EventLoopLocal bool
 }
 
 // StatAllocator 是可观测 allocator 的可选接口，不影响热路径分配契约。
