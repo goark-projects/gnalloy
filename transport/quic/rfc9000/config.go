@@ -23,6 +23,13 @@ const (
 	defaultIncomingStreams      = 100
 )
 
+const (
+	// DefaultClientTokenStoreMaxOrigins 是 0-RTT 地址验证 token store 的默认 origin 数。
+	DefaultClientTokenStoreMaxOrigins = 64
+	// DefaultClientTokenStoreTokensPerOrigin 是每个 origin 保留的默认 token 数。
+	DefaultClientTokenStoreTokensPerOrigin = 4
+)
+
 // Config 描述 RFC 9000 QUIC 连接栈的公共配置。
 type Config struct {
 	// TLS 是 QUIC 必需的 TLS 1.3 配置；NormalizeConfig 会克隆该配置后再补齐 ALPN。
@@ -57,6 +64,16 @@ type Config struct {
 	EnableDatagrams bool
 	// EnableStreamResetPartialDelivery 启用带部分交付语义的 stream reset 扩展。
 	EnableStreamResetPartialDelivery bool
+	// Enable0RTT 启用 QUIC 0-RTT 能力；客户端仍必须提供可复用的 TLS ClientSessionCache。
+	Enable0RTT bool
+	// ClientTokenStore 保存服务端下发的 NEW_TOKEN；复用同一个 store 可跳过后续地址验证。
+	ClientTokenStore ClientTokenStore
+	// ClientTokenStoreMaxOrigins 控制客户端 NEW_TOKEN LRU store 的 origin 容量；0 在 0-RTT 开启时使用默认值。
+	ClientTokenStoreMaxOrigins int
+	// ClientTokenStoreTokensPerOrigin 控制每个 origin 保留的 NEW_TOKEN 数；0 在 0-RTT 开启时使用默认值。
+	ClientTokenStoreTokensPerOrigin int
+	// EnableWebTransport 请求 WebTransport 会话能力；当前适配层会显式返回 ErrUnsupportedWebTransport。
+	EnableWebTransport bool
 }
 
 type normalizedConfig struct {
@@ -82,6 +99,8 @@ func DefaultConfig() Config {
 		DisablePathMTUDiscovery:          false,
 		EnableDatagrams:                  false,
 		EnableStreamResetPartialDelivery: false,
+		Enable0RTT:                       false,
+		EnableWebTransport:               false,
 	}
 }
 
@@ -147,12 +166,40 @@ func normalizeConfig(cfg Config) (normalizedConfig, error) {
 	if out.InitialPacketSize < MinInitialPacketSize {
 		return normalizedConfig{}, fmt.Errorf("%w: initial packet size below RFC minimum", ErrInvalidConfig)
 	}
+	if out.EnableWebTransport {
+		return normalizedConfig{}, ErrUnsupportedWebTransport
+	}
+	if err := normalizeClientTokenStore(&out); err != nil {
+		return normalizedConfig{}, err
+	}
 
 	return normalizedConfig{
 		public: out,
 		tls:    tlsCfg,
 		quic:   toNativeConfig(out, nativeVersions),
 	}, nil
+}
+
+func normalizeClientTokenStore(cfg *Config) error {
+	if cfg.ClientTokenStoreMaxOrigins < 0 {
+		return fmt.Errorf("%w: negative client token store origins", ErrInvalidConfig)
+	}
+	if cfg.ClientTokenStoreTokensPerOrigin < 0 {
+		return fmt.Errorf("%w: negative client token store tokens", ErrInvalidConfig)
+	}
+	if cfg.ClientTokenStore != nil {
+		return nil
+	}
+	if cfg.Enable0RTT || cfg.ClientTokenStoreMaxOrigins > 0 || cfg.ClientTokenStoreTokensPerOrigin > 0 {
+		if cfg.ClientTokenStoreMaxOrigins == 0 {
+			cfg.ClientTokenStoreMaxOrigins = DefaultClientTokenStoreMaxOrigins
+		}
+		if cfg.ClientTokenStoreTokensPerOrigin == 0 {
+			cfg.ClientTokenStoreTokensPerOrigin = DefaultClientTokenStoreTokensPerOrigin
+		}
+		cfg.ClientTokenStore = nativequic.NewLRUTokenStore(cfg.ClientTokenStoreMaxOrigins, cfg.ClientTokenStoreTokensPerOrigin)
+	}
+	return nil
 }
 
 func normalizeTLSConfig(cfg Config) (*tls.Config, []string, error) {
@@ -234,5 +281,7 @@ func toNativeConfig(cfg Config, versions []nativequic.Version) *nativequic.Confi
 		DisablePathMTUDiscovery:          cfg.DisablePathMTUDiscovery,
 		EnableDatagrams:                  cfg.EnableDatagrams,
 		EnableStreamResetPartialDelivery: cfg.EnableStreamResetPartialDelivery,
+		Allow0RTT:                        cfg.Enable0RTT,
+		TokenStore:                       cfg.ClientTokenStore,
 	}
 }

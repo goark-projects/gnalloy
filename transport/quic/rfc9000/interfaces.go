@@ -51,6 +51,16 @@ type Listener interface {
 	Close() error
 }
 
+// EarlyListener 是可在握手完成前接受 0-RTT 连接的监听器接口。
+type EarlyListener interface {
+	// Addr 返回监听器绑定的本地地址。
+	Addr() net.Addr
+	// Accept 接受 QUIC 连接；返回时握手可能尚未完成，调用方可通过 HandshakeComplete 等待。
+	Accept(ctx context.Context) (Connection, error)
+	// Close 关闭监听器；已经接受的连接由调用方自行关闭。
+	Close() error
+}
+
 // Connection 是 RFC9000 QUIC 连接接口。
 type Connection interface {
 	// LocalAddr 返回连接本地 UDP 地址。
@@ -125,6 +135,12 @@ type Dialer interface {
 	DialAddr(ctx context.Context, addr string, cfg Config) (Connection, error)
 }
 
+// EarlyDialer 抽象 RFC9000 QUIC 0-RTT 客户端拨号能力。
+type EarlyDialer interface {
+	// DialAddrEarly 使用 0-RTT 路径连接远端 QUIC 服务端。
+	DialAddrEarly(ctx context.Context, addr string, cfg Config) (Connection, error)
+}
+
 // DialerFunc 允许普通函数作为 Dialer 使用。
 type DialerFunc func(ctx context.Context, addr string, cfg Config) (Connection, error)
 
@@ -139,4 +155,9 @@ type DefaultDialer struct{}
 // DialAddr 连接远端 QUIC 服务端。
 func (DefaultDialer) DialAddr(ctx context.Context, addr string, cfg Config) (Connection, error) {
 	return DialAddr(ctx, addr, cfg)
+}
+
+// DialAddrEarly 使用 0-RTT 路径连接远端 QUIC 服务端。
+func (DefaultDialer) DialAddrEarly(ctx context.Context, addr string, cfg Config) (Connection, error) {
+	return DialAddrEarly(ctx, addr, cfg)
 }
