@@ -37,6 +37,8 @@ type Connection struct {
 	SourceID      ConnectionID
 	Remote        udp.Address
 	State         ConnectionState
+
+	runtime *Runtime
 }
 
 // ConnectionIDRouter 负责按 DCID 路由 QUIC packet。
