@@ -1,0 +1,17 @@
+package http3
+
+import "goark.dev/gnalloy/channel"
+
+// ApplyRequestStreamPipeline 安装 HTTP/3 bidirectional request stream 的编解码链。
+func ApplyRequestStreamPipeline(p *channel.Pipeline, cfg PipelineConfig) error {
+	frameDecoder, err := newPipelineFrameDecoder(cfg)
+	if err != nil {
+		return err
+	}
+	return addPipelineHandlers(p, []pipelineHandlerSpec{
+		{name: HandlerNameHTTP3FrameDecoder, handler: frameDecoder},
+		{name: HandlerNameHTTP3HeaderDecoder, handler: NewHeaderDecoder(cfg.HeaderCodec)},
+		{name: HandlerNameHTTP3FrameEncoder, handler: NewEncoder()},
+		{name: HandlerNameHTTP3HeaderEncoder, handler: NewHeaderEncoder()},
+	})
+}

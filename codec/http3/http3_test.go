@@ -137,7 +137,8 @@ func BenchmarkDecoderDataFrame(b *testing.B) {
 }
 
 type captureSink struct {
-	writes []any
+	writes  []any
+	flushes int
 }
 
 func (s *captureSink) Write(msg any) error {
@@ -146,6 +147,7 @@ func (s *captureSink) Write(msg any) error {
 }
 
 func (s *captureSink) Flush() error {
+	s.flushes++
 	return nil
 }
 

@@ -11,4 +11,5 @@ var (
 	ErrUnsupportedFrame   = errors.New("http3: unsupported frame")
 	ErrInvalidFrameOrder  = errors.New("http3: invalid frame order")
 	ErrHeaderListTooLarge = errors.New("http3: header list too large")
+	ErrInvalidPipeline    = errors.New("http3: invalid pipeline config")
 )
