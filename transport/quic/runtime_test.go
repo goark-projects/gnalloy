@@ -6,6 +6,8 @@ import (
 	"net"
 	"testing"
 
+	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/transport/udp"
 )
 
@@ -162,6 +164,125 @@ func TestConnectionRuntimeAppliesACKToCongestion(t *testing.T) {
 	if runtime.Congestion.InFlight() != 0 {
 		t.Fatalf("inflight=%d, want 0", runtime.Congestion.InFlight())
 	}
+}
+
+func TestRuntimeRecordSentPacketTracksLossAndCongestionTogether(t *testing.T) {
+	conn := &Connection{Remote: udp.Address{IP: net.IPv4(127, 0, 0, 1), Port: 4433}}
+	runtime, err := NewRuntime(conn, RuntimeConfig{
+		Congestion: CongestionConfig{MaxDatagramSize: 100, InitialWindow: 300, MinimumWindow: 100},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runtime.RecordSentPacket(SentPacket{
+		Space:        PacketNumberSpaceApplication,
+		Number:       1,
+		Bytes:        200,
+		AckEliciting: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.Congestion.InFlight() != 200 || runtime.Loss.InFlight(PacketNumberSpaceApplication) != 1 {
+		t.Fatalf("inflight bytes=%d packets=%d", runtime.Congestion.InFlight(), runtime.Loss.InFlight(PacketNumberSpaceApplication))
+	}
+	window := runtime.Congestion.Window()
+	if err := runtime.RecordSentPacket(SentPacket{
+		Space:        PacketNumberSpaceApplication,
+		Number:       3,
+		Bytes:        50,
+		AckEliciting: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.Congestion.InFlight() != 200 {
+		t.Fatalf("ack-only packet must not enter congestion in-flight, got %d", runtime.Congestion.InFlight())
+	}
+	if err := runtime.ApplyFrame(PacketNumberSpaceApplication, ACKFrame{LargestAcked: 3, FirstAckRange: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.Congestion.Window() != window {
+		t.Fatalf("ack-only ACK must not grow congestion window, got %d want %d", runtime.Congestion.Window(), window)
+	}
+	if err := runtime.RecordSentPacket(SentPacket{
+		Space:        PacketNumberSpaceApplication,
+		Number:       2,
+		Bytes:        200,
+		AckEliciting: true,
+	}); !errors.Is(err, ErrCongestionLimited) {
+		t.Fatalf("err=%v, want ErrCongestionLimited", err)
+	}
+	if runtime.Loss.InFlight(PacketNumberSpaceApplication) != 1 {
+		t.Fatalf("packet should not be recorded after congestion limit")
+	}
+}
+
+func TestRuntimeHandlerAppliesFrameEventsAndDropsDuplicatePackets(t *testing.T) {
+	conn := &Connection{Remote: quicUDPAddr}
+	collector := &quicCaptureInbound{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("runtime", NewRuntimeHandler(RuntimeHandlerConfig{})); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("collector", collector); err != nil {
+		t.Fatal(err)
+	}
+
+	firstData := quicTestBuf("abcd")
+	ch.Pipeline().FireChannelRead(FrameEvent{
+		Packet: PacketContext{
+			Type:         PacketShort,
+			Space:        PacketNumberSpaceApplication,
+			PacketNumber: 7,
+			FrameIndex:   0,
+		},
+		Frame:  StreamFrame{StreamID: 1, Data: firstData},
+		Conn:   conn,
+		Remote: quicUDPAddr,
+	})
+	if len(collector.msgs) != 1 {
+		t.Fatalf("msgs=%d, want 1", len(collector.msgs))
+	}
+	runtime, err := conn.Runtime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ACKFrameContains(mustACKFrame(t, runtime, PacketNumberSpaceApplication), 7) {
+		t.Fatal("runtime should track ack-eliciting packet")
+	}
+	stream, ok := runtime.Streams.Get(1)
+	if !ok || stream.ReceiveOffset != 4 {
+		t.Fatalf("stream=%+v ok=%v, want receive offset 4", stream, ok)
+	}
+	collector.msgs[0].(FrameEvent).Release()
+
+	duplicateData := quicTestBuf("drop")
+	ch.Pipeline().FireChannelRead(FrameEvent{
+		Packet: PacketContext{
+			Type:         PacketShort,
+			Space:        PacketNumberSpaceApplication,
+			PacketNumber: 7,
+			FrameIndex:   0,
+		},
+		Frame:  StreamFrame{StreamID: 1, Data: duplicateData},
+		Conn:   conn,
+		Remote: quicUDPAddr,
+	})
+	if len(collector.msgs) != 1 {
+		t.Fatalf("duplicate frame should be dropped, msgs=%d", len(collector.msgs))
+	}
+	if duplicateData.RefCnt() != 0 {
+		t.Fatalf("duplicate data ref=%d, want released", duplicateData.RefCnt())
+	}
+}
+
+func mustACKFrame(t *testing.T, runtime *Runtime, space PacketNumberSpace) ACKFrame {
+	t.Helper()
+	frame, ok := runtime.ACKFrame(space, 0)
+	if !ok {
+		t.Fatal("missing ACK frame")
+	}
+	return frame
 }
 
 func BenchmarkQUICRuntimeApplyACK(b *testing.B) {

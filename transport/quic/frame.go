@@ -99,6 +99,7 @@ type PacketContext struct {
 	DestinationID ConnectionID
 	SourceID      ConnectionID
 	PacketNumber  uint64
+	FrameIndex    int
 }
 
 type FrameEvent struct {
@@ -289,6 +290,7 @@ func (d *PacketFrameDecoder) decodePacketWithMeta(ctx *channel.HandlerContext, p
 	}
 	meta := packet.Context()
 	scanner := NewFrameScanner(packet.Payload)
+	frameIndex := 0
 	for {
 		frame, ok, err := scanner.Next()
 		if err != nil {
@@ -299,6 +301,7 @@ func (d *PacketFrameDecoder) decodePacketWithMeta(ctx *channel.HandlerContext, p
 		if !ok {
 			break
 		}
+		meta.FrameIndex = frameIndex
 		event := FrameEvent{Packet: meta, Frame: frame, Conn: conn, NewConnection: newConnection}
 		if addr != nil {
 			event.Remote = *addr
@@ -306,6 +309,7 @@ func (d *PacketFrameDecoder) decodePacketWithMeta(ctx *channel.HandlerContext, p
 		} else {
 			ctx.FireChannelRead(event)
 		}
+		frameIndex++
 	}
 	packet.Release()
 }

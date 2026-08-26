@@ -9,6 +9,8 @@ import (
 )
 
 const packetHandlerName = "quicPacketHandler"
+const packetFrameDecoderName = "quicPacketFrameDecoder"
+const runtimeHandlerName = "quicRuntimeHandler"
 
 // Transport 是 QUIC 最小包引擎的 ServerBootstrap 入口。
 type Transport struct {
@@ -42,6 +44,12 @@ func (t *Transport) Bind(ctx context.Context, serverCfg bootstrap.ServerConfig) 
 			Router: NewConnectionIDRouter(qcfg.ActiveConnectionIDLimit),
 		})
 		if err := ch.Pipeline().AddLast(packetHandlerName, handler); err != nil {
+			return err
+		}
+		if err := ch.Pipeline().AddLast(packetFrameDecoderName, NewPacketFrameDecoder()); err != nil {
+			return err
+		}
+		if err := ch.Pipeline().AddLast(runtimeHandlerName, NewRuntimeHandler(RuntimeHandlerConfig{})); err != nil {
 			return err
 		}
 		return initializer(ch)

@@ -109,6 +109,12 @@ func TestTransportBindInstallsPacketHandler(t *testing.T) {
 			if _, ok := ch.Pipeline().Context(packetHandlerName); !ok {
 				t.Fatal("QUIC packet handler was not installed before user initializer")
 			}
+			if _, ok := ch.Pipeline().Context(packetFrameDecoderName); !ok {
+				t.Fatal("QUIC packet frame decoder was not installed before user initializer")
+			}
+			if _, ok := ch.Pipeline().Context(runtimeHandlerName); !ok {
+				t.Fatal("QUIC runtime handler was not installed before user initializer")
+			}
 			return nil
 		}).
 		Bind("127.0.0.1:0")
