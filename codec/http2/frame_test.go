@@ -82,6 +82,23 @@ func TestSettingsAckHasNoPayload(t *testing.T) {
 	}
 }
 
+func TestTypedFrameDecoderAcceptsEmptyPayloadFrames(t *testing.T) {
+	settings, err := DecodeTypedFrame(Frame{Type: FrameSettings})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.Release()
+	continuation, err := DecodeTypedFrame(Frame{Type: FrameContinuation, StreamID: 1, Flags: FlagEndHeaders})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer continuation.Release()
+	frame := continuation.(ContinuationFrame)
+	if frame.StreamID != 1 || frame.HeaderBlock != nil {
+		t.Fatalf("continuation=%+v", frame)
+	}
+}
+
 func TestTypedFrameDecoderParsesHeadersWithPriority(t *testing.T) {
 	decoder, err := NewFrameDecoder(DefaultMaxFrameSize)
 	if err != nil {

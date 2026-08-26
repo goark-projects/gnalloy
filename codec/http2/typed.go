@@ -320,6 +320,9 @@ func decodeSettingsFrame(frame Frame) (SettingsFrame, error) {
 		return SettingsFrame{Ack: true}, nil
 	}
 	count := readable(frame.Payload) / 6
+	if count == 0 {
+		return SettingsFrame{}, nil
+	}
 	settings := make([]Setting, count)
 	index := frame.Payload.ReaderIndex()
 	for i := range settings {
@@ -411,7 +414,7 @@ func decodeContinuationFrame(frame Frame) (ContinuationFrame, error) {
 	if !frame.StreamID.Valid() {
 		return ContinuationFrame{}, ErrInvalidStreamID
 	}
-	block, err := slice(frame.Payload, frame.Payload.ReaderIndex(), readable(frame.Payload))
+	block, err := slice(frame.Payload, readerIndex(frame.Payload), readable(frame.Payload))
 	if err != nil {
 		return ContinuationFrame{}, err
 	}
@@ -659,6 +662,13 @@ func readable(buf buffer.ByteBuf) int {
 		return 0
 	}
 	return buf.ReadableBytes()
+}
+
+func readerIndex(buf buffer.ByteBuf) int {
+	if buf == nil {
+		return 0
+	}
+	return buf.ReaderIndex()
 }
 
 func readPriority(buf buffer.ByteBuf, index int) (PriorityParam, error) {
