@@ -1,0 +1,28 @@
+{
+  "name": "gnalloy netty parity baseline",
+  "notes": "同机对标模板。正式结论必须保留完整命令、机器信息和原始输出。",
+  "scenarios": [
+    {
+      "name": "gnalloy tcp echo",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "default",
+      "payload": "64B",
+      "command": [
+        "go",
+        "test",
+        "-run",
+        "^$",
+        "-bench",
+        "BenchmarkNativeTCPEchoRoundTrip$",
+        "-benchmem",
+        "./transport/tcp"
+      ],
+      "env": {
+        "GOWORK": "off",
+        "GNALLOY_BENCH_BACKEND": "default"
+      },
+      "timeout": "2m"
+    }
+  ]
+}
