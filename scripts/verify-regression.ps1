@@ -50,6 +50,10 @@ try {
     Invoke-FuzzSmoke "http1 request" "FuzzHTTP1RequestDecoder" "./codec/http1"
     Invoke-FuzzSmoke "websocket frame" "FuzzWebSocketFrameDecoder" "./codec/websocket"
     Invoke-FuzzSmoke "mqtt frame pipeline" "FuzzMQTTFramePipeline" "./codec/mqtt"
+    Invoke-FuzzSmoke "dns message" "FuzzDNSParseMessage" "./codec/dns"
+    Invoke-FuzzSmoke "redis frame pipeline" "FuzzRedisFramePipeline" "./codec/redis"
+    Invoke-FuzzSmoke "http2 frame pipeline" "FuzzHTTP2FramePipeline" "./codec/http2"
+    Invoke-FuzzSmoke "http3 frame pipeline" "FuzzHTTP3FramePipeline" "./codec/http3"
     Invoke-FuzzSmoke "quic frame scanner" "FuzzQUICFrameScanner" "./transport/quic"
 
     Write-Host "== benchmarks: hot path allocation guards"

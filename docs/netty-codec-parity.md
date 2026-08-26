@@ -60,12 +60,12 @@
 | `SpdyFrameDecoder/Encoder` | `codec/spdy` | done | 支持 SPDY/3 data、SYN、RST、SETTINGS、PING、GOAWAY、HEADERS、WINDOW_UPDATE 和未知控制帧。 |
 | `HttpObjectDecoder/Encoder` | `codec/http1` | done | 支持请求/响应、Content-Length、chunked、trailers、聚合器、100-continue 和 chunked 出站。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |
-| `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame；HPACK 保持独立边界。 |
-| `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE 和未知扩展帧。 |
+| `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame；HPACK 保持独立边界；已覆盖 fuzz smoke。 |
+| `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE 和未知扩展帧；已覆盖 fuzz smoke。 |
 | `BinaryMemcache*` | `codec/memcache` | done | 支持 Memcached binary request/response header、extras、key、value、opaque 和 CAS。 |
-| `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧能力。 |
+| `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧和值解码能力；已覆盖 fuzz smoke。 |
 | `MQTT` | `codec/mqtt` | done | 支持 MQTT 3.1.1/MQTT5 固定头、结构化包、属性、原因码、AUTH 和零拷贝 PUBLISH payload。 |
-| `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | done | 支持 DNS wire message、name 压缩、A/AAAA/NS/CNAME/PTR/MX/TXT/SRV/SOA/OPT 常用记录和 resolver。 |
+| `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | done | 支持 DNS wire message、name 压缩、A/AAAA/NS/CNAME/PTR/MX/TXT/SRV/SOA/OPT 常用记录和 resolver；已覆盖 fuzz smoke。 |
 | `SmtpRequest/ResponseEncoder/Decoder` | `codec/smtp` | done | 支持 SMTP request、multiline response 和 DATA dot-stuffing。 |
 | `Socks4/Socks5` | `codec/socks` | done | 支持 SOCKS4a、SOCKS5 greeting、method selection、command request/reply 和 IPv4/domain/IPv6 地址。 |
 | `StompSubframeDecoder/Encoder` | `codec/stomp` | done | 支持 STOMP 1.2 frame、heartbeat、header escape、content-length 和 NUL body。 |
@@ -88,3 +88,12 @@
 - 需要连续内存的 codec 可以切换 `MergeCumulator`，付出一次复制换取单段可读视图。
 - Frame decoder 基准必须持续保持稳态 `0 B/op`、`0 allocs/op`。
 - 出站 encoder 接管被处理消息的所有权；写失败时必须释放尚未移交给下游的 `ByteBuf`。
+
+## Fuzz 覆盖
+
+| 范围 | 入口 | 说明 |
+| --- | --- | --- |
+| 基础帧 | `FuzzLengthFieldBasedFrameDecoder`、`FuzzLineBasedFrameDecoder`、`FuzzDelimiterBasedFrameDecoder` | 覆盖半包、超长帧和分隔符边界。 |
+| HTTP/WebSocket/MQTT | `FuzzHTTP1RequestDecoder`、`FuzzWebSocketFrameDecoder`、`FuzzMQTTFramePipeline` | 覆盖常用应用层协议 pipeline。 |
+| DNS/Redis/HTTP2/HTTP3 | `FuzzDNSParseMessage`、`FuzzRedisFramePipeline`、`FuzzHTTP2FramePipeline`、`FuzzHTTP3FramePipeline` | 覆盖 P2 新增的 Netty 常用协议 smoke。 |
+| QUIC | `FuzzQUICParseHeaderBytes`、`FuzzQUICFrameScanner` | 覆盖当前 QUIC packet/header/frame 边界，不宣称完整连接协议栈。 |

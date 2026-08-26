@@ -15,9 +15,9 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 
 | 优先级 | 范围 | 当前状态 | 验证入口 |
 | --- | --- | --- | --- |
-| P0 | Bootstrap/Channel option、TCP socket option、connect timeout、平台 completion 行为 | done | `go test ./bootstrap ./channel ./transport/tcp`、`go test ./...` |
-| P1 | 业务 handler executor group、流量整形、transport completion 矩阵 | done | `go test ./handler/executor ./handler/traffic ./transport/udp ./transport/raw ./transport/quic` |
-| P2 | 协议 fuzz smoke、轻量观测指标、Netty parity 文档和回归脚本 | done | `scripts/verify-regression.*`、`go test ./observability ./handler/metrics` |
+| P0 | Bootstrap/Channel option、TCP socket option、connect timeout、Future listener EventLoop 归属、读循环公平性和平台 completion 行为 | done | `go test ./bootstrap ./channel ./transport/tcp`、`go test ./channel ./transport` |
+| P1 | 业务 handler executor group、流量整形、DNS resolver cache/TCP fallback、固定 ChannelPool、轻量观测延迟指标和 transport completion 矩阵 | done | `go test ./handler/executor ./handler/traffic ./resolver/dns ./channel/pool ./observability ./handler/metrics` |
+| P2 | LoggingHandler、FlushConsolidationHandler、协议 fuzz smoke、Netty parity 文档和回归脚本 | done | `go test ./handler/logging ./handler/flush ./codec/dns ./codec/redis ./codec/http2 ./codec/http3`、`scripts/verify-regression.*` |
 
 ## Bootstrap 与 Channel
 
@@ -27,7 +27,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | `Bootstrap` | `bootstrap.Dialer` | done | 客户端 dialer 支持 connect timeout 和 channel option。 |
 | `ChannelOption` | `channel.ChannelOption` | done | Go 泛型类型安全选项，避免 Java 风格运行期强转。 |
 | `AttributeKey/AttributeMap` | `channel.AttributeMap` | done | Channel 级轻量属性存储。 |
-| `ChannelFuture` | `channel.Future` | done | 支持完成、失败、取消、listener 和 context deadline。 |
+| `ChannelFuture` | `channel.Future` | done | 支持完成、失败、listener、deadline 等待，并可将 listener 绑定到所属 EventLoop。 |
 | `ChannelGroup` | `channel.Group` | done | 批量 close/write/flush 和 group handler。 |
 | `FileRegion` | `channel.FileRegion` | done | 提供文件区域出站消息和 fallback 编码路径。 |
 
@@ -42,6 +42,8 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | `DefaultEventExecutorGroup` | `handler/executor` | done | 固定 worker group、有限队列、按 handler 保序 offload。 |
 | `IdleStateHandler`/timeout | `handler/timeout` | done | 基于时间轮，避免每连接独立 `time.Timer` 膨胀。 |
 | `TrafficShapingHandler` | `handler/traffic` | done | 支持本地/共享读写限速和指标快照。 |
+| `LoggingHandler` | `handler/logging` | done | 基于标准库 `slog`，记录生命周期、读写、flush、close 和异常事件，不接管消息所有权。 |
+| `FlushConsolidationHandler` | `handler/flush` | done | 读循环内合并 flush，支持阈值强制下发、无读循环延迟合并和 Future 完成传播。 |
 
 ## Buffer 与 Codec
 
@@ -55,6 +57,14 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | 协议 codec | `codec/*` | done | HTTP/1、HTTP/2、HTTP/3 frame、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
 
 完整 codec 细分矩阵见 `docs/netty-codec-parity.md`。
+
+## Resolver 与连接池
+
+| Netty 能力 | gnalloy 对应 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| `DnsNameResolver` cache | `resolver/dns.MemoryCache` | done | 支持正向缓存、负缓存、最小/最大 TTL 约束和并发安全快照。 |
+| DNS TCP fallback | `resolver/dns.TCPExchanger` | done | UDP 响应截断时可回退 TCP 查询，避免大响应被静默截断。 |
+| `FixedChannelPool` | `channel/pool.FixedPool` | done | 支持最大连接数、最大等待队列、获取超时、健康检查和统计快照。 |
 
 ## Transport 与 EventLoop
 
@@ -76,7 +86,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | Channel 指标契约 | `observability.ChannelRecorder` | done | 供应商无关、低基数、并发安全接口。 |
 | 本地聚合指标 | `observability.AtomicChannelRecorder` | done | 原子聚合器，适合 smoke、压测和嵌入式导出。 |
 | Pipeline 指标 handler | `handler/metrics.ChannelMetricsHandler` | done | 记录生命周期、读写字节、flush、close 和异常。 |
-| 协议 fuzz smoke | `Fuzz*` tests | done | 覆盖 length-field、line、delimiter、HTTP/1、WebSocket、MQTT、QUIC header/frame。 |
+| 协议 fuzz smoke | `Fuzz*` tests | done | 覆盖 length-field、line、delimiter、HTTP/1、WebSocket、MQTT、DNS、Redis、HTTP/2、HTTP/3、QUIC header/frame。 |
 | 回归脚本 | `scripts/verify-regression.*` | done | 全量测试、代表性 fuzz smoke、热路径基准和平台专项检查。 |
 
 ## 仍需后续独立切片
