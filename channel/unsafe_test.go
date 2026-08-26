@@ -321,6 +321,54 @@ func TestUnsafeReadinessWriteInterestRespectsAutoReadFalse(t *testing.T) {
 	}
 }
 
+func TestUnsafeReadinessHonorsWriteSpinCount(t *testing.T) {
+	poller := &fakeReadyPoller{}
+	rw := &partialWriteRW{steps: []writeStep{
+		{n: 1},
+		{n: 1},
+		{n: 1},
+	}}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     poller,
+		ReadWriter: rw,
+	})
+	OptionWriteSpinCount.Set(ch.Options(), 2)
+
+	buf := buffer.NewHeapBuffer(3)
+	if _, err := buf.WriteBytes([]byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.WriteAndFlush(buf); err != nil {
+		t.Fatal(err)
+	}
+	if len(rw.writes) != 2 || rw.writes[0] != "abc" || rw.writes[1] != "bc" {
+		t.Fatalf("writes after first flush=%v, want two write attempts", rw.writes)
+	}
+	if ch.PendingOutboundBytes() != 1 {
+		t.Fatalf("pending outbound bytes=%d, want 1 after spin budget", ch.PendingOutboundBytes())
+	}
+	if len(poller.modified) != 1 || poller.modified[0] != transport.ReadyRead|transport.ReadyWrite {
+		t.Fatalf("modified=%v, want write interest kept", poller.modified)
+	}
+
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
+	if len(rw.writes) != 3 || rw.writes[2] != "c" {
+		t.Fatalf("writes after ready event=%v, want final write", rw.writes)
+	}
+	if ch.PendingOutboundBytes() != 0 {
+		t.Fatalf("pending outbound bytes=%d, want drained", ch.PendingOutboundBytes())
+	}
+	if buf.RefCnt() != 0 {
+		t.Fatalf("ref=%d, want 0", buf.RefCnt())
+	}
+	if len(poller.modified) != 2 || poller.modified[1] != transport.ReadyRead {
+		t.Fatalf("modified=%v, want write interest cleared", poller.modified)
+	}
+}
+
 func TestUnsafeReadinessUsesGatheringWrite(t *testing.T) {
 	rw := &vectorWriteRW{}
 	ch, _ := NewUnsafeChannel(UnsafeConfig{

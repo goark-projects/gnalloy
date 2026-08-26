@@ -104,6 +104,7 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 	u.ch = NewLocalChannelWithTimer(cfg.ID, cfg.Allocator, u, cfg.Timer)
 	OptionReadBufferSize.Set(u.ch.Options(), readBufferSize)
 	OptionWriteBufferWatermark.Set(u.ch.Options(), watermark)
+	OptionWriteSpinCount.Set(u.ch.Options(), OptionWriteSpinCount.Get(u.ch.Options()))
 	OptionMaxMessagesPerRead.Set(u.ch.Options(), OptionMaxMessagesPerRead.Get(u.ch.Options()))
 	return u.ch, u
 }
@@ -429,7 +430,8 @@ func (u *Unsafe) flushReady() error {
 	if u.rw == nil {
 		return ErrNoOutboundSink
 	}
-	for u.outHead != nil {
+	spinCount := u.maxWriteSpinCount()
+	for spins := 0; u.outHead != nil && spins < spinCount; spins++ {
 		n, again, err := u.writeReadyBatch()
 		if n > 0 {
 			u.completeWrite(n)
@@ -440,6 +442,9 @@ func (u *Unsafe) flushReady() error {
 		if again || n == 0 {
 			return u.enableWriteInterest()
 		}
+	}
+	if u.outHead != nil {
+		return u.enableWriteInterest()
 	}
 	return u.disableWriteInterest()
 }
@@ -641,6 +646,14 @@ func (u *Unsafe) maxMessagesPerRead() int {
 		return 1
 	}
 	return maxMessages
+}
+
+func (u *Unsafe) maxWriteSpinCount() int {
+	spinCount := OptionWriteSpinCount.Get(u.ch.Options())
+	if spinCount <= 0 {
+		return 1
+	}
+	return spinCount
 }
 
 func (u *Unsafe) newPromise() *DefaultPromise {
