@@ -1,0 +1,47 @@
+name: validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: go test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Test
+        run: go test ./... -count=1
+        env:
+          GOWORK: "off"
+          GOTOOLCHAIN: local
+
+  platform-gate:
+    name: platform matrix gate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Verify platform matrix
+        shell: pwsh
+        run: ./scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json
+        env:
+          GOWORK: "off"
+          GOTOOLCHAIN: local
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-report
+          path: platform-report.json

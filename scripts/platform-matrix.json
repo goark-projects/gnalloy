@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "name": "windows-amd64",
+      "goos": "windows",
+      "goarch": "amd64",
+      "native": true,
+      "backends": {
+        "readiness": ["std"],
+        "completion": ["iocp", "memory"]
+      },
+      "gates": [
+        {
+          "name": "native-tests",
+          "command": ["go", "test", "./..."],
+          "nativeOnly": true
+        },
+        {
+          "name": "cross-compile",
+          "command": ["go", "test", "-c", "./..."]
+        }
+      ],
+      "unsupported": ["epoll", "kqueue", "iouring", "unix-socket"]
+    },
+    {
+      "name": "linux-amd64",
+      "goos": "linux",
+      "goarch": "amd64",
+      "backends": {
+        "readiness": ["epoll", "std"],
+        "completion": ["iouring", "memory"]
+      },
+      "gates": [
+        {
+          "name": "cross-compile",
+          "command": ["go", "test", "-c", "./..."]
+        }
+      ],
+      "unsupported": ["kqueue", "iocp"]
+    },
+    {
+      "name": "linux-arm64",
+      "goos": "linux",
+      "goarch": "arm64",
+      "backends": {
+        "readiness": ["epoll", "std"],
+        "completion": ["iouring", "memory"]
+      },
+      "gates": [
+        {
+          "name": "cross-compile",
+          "command": ["go", "test", "-c", "./..."]
+        }
+      ],
+      "unsupported": ["kqueue", "iocp"]
+    },
+    {
+      "name": "darwin-arm64",
+      "goos": "darwin",
+      "goarch": "arm64",
+      "backends": {
+        "readiness": ["kqueue", "std"],
+        "completion": ["memory"]
+      },
+      "gates": [
+        {
+          "name": "cross-compile",
+          "command": ["go", "test", "-c", "./..."]
+        }
+      ],
+      "unsupported": ["epoll", "iouring", "iocp"]
+    }
+  ]
+}
