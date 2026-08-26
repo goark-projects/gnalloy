@@ -35,9 +35,10 @@ blocks:
 - `codec/compression`: gzip and zlib ByteBuf encoders/decoders backed by the
   Go standard library, with explicit decoded-size limits.
 - `codec/dns`, `codec/http1`, `codec/http2`, `codec/protobuf`, `codec/mqtt`,
-  `codec/redis`, and `codec/websocket`: first protocol codec slice for DNS,
-  HTTP/1.x, HTTP/2 binary frames and stream state, Protobuf varint32 frames,
-  MQTT frames, Redis RESP frames, and WebSocket frames.
+  `codec/redis`, and `codec/websocket`: protocol codec coverage for DNS,
+  HTTP/1.x, HTTP/2 binary frames, HPACK header blocks, HTTP/2 stream child
+  channel flow, Protobuf varint32 frames, MQTT frames, Redis RESP frames, and
+  WebSocket frames.
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`, and
   `FileRegion` fallback encoding; the `Unsafe` bridge normalizes
   readiness/completion events before they enter business handlers.
@@ -49,7 +50,8 @@ blocks:
   `time.Timer` allocation.
 - `handler/tls`: Go-native TLS handler backed by `crypto/tls`, exposing
   plaintext `ByteBuf` to business handlers while preserving SNI and ALPN
-  negotiation events; StartTLS and SNI-driven config selection are handled as
+  negotiation events; StartTLS, SNI-driven config selection, stable ByteBuf
+  copy reduction, and optional native TLS capability evaluation are handled as
   explicit pipeline controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
@@ -58,10 +60,9 @@ blocks:
 - `handler/proxy`: HTTP CONNECT client handler plus SOCKS5 and HAProxy v1/v2
   wire helpers for proxy negotiation and source-address metadata.
 - `handler/metrics` and `observability`: vendor-neutral Channel metrics
-  contracts, an atomic low-overhead recorder, and a Pipeline handler for
-  lifecycle, read/write byte, flush, close, and exception counters; the
-  observability package also includes a dependency-free Prometheus text
-  exporter.
+  contracts, an atomic low-overhead recorder, a Pipeline handler for lifecycle,
+  read/write byte, flush, close, and exception counters, plus Prometheus text
+  export and an OpenTelemetry adapter.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `resolver/dns`: Go-native DNS resolver with system fallback, explicit
   exchanger hooks, UDP query support, TCP fallback, hosts override,
@@ -89,9 +90,11 @@ blocks:
 - `transport/quic`: QUIC packet/runtime engine over UDP, including packet
   encode/decode, connection-ID routing, frame dispatch, ACK range tracking,
   packet-threshold loss detection, Reno-style congestion window, stream
-  flow-control state, and path validation/migration state. It does not yet
-  implement the full TLS 1.3 packet protection, handshake, retransmission
-  timer, 0-RTT, HTTP/3 integration, or RFC 9000 interop stack.
+  flow-control state, and path validation/migration state.
+- `transport/quic/rfc9000`: RFC 9000 QUIC v1 connection adapter backed by a
+  mature TLS 1.3 packet-protection stack, exposing bidirectional streams,
+  unidirectional streams for HTTP/3 control/QPACK integration, datagrams,
+  connection state, localhost interop tests, and opt-in external interop tests.
 
 Examples:
 

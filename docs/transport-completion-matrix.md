@@ -20,11 +20,13 @@
 | TCP | `epoll`, `kqueue`, `std` | `iouring`, `iocp`, `memory` | Completion path covers accept, connected read/write, close, and existing write-buffer backpressure. |
 | UDP | `epoll`, `kqueue`, `std` | `iouring`, `iocp`, `memory` | Completion path uses datagram `IORequest` and is covered by the UDP echo integration test on the platform default backend. |
 | raw | `epoll`, `kqueue`, `std` where OS raw socket is available | `iouring`, `iocp`, `memory` where raw socket and datagram completion are available | Runtime success still depends on administrator or `CAP_NET_RAW` permission and OS raw-socket policy. |
-| QUIC | inherits UDP | inherits UDP | Current package is a QUIC packet/runtime engine over UDP. It implements packet/header/frame parsing, DCID routing, ACK range tracking, packet-threshold loss detection, Reno-style congestion window, stream flow-control state, and path validation/migration state. It does not yet implement full TLS 1.3 packet protection, handshake, retransmission timer, 0-RTT, or RFC 9000 interop as a complete connection stack. |
+| QUIC packet/runtime | inherits UDP | inherits UDP | `transport/quic` implements packet/header/frame parsing, DCID routing, ACK range tracking, packet-threshold loss detection, Reno-style congestion window, stream flow-control state, and path validation/migration state. |
+| QUIC RFC9000 connection | system UDP socket | system UDP socket | `transport/quic/rfc9000` exposes a complete RFC 9000 QUIC v1 connection adapter backed by TLS 1.3 packet protection, ALPN, bidirectional streams, unidirectional streams, datagrams, and connection state. |
 
 ## Validation Rules
 
 - Do not claim a transport is production-complete from cross compilation alone.
 - UDP completion support is validated through `transport/udp` integration tests because it exercises real socket bind, datagram read, write, and pipeline echo.
 - raw integration is not a default gate because it requires elevated privileges on common platforms.
-- QUIC transport validation covers packet parsing/routing plus runtime state unit tests. Full production validation still requires interop tests against an external QUIC stack and encrypted TLS 1.3 packet protection.
+- QUIC packet/runtime validation covers packet parsing/routing plus runtime state unit tests.
+- QUIC RFC9000 validation covers localhost encrypted TLS 1.3 interop by default. External stack interop is available through `GNALLOY_QUIC_INTEROP_ADDR`, `GNALLOY_QUIC_INTEROP_ALPN`, `GNALLOY_QUIC_INTEROP_SERVER_NAME`, `GNALLOY_QUIC_INTEROP_INSECURE`, `GNALLOY_QUIC_INTEROP_PAYLOAD`, and `GNALLOY_QUIC_INTEROP_EXPECT`.

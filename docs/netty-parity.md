@@ -11,13 +11,14 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 - `planned`: 已确认需要，但应在后续独立切片实现。
 - `defer`: 不适合当前核心包直接绑定，后续扩展包或业务层承接。
 
-## P0-P2 完成面
+## P0-P3 完成面
 
 | 优先级 | 范围 | 当前状态 | 验证入口 |
 | --- | --- | --- | --- |
 | P0 | Bootstrap/Channel option、TCP socket option、connect timeout、Future listener EventLoop 归属、读循环公平性和平台 completion 行为 | done | `go test ./bootstrap ./channel ./transport/tcp`、`go test ./channel ./transport` |
 | P1 | 业务 handler executor group、流量整形、DNS resolver cache/TCP fallback/search/hosts/CNAME、Simple/Fixed/Map ChannelPool、IP filter、pcap、轻量观测延迟指标和 Prometheus 文本导出 | done | `go test ./handler/executor ./handler/traffic ./resolver/dns ./channel/pool ./handler/ipfilter ./handler/pcap ./observability ./handler/metrics` |
 | P2 | LoggingHandler、FlushConsolidationHandler、协议 fuzz smoke、Netty parity 文档、性能预算 benchmark 和回归脚本 | done | `go test ./handler/logging ./handler/flush ./codec/dns ./codec/redis ./codec/http2 ./codec/http3`、`scripts/verify-regression.*` |
+| P3 | RFC9000 QUIC v1 适配、TLS 1.3 packet protection、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、同机 benchmark harness、TLS copy reduction/native TLS 评估、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter | done | `go test ./transport/quic/rfc9000 ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/unix ./observability/otel ./benchmarks/parity`、`go test ./...` |
 
 ## Bootstrap 与 Channel
 
@@ -81,7 +82,8 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | native epoll/kqueue | `transport/poller/epoll`, `transport/poller/kqueue` | done | 平台原生 readiness backend。 |
 | io_uring/IOCP completion | `transport/poller/iouring`, `transport/poller/iocp` | done | accept/read/write/close 与 datagram completion 路径。 |
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
-| QUIC | `transport/quic` | partial | 当前是 UDP 上的 QUIC packet/runtime engine，已具备 ACK tracking、packet-threshold loss recovery、Reno 风格 congestion、stream flow-control 和 path validation/migration 基础；仍不宣称完整 TLS 1.3 加密握手和 RFC 9000 全互通连接栈。 |
+| QUIC packet/runtime | `transport/quic` | done | 提供 UDP 上的 QUIC packet/header/frame、连接 ID 路由、ACK tracking、packet-threshold loss recovery、Reno 风格 congestion、stream flow-control 和 path validation/migration 基础。 |
+| QUIC RFC9000 connection stack | `transport/quic/rfc9000` | done | 通过生产级 QUIC 实现承接 RFC 9000 QUIC v1、TLS 1.3 packet protection、ALPN、双向 stream、单向 stream、datagram、localhost 互通和显式启用的外部互通测试。 |
 
 完整 transport 边界见 `docs/transport-completion-matrix.md`。
 
@@ -92,7 +94,8 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | Channel 指标契约 | `observability.ChannelRecorder` | done | 供应商无关、低基数、并发安全接口。 |
 | 本地聚合指标 | `observability.AtomicChannelRecorder` | done | 原子聚合器，适合 smoke、压测和嵌入式导出。 |
 | Pipeline 指标 handler | `handler/metrics.ChannelMetricsHandler` | done | 记录生命周期、读写字节、flush、close 和异常。 |
-| Prometheus 文本导出 | `observability.PrometheusExporter` | done | 无外部依赖导出低基数聚合指标，OTel 可作为独立 adapter 接入。 |
+| Prometheus 文本导出 | `observability.PrometheusExporter` | done | 无外部依赖导出低基数聚合指标。 |
+| OpenTelemetry adapter | `observability/otel` | done | OTel 以独立 adapter 接入，核心 recorder 契约仍保持轻量。 |
 | 协议 fuzz smoke | `Fuzz*` tests | done | 覆盖 length-field、line、delimiter、HTTP/1、WebSocket、MQTT、DNS、Redis、HTTP/2、HTTP/3、QUIC header/frame。 |
 | 回归脚本 | `scripts/verify-regression.*` | done | 全量测试、代表性 fuzz smoke、热路径基准和平台专项检查。 |
 
@@ -100,7 +103,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 
 | 范围 | 状态 | 原因 |
 | --- | --- | --- |
-| QUIC 完整 RFC 9000 互通协议栈 | planned | 已具备连接 runtime 基础；完整 TLS 1.3 packet protection、handshake、retransmission timer、0-RTT、HTTP/3 集成和互通测试仍需独立大切片。 |
-| OpenTelemetry exporter | planned | 当前核心只提供无依赖 exporter 契约和 Prometheus 文本格式；OTel 应作为适配层接入，避免核心包强绑定外部依赖。 |
+| QUIC 0-RTT、session resumption、WebTransport | planned | 属于 RFC9000 基础连接栈之上的独立能力，应按安全语义和互通矩阵单独落地。 |
+| HTTP/3 自动 server/client pipeline 装配 | planned | 当前已有 QPACK、control stream 和 QUIC 单向 stream 积木；自动化装配应作为独立 HTTP/3 transport binding 实现。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |

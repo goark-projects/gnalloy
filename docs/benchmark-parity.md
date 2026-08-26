@@ -40,6 +40,7 @@ Windows:
 ## 当前边界
 
 - `buffer.PooledAllocator` 提供跨平台 size-class 池化能力；Linux 固定块 off-heap 场景仍优先用 mmap allocator。
-- `codec/http2.StreamMultiplexer` 提供 stream 生命周期和基础 flow-control，不包含 HPACK 语义压缩。
-- `transport/quic.Runtime` 提供 ACK、loss、congestion、stream、path 状态基础，不包含 TLS 1.3 packet protection 和完整互通栈。
-- `observability.PrometheusExporter` 是无依赖文本导出器；OpenTelemetry 应作为独立 adapter 实现。
+- `codec/http2.StreamMultiplexer` 提供 stream 生命周期、基础 flow-control 和 child-channel 体验；HPACK 语义压缩由 `codec/http2.HeaderDecoder/HeaderEncoder` 承担。
+- `codec/http3` 提供 frame、QPACK、control stream 顺序校验和 QUIC 单向 stream type 前缀；完整 HTTP/3 server/client 自动装配仍应作为独立 transport binding 验证。
+- `transport/quic.Runtime` 提供 ACK、loss、congestion、stream、path 状态基础；`transport/quic/rfc9000` 提供 RFC9000/TLS1.3 互通连接栈。
+- `observability.PrometheusExporter` 是无依赖文本导出器；OpenTelemetry 已作为 `observability/otel` adapter 接入。
