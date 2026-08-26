@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -44,6 +45,14 @@ type Config struct {
 	MaxTTL time.Duration
 	// NegativeTTL 是 ErrNoAnswer 等负向结果 TTL。
 	NegativeTTL time.Duration
+	// Hosts 提供 hosts 文件等本地静态解析结果。
+	Hosts HostsResolver
+	// SearchDomains 是相对域名查询的搜索域。
+	SearchDomains []string
+	// Ndots 控制先查原始名称还是先走搜索域，0 表示 1。
+	Ndots int
+	// MaxCNAMEHops 限制 CNAME 递归深度，0 表示 8。
+	MaxCNAMEHops int
 }
 
 func DefaultConfig() Config {
@@ -61,6 +70,10 @@ type Resolver struct {
 	minTTL       time.Duration
 	maxTTL       time.Duration
 	negativeTTL  time.Duration
+	hosts        HostsResolver
+	search       []string
+	ndots        int
+	maxCNAMEHops int
 	nextID       atomic.Uint32
 }
 
@@ -86,6 +99,14 @@ func NewResolver(cfg Config) *Resolver {
 			tcpExchanger = TCPExchanger{Timeout: timeout}
 		}
 	}
+	ndots := cfg.Ndots
+	if ndots <= 0 {
+		ndots = 1
+	}
+	maxCNAMEHops := cfg.MaxCNAMEHops
+	if maxCNAMEHops <= 0 {
+		maxCNAMEHops = 8
+	}
 	return &Resolver{
 		servers:      servers,
 		timeout:      timeout,
@@ -96,6 +117,10 @@ func NewResolver(cfg Config) *Resolver {
 		minTTL:       cfg.MinTTL,
 		maxTTL:       cfg.MaxTTL,
 		negativeTTL:  cfg.NegativeTTL,
+		hosts:        cfg.Hosts,
+		search:       normalizeSearchDomains(cfg.SearchDomains),
+		ndots:        ndots,
+		maxCNAMEHops: maxCNAMEHops,
 	}
 }
 
@@ -118,11 +143,37 @@ func (r *Resolver) LookupIP(ctx context.Context, host string) ([]net.IP, error) 
 	if ip := net.ParseIP(host); ip != nil {
 		return []net.IP{ip}, nil
 	}
-	if r != nil && r.cache != nil {
-		if ips, err, ok := r.cache.Lookup(host, time.Now()); ok {
-			return ips, err
+	if r == nil {
+		return lookupSystem(ctx, host)
+	}
+	candidates := r.candidateNames(host)
+	var firstErr error
+	for _, candidate := range candidates {
+		if r.hosts != nil {
+			if ips, ok := r.hosts.LookupHost(candidate); ok {
+				return ips, nil
+			}
+		}
+		if r.cache != nil {
+			if ips, err, ok := r.cache.Lookup(candidate, time.Now()); ok {
+				return ips, err
+			}
+		}
+		ips, err := r.lookupIPCandidate(ctx, candidate)
+		if err == nil {
+			return ips, nil
+		}
+		if firstErr == nil && !errors.Is(err, ErrNoAnswer) {
+			firstErr = err
 		}
 	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return nil, ErrNoAnswer
+}
+
+func (r *Resolver) lookupIPCandidate(ctx context.Context, host string) ([]net.IP, error) {
 	if r == nil || r.exchanger == nil {
 		return lookupSystem(ctx, host)
 	}
@@ -156,6 +207,13 @@ func (r *Resolver) LookupIP(ctx context.Context, host string) ([]net.IP, error) 
 }
 
 func (r *Resolver) lookupType(ctx context.Context, host string, qtype uint16) ([]net.IP, time.Duration, error) {
+	return r.lookupTypeDepth(ctx, host, qtype, 0)
+}
+
+func (r *Resolver) lookupTypeDepth(ctx context.Context, host string, qtype uint16, depth int) ([]net.IP, time.Duration, error) {
+	if depth > r.maxCNAMEHops {
+		return nil, 0, ErrCNAMETooDeep
+	}
 	query := dnscodec.NewQuery(uint16(r.nextID.Add(1)), host, qtype)
 	var firstErr error
 	for _, server := range r.servers {
@@ -175,8 +233,14 @@ func (r *Resolver) lookupType(ctx context.Context, host string, qtype uint16) ([
 				continue
 			}
 		}
-		ips, ttl, err := collectIPs(query, reply, qtype)
+		ips, ttl, cname, cnameTTL, err := collectIPs(query, reply, qtype)
 		if err != nil {
+			if errors.Is(err, ErrNoAnswer) && cname != "" {
+				found, foundTTL, err := r.lookupTypeDepth(ctx, cname, qtype, depth+1)
+				if err == nil {
+					return found, minPositiveTTL(cnameTTL, foundTTL), nil
+				}
+			}
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -190,17 +254,47 @@ func (r *Resolver) lookupType(ctx context.Context, host string, qtype uint16) ([
 	return nil, 0, ErrNoAnswer
 }
 
-func collectIPs(query dnscodec.Message, reply dnscodec.Message, qtype uint16) ([]net.IP, time.Duration, error) {
+func collectIPs(query dnscodec.Message, reply dnscodec.Message, qtype uint16) ([]net.IP, time.Duration, string, time.Duration, error) {
 	if !reply.Response || reply.ID != query.ID {
-		return nil, 0, ErrInvalidReply
+		return nil, 0, "", 0, ErrInvalidReply
 	}
 	if reply.ResponseCode != dnscodec.RCodeNoError {
-		return nil, 0, ErrServerFailure
+		return nil, 0, "", 0, ErrServerFailure
 	}
 	ips := make([]net.IP, 0, len(reply.Answers))
 	var ttl time.Duration
+	cname := ""
+	var cnameTTL time.Duration
+	questionName := ""
+	if len(query.Questions) > 0 {
+		questionName = normalizeDNSName(query.Questions[0].Name)
+	}
 	for _, answer := range reply.Answers {
-		if answer.Class != dnscodec.ClassIN || answer.Type != qtype {
+		if answer.Class != dnscodec.ClassIN {
+			continue
+		}
+		answerName := normalizeDNSName(answer.Name)
+		if answer.Type == dnscodec.TypeCNAME && (answerName == questionName || answerName == normalizeDNSName(cname)) {
+			if target, ok := answer.Target(); ok {
+				cname = normalizeDNSName(target)
+				cnameTTL = minPositiveTTL(cnameTTL, time.Duration(answer.TTL)*time.Second)
+			}
+			continue
+		}
+	}
+	targetName := questionName
+	if cname != "" {
+		targetName = cname
+	}
+	for _, answer := range reply.Answers {
+		if answer.Class != dnscodec.ClassIN {
+			continue
+		}
+		answerName := normalizeDNSName(answer.Name)
+		if answer.Type != qtype {
+			continue
+		}
+		if answerName != targetName {
 			continue
 		}
 		if ip := answer.IP(); ip != nil {
@@ -209,9 +303,9 @@ func collectIPs(query dnscodec.Message, reply dnscodec.Message, qtype uint16) ([
 		}
 	}
 	if len(ips) == 0 {
-		return nil, 0, ErrNoAnswer
+		return nil, 0, cname, cnameTTL, ErrNoAnswer
 	}
-	return ips, ttl, nil
+	return ips, ttl, cname, cnameTTL, nil
 }
 
 func lookupSystem(ctx context.Context, host string) ([]net.IP, error) {
@@ -265,6 +359,39 @@ func (r *Resolver) positiveTTL(ttl time.Duration) time.Duration {
 	return ttl
 }
 
+func (r *Resolver) candidateNames(host string) []string {
+	name := normalizeDNSName(host)
+	if name == "" {
+		return nil
+	}
+	absolute := strings.HasSuffix(strings.TrimSpace(host), ".")
+	if absolute || len(r.search) == 0 {
+		return []string{name}
+	}
+	dots := strings.Count(name, ".")
+	out := make([]string, 0, len(r.search)+1)
+	add := func(candidate string) {
+		candidate = normalizeDNSName(candidate)
+		if candidate == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == candidate {
+				return
+			}
+		}
+		out = append(out, candidate)
+	}
+	if dots >= r.ndots {
+		add(name)
+	}
+	for _, domain := range r.search {
+		add(name + "." + domain)
+	}
+	add(name)
+	return out
+}
+
 func minPositiveTTL(current time.Duration, next time.Duration) time.Duration {
 	if next <= 0 {
 		return current
@@ -273,4 +400,30 @@ func minPositiveTTL(current time.Duration, next time.Duration) time.Duration {
 		return next
 	}
 	return current
+}
+
+func normalizeSearchDomains(domains []string) []string {
+	out := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		normalized := normalizeDNSName(domain)
+		if normalized == "" {
+			continue
+		}
+		duplicate := false
+		for _, existing := range out {
+			if existing == normalized {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			out = append(out, normalized)
+		}
+	}
+	return out
+}
+
+func normalizeDNSName(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	return strings.TrimSuffix(name, ".")
 }

@@ -150,6 +150,110 @@ func TestLookupIPFallsBackToTCPOnTruncatedUDPReply(t *testing.T) {
 	}
 }
 
+func TestLookupIPUsesStaticHostsBeforeNetwork(t *testing.T) {
+	fake := &fakeExchanger{}
+	resolver := NewResolver(Config{
+		Servers:   []string{"127.0.0.1:53"},
+		Exchanger: fake,
+		Hosts: NewStaticHosts(map[string][]net.IP{
+			"Example.COM.": {net.IPv4(10, 0, 0, 1)},
+		}),
+	})
+
+	ips, err := resolver.LookupIP(context.Background(), "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ips) != 1 || !ips[0].Equal(net.IPv4(10, 0, 0, 1)) {
+		t.Fatalf("ips=%v", ips)
+	}
+	if len(fake.queries) != 0 {
+		t.Fatalf("queries=%d, want hosts hit without network", len(fake.queries))
+	}
+	ips[0][0] = 99
+	again, ok := resolver.hosts.LookupHost("example.com")
+	if !ok || !again[0].Equal(net.IPv4(10, 0, 0, 1)) {
+		t.Fatalf("hosts returned mutable storage: %v", again)
+	}
+}
+
+func TestLookupIPAppliesSearchDomainsAndNdots(t *testing.T) {
+	var names []string
+	resolver := NewResolver(Config{
+		Servers:       []string{"127.0.0.1:53"},
+		SearchDomains: []string{"svc.local", "local"},
+		Ndots:         2,
+		Exchanger: ExchangerFunc(func(_ context.Context, _ string, query dnscodec.Message) (dnscodec.Message, error) {
+			names = append(names, query.Questions[0].Name)
+			if query.Questions[0].Name == "api.svc.local" {
+				return replyWithA(query, net.IPv4(10, 0, 0, 2), 30), nil
+			}
+			return emptyReply(query), nil
+		}),
+	})
+
+	ips, err := resolver.LookupIP(context.Background(), "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ips) != 1 || !ips[0].Equal(net.IPv4(10, 0, 0, 2)) {
+		t.Fatalf("ips=%v", ips)
+	}
+	if len(names) == 0 || names[0] != "api.svc.local" {
+		t.Fatalf("query order=%v, want search domain first", names)
+	}
+}
+
+func TestLookupIPFollowsCNAMEChain(t *testing.T) {
+	var names []string
+	resolver := NewResolver(Config{
+		Servers: []string{"127.0.0.1:53"},
+		Exchanger: ExchangerFunc(func(_ context.Context, _ string, query dnscodec.Message) (dnscodec.Message, error) {
+			names = append(names, query.Questions[0].Name)
+			switch query.Questions[0].Name {
+			case "alias.example":
+				cname, err := dnscodec.NewNameResource("alias.example", dnscodec.TypeCNAME, 10, "target.example")
+				if err != nil {
+					return dnscodec.Message{}, err
+				}
+				reply := emptyReply(query)
+				reply.Answers = []dnscodec.Resource{cname}
+				return reply, nil
+			case "target.example":
+				return replyWithA(query, net.IPv4(10, 0, 0, 3), 20), nil
+			default:
+				return emptyReply(query), nil
+			}
+		}),
+	})
+
+	ips, err := resolver.LookupIP(context.Background(), "alias.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ips) != 1 || !ips[0].Equal(net.IPv4(10, 0, 0, 3)) {
+		t.Fatalf("ips=%v", ips)
+	}
+	if len(names) < 2 || names[0] != "alias.example" || names[1] != "target.example" {
+		t.Fatalf("query names=%v, want alias then target", names)
+	}
+}
+
+func TestMemoryCacheClearRemovesAllEntries(t *testing.T) {
+	cache := NewMemoryCache()
+	cache.Store("a.example", []net.IP{net.IPv4(1, 1, 1, 1)}, nil, time.Minute, time.Now())
+	cache.Store("b.example", []net.IP{net.IPv4(2, 2, 2, 2)}, nil, time.Minute, time.Now())
+
+	cache.Clear()
+
+	if _, _, ok := cache.Lookup("a.example", time.Now()); ok {
+		t.Fatal("a.example should be removed")
+	}
+	if _, _, ok := cache.Lookup("b.example", time.Now()); ok {
+		t.Fatal("b.example should be removed")
+	}
+}
+
 type fakeExchanger struct {
 	queries []dnscodec.Message
 }
@@ -188,4 +292,14 @@ func replyWithA(query dnscodec.Message, ip net.IP, ttl uint32) dnscodec.Message 
 		Data:  []byte(ip.To4()),
 	}}
 	return reply
+}
+
+func emptyReply(query dnscodec.Message) dnscodec.Message {
+	return dnscodec.Message{
+		ID:                 query.ID,
+		Response:           true,
+		RecursionDesired:   query.RecursionDesired,
+		RecursionAvailable: true,
+		Questions:          query.Questions,
+	}
 }

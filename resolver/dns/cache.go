@@ -2,7 +2,6 @@ package dns
 
 import (
 	"net"
-	"strings"
 	"sync"
 	"time"
 )
@@ -88,9 +87,18 @@ func (c *MemoryCache) Delete(host string) {
 	c.mu.Unlock()
 }
 
+// Clear 清空全部缓存项。
+func (c *MemoryCache) Clear() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.entries = make(map[string]cacheEntry, 64)
+	c.mu.Unlock()
+}
+
 func normalizeCacheKey(host string) string {
-	host = strings.TrimSpace(strings.ToLower(host))
-	return strings.TrimSuffix(host, ".")
+	return normalizeDNSName(host)
 }
 
 func cloneIPs(ips []net.IP) []net.IP {
