@@ -29,6 +29,18 @@ Windows:
 .\scripts\verify-bench.ps1 -Backends default,iocp -Groups tcp -Workers 4 -Benchtime 1s -Count 3
 ```
 
+外部对标 baseline:
+
+```bash
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
+go run ./examples/parity-bench -config benchmarks/parity/baseline.json -out parity-report.md
+```
+
+`benchmarks/parity/baseline.json` 默认直接保留 gnalloy 本地场景；Netty、gnet、
+netpoll 外部 harness 场景以 `skip=true` 提交。安装对应 harness 后，把对应场景
+改为 `skip=false`，并保留生成报告中的机器信息、命令、原始输出和解析出的
+`ns/op`、`B/op`、`allocs/op`。
+
 ## 对外对比口径
 
 - Netty 必须固定 JVM 版本、GC、`EventLoopGroup`、allocator、native transport 和 handler pipeline。
@@ -41,6 +53,9 @@ Windows:
 
 - `buffer.PooledAllocator` 提供跨平台 size-class 池化能力；Linux 固定块 off-heap 场景仍优先用 mmap allocator。
 - `codec/http2.StreamMultiplexer` 提供 stream 生命周期、基础 flow-control 和 child-channel 体验；HPACK 语义压缩由 `codec/http2.HeaderDecoder/HeaderEncoder` 承担。
-- `codec/http3` 提供 frame、QPACK、control stream 顺序校验和 QUIC 单向 stream type 前缀；完整 HTTP/3 server/client 自动装配仍应作为独立 transport binding 验证。
-- `transport/quic.Runtime` 提供 ACK、loss、congestion、stream、path 状态基础；`transport/quic/rfc9000` 提供 RFC9000/TLS1.3 互通连接栈。
+- `codec/http3` 提供 frame、QPACK、control stream 顺序校验、QUIC 单向 stream type 前缀、WebTransport SETTINGS 和 extended CONNECT helper。
+- `transport/http3` 已提供 HTTP/3 request/control/QPACK stream 到 gnalloy `Channel` pipeline 的 transport binding。
+- `transport/webtransport` 已提供 WebTransport session、stream prefix、HTTP Datagram Quarter Stream ID 映射和 capability 校验。
+- `transport/quic.Runtime` 提供 ACK、loss、congestion、stream、path 状态和默认 runtime pipeline；`transport/quic/rfc9000` 提供 RFC9000/TLS1.3 互通连接栈。
+- `scripts/platform-matrix.json` 是跨平台验证事实源；`scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json` 会输出 passed/skipped/failed gate 结果。
 - `observability.PrometheusExporter` 是无依赖文本导出器；OpenTelemetry 已作为 `observability/otel` adapter 接入。

@@ -18,7 +18,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | P0 | Bootstrap/Channel option、TCP socket option、connect timeout、Future listener EventLoop 归属、读循环公平性和平台 completion 行为 | done | `go test ./bootstrap ./channel ./transport/tcp`、`go test ./channel ./transport` |
 | P1 | 业务 handler executor group、流量整形、DNS resolver cache/TCP fallback/search/hosts/CNAME、Simple/Fixed/Map ChannelPool、IP filter、pcap、轻量观测延迟指标和 Prometheus 文本导出 | done | `go test ./handler/executor ./handler/traffic ./resolver/dns ./channel/pool ./handler/ipfilter ./handler/pcap ./observability ./handler/metrics` |
 | P2 | LoggingHandler、FlushConsolidationHandler、协议 fuzz smoke、Netty parity 文档、性能预算 benchmark 和回归脚本 | done | `go test ./handler/logging ./handler/flush ./codec/dns ./codec/redis ./codec/http2 ./codec/http3`、`scripts/verify-regression.*` |
-| P3 | RFC9000 QUIC v1 适配、TLS 1.3 packet protection、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、同机 benchmark harness、TLS copy reduction/native TLS 评估、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter | done | `go test ./transport/quic/rfc9000 ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/unix ./observability/otel ./benchmarks/parity`、`go test ./...` |
+| P3 | RFC9000 QUIC v1 适配、TLS 1.3 packet protection、0-RTT/session resumption、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、HTTP/3 transport binding、WebTransport session binding、同机/外部 benchmark baseline、TLS copy reduction/native TLS 评估、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter、跨平台验证矩阵 | done | `go test ./transport/quic/rfc9000 ./transport/http3 ./transport/webtransport ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/unix ./observability/otel ./benchmarks/parity ./validation/platformmatrix`、`scripts/verify-platform.ps1 -SkipBench`、`go test ./...` |
 
 ## Bootstrap 与 Channel
 
@@ -84,6 +84,8 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
 | QUIC packet/runtime | `transport/quic` | done | 提供 UDP 上的 QUIC packet/header/frame、连接 ID 路由、ACK tracking、packet-threshold loss recovery、Reno 风格 congestion、stream flow-control 和 path validation/migration 基础。 |
 | QUIC RFC9000 connection stack | `transport/quic/rfc9000` | done | 通过生产级 QUIC 实现承接 RFC 9000 QUIC v1、TLS 1.3 packet protection、ALPN、双向 stream、单向 stream、datagram、localhost 互通和显式启用的外部互通测试。 |
+| HTTP/3 transport binding | `transport/http3` | done | 把 RFC9000 QUIC request、control、QPACK stream 绑定为 gnalloy `Channel` pipeline，复用 `codec/http3` 的 frame/header/control/QPACK 初始化器。 |
+| WebTransport over HTTP/3 | `transport/webtransport` + `codec/http3` | done | 提供 SETTINGS/extended CONNECT helper、CONNECT stream session ID、WT_STREAM/单向 stream 前缀、HTTP Datagram Quarter Stream ID 映射和 QUIC datagram/reset capability 校验。 |
 
 完整 transport 边界见 `docs/transport-completion-matrix.md`。
 
@@ -98,12 +100,12 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | OpenTelemetry adapter | `observability/otel` | done | OTel 以独立 adapter 接入，核心 recorder 契约仍保持轻量。 |
 | 协议 fuzz smoke | `Fuzz*` tests | done | 覆盖 length-field、line、delimiter、HTTP/1、WebSocket、MQTT、DNS、Redis、HTTP/2、HTTP/3、QUIC header/frame。 |
 | 回归脚本 | `scripts/verify-regression.*` | done | 全量测试、代表性 fuzz smoke、热路径基准和平台专项检查。 |
+| 外部对标基线 | `benchmarks/parity/baseline.json`、`examples/parity-bench` | done | 默认可 dry-run；Netty、gnet、netpoll 外部 harness 默认 skip，安装后打开并保留原始命令、机器信息和 benchmark metrics。 |
+| 跨平台门禁矩阵 | `scripts/platform-matrix.json`、`validation/platformmatrix`、`.github/workflows/validation.yml` | done | Windows/Linux/macOS 目标、readiness/completion 后端、native tests、cross-compile、source scan 和 skipped bench 均有机器可读结果。 |
 
-## 仍需后续独立切片
+## 后续独立扩展边界
 
 | 范围 | 状态 | 原因 |
 | --- | --- | --- |
-| QUIC 0-RTT、session resumption、WebTransport | planned | 属于 RFC9000 基础连接栈之上的独立能力，应按安全语义和互通矩阵单独落地。 |
-| HTTP/3 自动 server/client pipeline 装配 | planned | 当前已有 QPACK、control stream 和 QUIC 单向 stream 积木；自动化装配应作为独立 HTTP/3 transport binding 实现。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |

@@ -34,11 +34,13 @@ blocks:
   codecs.
 - `codec/compression`: gzip and zlib ByteBuf encoders/decoders backed by the
   Go standard library, with explicit decoded-size limits.
-- `codec/dns`, `codec/http1`, `codec/http2`, `codec/protobuf`, `codec/mqtt`,
-  `codec/redis`, and `codec/websocket`: protocol codec coverage for DNS,
-  HTTP/1.x, HTTP/2 binary frames, HPACK header blocks, HTTP/2 stream child
-  channel flow, Protobuf varint32 frames, MQTT frames, Redis RESP frames, and
-  WebSocket frames.
+- `codec/dns`, `codec/http1`, `codec/http2`, `codec/http3`,
+  `codec/protobuf`, `codec/mqtt`, `codec/redis`, and `codec/websocket`:
+  protocol codec coverage for DNS, HTTP/1.x, HTTP/2 binary frames, HPACK
+  header blocks, HTTP/2 stream child channel flow, HTTP/3 frames, QPACK header
+  blocks, HTTP/3 control/QPACK stream pipelines, WebTransport SETTINGS and
+  extended CONNECT helpers, Protobuf varint32 frames, MQTT frames, Redis RESP
+  frames, and WebSocket frames.
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`, and
   `FileRegion` fallback encoding; the `Unsafe` bridge normalizes
   readiness/completion events before they enter business handlers.
@@ -95,6 +97,11 @@ blocks:
   mature TLS 1.3 packet-protection stack, exposing bidirectional streams,
   unidirectional streams for HTTP/3 control/QPACK integration, datagrams,
   connection state, localhost interop tests, and opt-in external interop tests.
+- `transport/http3`: HTTP/3 transport binding that maps RFC9000 QUIC request,
+  control, and QPACK streams into gnalloy `Channel` pipelines.
+- `transport/webtransport`: WebTransport over HTTP/3 session binding with
+  CONNECT stream session IDs, bidirectional/unidirectional stream prefixes,
+  QUIC datagram mapping, and negotiated capability validation.
 
 Examples:
 
@@ -118,6 +125,7 @@ Verification:
 go test ./...
 ./scripts/verify-regression.sh
 ./scripts/verify-bench.sh
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 GROUPS=codec,queue,timer ./scripts/verify-bench.sh
 ```
 
@@ -127,6 +135,8 @@ PowerShell:
 go test ./...
 .\scripts\verify-regression.ps1
 .\scripts\verify-bench.ps1
+.\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 .\scripts\verify-bench.ps1 -Groups codec,queue,timer
 ```
 
@@ -186,6 +196,7 @@ Platform helper scripts:
 
 ```powershell
 .\scripts\verify-platform.ps1
+.\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
 .\scripts\verify-smoke.ps1 -Backend default -Workers 2
 .\scripts\verify-stress.ps1 -Backend iocp -Workers 2
 .\scripts\verify-iocp.ps1
@@ -240,7 +251,9 @@ Transport-level readiness/completion coverage is tracked in
 Current validation boundary:
 
 - Windows native tests, race tests, vet, cross compilation, and smoke scripts are
-  supported from this repository.
+  supported from this repository. `scripts/platform-matrix.json` is the
+  machine-readable cross-platform gate source, and `validation/platformmatrix`
+  keeps the matrix structurally tested.
 - Linux and macOS runtime behavior must be validated on the corresponding
   machines with `scripts/verify-smoke.sh`, because cross compilation only proves
   compile-time compatibility.
@@ -274,7 +287,8 @@ Design rules:
 - `ByteBuf` slices retain their parent memory and never copy payload bytes.
 - Cross-thread operations are submitted to the owner loop.
 - Native system calls go through `golang.org/x/sys/unix` or
-  `golang.org/x/sys/windows`.
+  `golang.org/x/sys/windows`; the platform gate only allows the documented
+  legacy stdlib `syscall` shim in Windows TCP socket setup.
 - Outbound writes are queued per Channel; partial writes remain in the outbound
   buffer until a write-ready/completion event drains them.
 - Outbound buffers are gathered across queued `ByteBuf` instances. Readiness

@@ -14,6 +14,6 @@ var (
 	ErrFlowControl           = errors.New("gnalloy/transport/quic: flow control violation")
 	ErrCongestionLimited     = errors.New("gnalloy/transport/quic: congestion limited")
 	ErrConnectionNotFound    = errors.New("gnalloy/transport/quic: connection not found")
-	ErrNotImplemented        = errors.New("gnalloy/transport/quic: protocol engine is not implemented yet")
+	ErrNotImplemented        = errors.New("gnalloy/transport/quic: operation is not implemented by this layer")
 	ErrUnsupportedCompletion = errors.New("gnalloy/transport/quic: selected completion backend does not support UDP packet ops")
 )
