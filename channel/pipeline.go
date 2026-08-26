@@ -28,19 +28,12 @@ func (p *Pipeline) Channel() Channel {
 }
 
 func (p *Pipeline) AddLast(name string, h Handler) error {
-	if name == "" || h == nil {
-		return ErrHandlerNotFound
-	}
-	if _, exists := p.names[name]; exists {
-		return ErrDuplicateHandler
+	if err := p.validateNewHandler(name, h); err != nil {
+		return err
 	}
 	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
 	prev := p.tail.prev
-	prev.next = ctx
-	ctx.prev = prev
-	ctx.next = p.tail
-	p.tail.prev = ctx
-	p.names[name] = ctx
+	p.linkBetween(prev, p.tail, ctx)
 	if err := p.callHandlerAdded(ctx); err != nil {
 		_ = p.unlink(ctx)
 		return err
@@ -49,22 +42,90 @@ func (p *Pipeline) AddLast(name string, h Handler) error {
 }
 
 func (p *Pipeline) AddFirst(name string, h Handler) error {
-	if name == "" || h == nil {
-		return ErrHandlerNotFound
-	}
-	if _, exists := p.names[name]; exists {
-		return ErrDuplicateHandler
+	if err := p.validateNewHandler(name, h); err != nil {
+		return err
 	}
 	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
 	next := p.head.next
-	p.head.next = ctx
-	ctx.prev = p.head
-	ctx.next = next
-	next.prev = ctx
-	p.names[name] = ctx
+	p.linkBetween(p.head, next, ctx)
 	if err := p.callHandlerAdded(ctx); err != nil {
 		_ = p.unlink(ctx)
 		return err
+	}
+	return nil
+}
+
+// AddBefore 在已存在的处理器之前插入新处理器。
+func (p *Pipeline) AddBefore(baseName string, name string, h Handler) error {
+	base, ok := p.names[baseName]
+	if !ok {
+		return ErrHandlerNotFound
+	}
+	if err := p.validateNewHandler(name, h); err != nil {
+		return err
+	}
+	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
+	p.linkBetween(base.prev, base, ctx)
+	if err := p.callHandlerAdded(ctx); err != nil {
+		_ = p.unlink(ctx)
+		return err
+	}
+	return nil
+}
+
+// AddAfter 在已存在的处理器之后插入新处理器。
+func (p *Pipeline) AddAfter(baseName string, name string, h Handler) error {
+	base, ok := p.names[baseName]
+	if !ok {
+		return ErrHandlerNotFound
+	}
+	if err := p.validateNewHandler(name, h); err != nil {
+		return err
+	}
+	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
+	p.linkBetween(base, base.next, ctx)
+	if err := p.callHandlerAdded(ctx); err != nil {
+		_ = p.unlink(ctx)
+		return err
+	}
+	return nil
+}
+
+// Replace 用新处理器替换指定处理器，并保持原位置不变。
+func (p *Pipeline) Replace(oldName string, newName string, h Handler) error {
+	old, ok := p.names[oldName]
+	if !ok {
+		return ErrHandlerNotFound
+	}
+	if newName == "" || h == nil {
+		return ErrHandlerNotFound
+	}
+	if newName != oldName {
+		if _, exists := p.names[newName]; exists {
+			return ErrDuplicateHandler
+		}
+	}
+	replacement := &HandlerContext{pipeline: p, name: newName, handler: h}
+	prev, next := old.prev, old.next
+	prev.next = replacement
+	next.prev = replacement
+	replacement.prev = prev
+	replacement.next = next
+	delete(p.names, oldName)
+	p.names[newName] = replacement
+	old.prev = nil
+	old.next = nil
+	if err := p.callHandlerAdded(replacement); err != nil {
+		_ = p.unlink(replacement)
+		p.linkBetween(prev, next, old)
+		return err
+	}
+	if removed, ok := old.handler.(HandlerRemovedHandler); ok {
+		if err := removed.HandlerRemoved(old); err != nil {
+			_ = p.unlink(replacement)
+			p.linkBetween(prev, next, old)
+			return err
+		}
 	}
 	return nil
 }
@@ -80,6 +141,31 @@ func (p *Pipeline) Remove(name string) error {
 func (p *Pipeline) Context(name string) (*HandlerContext, bool) {
 	ctx, ok := p.names[name]
 	return ctx, ok
+}
+
+// FirstContext 返回第一个业务处理器上下文。
+func (p *Pipeline) FirstContext() (*HandlerContext, bool) {
+	if p.head.next == nil || p.head.next == p.tail {
+		return nil, false
+	}
+	return p.head.next, true
+}
+
+// LastContext 返回最后一个业务处理器上下文。
+func (p *Pipeline) LastContext() (*HandlerContext, bool) {
+	if p.tail.prev == nil || p.tail.prev == p.head {
+		return nil, false
+	}
+	return p.tail.prev, true
+}
+
+// Names 按入站执行顺序返回业务处理器名称快照。
+func (p *Pipeline) Names() []string {
+	names := make([]string, 0, len(p.names))
+	for ctx := p.head.next; ctx != nil && ctx != p.tail; ctx = ctx.next {
+		names = append(names, ctx.name)
+	}
+	return names
 }
 
 func (p *Pipeline) FireChannelActive() {
@@ -160,6 +246,24 @@ func (p *Pipeline) callHandlerAdded(ctx *HandlerContext) error {
 		return h.HandlerAdded(ctx)
 	}
 	return nil
+}
+
+func (p *Pipeline) validateNewHandler(name string, h Handler) error {
+	if name == "" || h == nil {
+		return ErrHandlerNotFound
+	}
+	if _, exists := p.names[name]; exists {
+		return ErrDuplicateHandler
+	}
+	return nil
+}
+
+func (p *Pipeline) linkBetween(prev *HandlerContext, next *HandlerContext, ctx *HandlerContext) {
+	prev.next = ctx
+	ctx.prev = prev
+	ctx.next = next
+	next.prev = ctx
+	p.names[ctx.name] = ctx
 }
 
 func (p *Pipeline) unlink(ctx *HandlerContext) error {

@@ -2,6 +2,7 @@ package channel
 
 import (
 	"sync"
+	"time"
 
 	"goark.dev/gnalloy/transport"
 )
@@ -145,16 +146,36 @@ func (f *GroupFuture) IsDone() bool {
 	return f.future.IsDone()
 }
 
+func (f *GroupFuture) IsSuccess() bool {
+	return f.future.IsSuccess()
+}
+
 func (f *GroupFuture) Err() error {
 	return f.future.Err()
+}
+
+func (f *GroupFuture) Cause() error {
+	return f.future.Cause()
 }
 
 func (f *GroupFuture) Await() error {
 	return f.future.Await()
 }
 
+func (f *GroupFuture) AwaitTimeout(timeout time.Duration) (bool, error) {
+	return f.future.AwaitTimeout(timeout)
+}
+
 func (f *GroupFuture) AddListener(listener func(Future)) Future {
 	return f.future.AddListener(listener)
+}
+
+func (f *GroupFuture) AddListenerHandle(listener func(Future)) FutureListenerHandle {
+	return f.future.AddListenerHandle(listener)
+}
+
+func (f *GroupFuture) RemoveListener(handle FutureListenerHandle) bool {
+	return f.future.RemoveListener(handle)
 }
 
 func (f *GroupFuture) Results() []GroupResult {

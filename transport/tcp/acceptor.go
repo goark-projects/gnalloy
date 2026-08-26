@@ -94,7 +94,7 @@ func (a *acceptor) acceptChild(fd transport.FDRef) {
 		_ = closeFD(fd)
 		return
 	}
-	ch, unsafeCh := channel.NewUnsafeChannel(channel.UnsafeConfig{
+	ch, unsafeCh, err := a.server.serverConfig.NewChildChannel(channel.UnsafeConfig{
 		ID:                   a.server.nextChannelID(),
 		FD:                   fd,
 		Allocator:            alloc,
@@ -106,6 +106,11 @@ func (a *acceptor) acceptChild(fd transport.FDRef) {
 		FixedBuffers:         a.server.options.iouringFixed,
 		Timer:                worker.Timer(),
 	})
+	if err != nil {
+		_ = closeFD(fd)
+		return
+	}
+	a.server.serverConfig.ApplyChild(ch)
 	if err := a.server.childInitializer(ch); err != nil {
 		_ = unsafeCh.Close()
 		ch.Pipeline().FireExceptionCaught(err)

@@ -103,6 +103,34 @@ func TestPromiseListenersRunBeforeAndAfterCompletion(t *testing.T) {
 	}
 }
 
+func TestPromiseTimeoutSuccessAndRemoveListener(t *testing.T) {
+	promise := NewPromise()
+	called := false
+	handle := promise.AddListenerHandle(func(Future) {
+		called = true
+	})
+	if !promise.RemoveListener(handle) {
+		t.Fatal("listener was not removed")
+	}
+	done, err := promise.AwaitTimeout(time.Nanosecond)
+	if done || err != nil {
+		t.Fatalf("done=%v err=%v, want timeout without error", done, err)
+	}
+	if !promise.SetSuccess() {
+		t.Fatal("completion failed")
+	}
+	done, err = promise.AwaitTimeout(time.Second)
+	if !done || err != nil {
+		t.Fatalf("done=%v err=%v, want success", done, err)
+	}
+	if !promise.IsSuccess() || promise.Cause() != nil {
+		t.Fatalf("success=%v cause=%v", promise.IsSuccess(), promise.Cause())
+	}
+	if called {
+		t.Fatal("removed listener was called")
+	}
+}
+
 func TestUnsafeWriteFutureCompletesAfterDrain(t *testing.T) {
 	rw := &partialWriteRW{steps: []writeStep{{n: 2, again: true}, {n: 2}}}
 	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{

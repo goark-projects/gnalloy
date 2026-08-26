@@ -83,6 +83,44 @@ func TestPipelineTailReleasesByteBuf(t *testing.T) {
 	}
 }
 
+func TestPipelineAddBeforeAfterAndReplaceKeepOrder(t *testing.T) {
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureSink{})
+	pipeline := ch.Pipeline()
+	if err := pipeline.AddLast("first", forwardingInbound{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.AddAfter("first", "third", forwardingInbound{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.AddBefore("third", "second", forwardingInbound{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.Replace("third", "last", forwardingInbound{}); err != nil {
+		t.Fatal(err)
+	}
+	got := pipeline.Names()
+	want := []string{"first", "second", "last"}
+	if len(got) != len(want) {
+		t.Fatalf("names=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("names=%v, want %v", got, want)
+		}
+	}
+	first, ok := pipeline.FirstContext()
+	if !ok || first.Name() != "first" {
+		t.Fatalf("first=%v ok=%v", first, ok)
+	}
+	last, ok := pipeline.LastContext()
+	if !ok || last.Name() != "last" {
+		t.Fatalf("last=%v ok=%v", last, ok)
+	}
+	if _, ok := pipeline.Context("third"); ok {
+		t.Fatal("old handler name still exists after replace")
+	}
+}
+
 func BenchmarkPipelineInboundNoop(b *testing.B) {
 	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureSink{})
 	if err := ch.Pipeline().AddLast("forward", forwardingInbound{}); err != nil {

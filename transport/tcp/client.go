@@ -54,7 +54,13 @@ func (t *Transport) Dial(ctx context.Context, cfg bootstrap.ClientConfig) (chann
 		_ = loop.Deregister(ch.ID())
 		_ = alloc.Close()
 	}
-	ch, unsafeCh := channel.NewUnsafeChannel(unsafeCfg)
+	ch, unsafeCh, err := cfg.NewChannel(unsafeCfg)
+	if err != nil {
+		_ = closeFD(fd)
+		_ = alloc.Close()
+		return nil, err
+	}
+	cfg.Apply(ch)
 	if err := cfg.Initializer(ch); err != nil {
 		_ = unsafeCh.Close()
 		ch.Pipeline().FireExceptionCaught(err)

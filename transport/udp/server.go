@@ -76,6 +76,7 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 			ep.ch = channel.NewLocalChannelWithTimer(ep.id, alloc, ep, loop.Timer())
 			channel.OptionReadBufferSize.Set(ep.ch.Options(), ep.readBufferSize)
 			channel.OptionWriteBufferWatermark.Set(ep.ch.Options(), ep.WriteBufferWatermark())
+			cfg.ApplyChild(ep.ch)
 			if err := server.childInitializer(ep.ch); err != nil {
 				return err
 			}

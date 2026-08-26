@@ -57,12 +57,54 @@ func (o ChannelOption[T]) Remove(options *ChannelOptions) {
 	options.remove(o.name)
 }
 
+// ChannelOptionAssignment 保存一个类型安全 ChannelOption 赋值。
+type ChannelOptionAssignment struct {
+	name  optionKeyID
+	value any
+}
+
+// Assignment 把选项和值绑定成可复用的装配项。
+func (o ChannelOption[T]) Assignment(value T) ChannelOptionAssignment {
+	return ChannelOptionAssignment{name: o.name, value: value}
+}
+
 type ChannelOptions struct {
 	attrs AttributeMap
 }
 
 func NewChannelOptions() *ChannelOptions {
 	return &ChannelOptions{}
+}
+
+// Clone 复制当前选项集合。选项值按接口引用复制，不深拷贝业务对象。
+func (o *ChannelOptions) Clone() *ChannelOptions {
+	out := NewChannelOptions()
+	o.CopyTo(out)
+	return out
+}
+
+// Apply 写入一组选项装配项，后出现的同名选项覆盖前值。
+func (o *ChannelOptions) Apply(assignments ...ChannelOptionAssignment) {
+	if o == nil {
+		return
+	}
+	for _, assignment := range assignments {
+		if assignment.name == "" {
+			continue
+		}
+		o.set(assignment.name, assignment.value)
+	}
+}
+
+// CopyTo 把当前选项复制到目标集合，用于 Bootstrap 配置快照落到 Channel。
+func (o *ChannelOptions) CopyTo(dst *ChannelOptions) {
+	if o == nil || dst == nil {
+		return
+	}
+	values := o.attrs.snapshot()
+	for key, value := range values {
+		dst.set(optionKeyID(key), value)
+	}
 }
 
 func (o *ChannelOptions) get(key optionKeyID) (any, bool) {

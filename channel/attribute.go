@@ -64,6 +64,17 @@ func (k AttributeKey[T]) Remove(attrs *AttributeMap) (T, bool) {
 	return typed, true
 }
 
+// AttributeAssignment 保存一个类型安全属性赋值，用于 Bootstrap 批量装配。
+type AttributeAssignment struct {
+	name  attributeKeyID
+	value any
+}
+
+// Assignment 把属性键和值绑定成可复用的装配项。
+func (k AttributeKey[T]) Assignment(value T) AttributeAssignment {
+	return AttributeAssignment{name: k.name, value: value}
+}
+
 // AttributeMap 存储 Handler 间共享的 Channel 局部状态。
 type AttributeMap struct {
 	mu     sync.RWMutex
@@ -72,6 +83,37 @@ type AttributeMap struct {
 
 func NewAttributeMap() *AttributeMap {
 	return &AttributeMap{}
+}
+
+// Clone 复制当前属性映射。属性值本身按接口引用复制，不深拷贝业务对象。
+func (m *AttributeMap) Clone() *AttributeMap {
+	out := NewAttributeMap()
+	m.CopyTo(out)
+	return out
+}
+
+// Apply 写入一组属性装配项，后出现的同名属性覆盖前值。
+func (m *AttributeMap) Apply(assignments ...AttributeAssignment) {
+	if m == nil {
+		return
+	}
+	for _, assignment := range assignments {
+		if assignment.name == "" {
+			continue
+		}
+		m.set(assignment.name, assignment.value)
+	}
+}
+
+// CopyTo 把当前属性复制到目标映射。该方法用于 Bootstrap 到 Channel 的配置快照传递。
+func (m *AttributeMap) CopyTo(dst *AttributeMap) {
+	if m == nil || dst == nil {
+		return
+	}
+	values := m.snapshot()
+	for key, value := range values {
+		dst.set(key, value)
+	}
 }
 
 func (m *AttributeMap) get(key attributeKeyID) (any, bool) {
@@ -98,4 +140,17 @@ func (m *AttributeMap) remove(key attributeKeyID) (any, bool) {
 		delete(m.values, key)
 	}
 	return value, ok
+}
+
+func (m *AttributeMap) snapshot() map[attributeKeyID]any {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if len(m.values) == 0 {
+		return nil
+	}
+	out := make(map[attributeKeyID]any, len(m.values))
+	for key, value := range m.values {
+		out[key] = value
+	}
+	return out
 }

@@ -54,6 +54,7 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 	server := &Server{
 		addr:              listeners[0].addr,
 		options:           opts,
+		serverConfig:      cfg,
 		workerGroup:       cfg.WorkerGroup,
 		childInitializer:  cfg.ChildInitializer,
 		allocatorFactory:  t.cfg.AllocatorFactory,
@@ -126,6 +127,7 @@ type Server struct {
 	addr string
 
 	options           socketOptions
+	serverConfig      bootstrap.ServerConfig
 	workerGroup       *transport.EventLoopGroup
 	childInitializer  bootstrap.ChildInitializer
 	allocatorFactory  AllocatorFactory

@@ -25,9 +25,12 @@ func TestDialerValidate(t *testing.T) {
 func TestDialerDialInitializesChannel(t *testing.T) {
 	group := newDialerGroup(t)
 	var initialized bool
+	clientKey := channel.NewAttributeKey[string]("client")
 	ch, err := NewDialer().
 		Group(group).
 		Transport(fakeClientTransport{}).
+		Option(channel.OptionAutoRead.Assignment(false)).
+		Attr(clientKey.Assignment("bench")).
 		Initializer(func(ch channel.Channel) error {
 			initialized = true
 			return ch.Pipeline().AddLast("discard", discardClientHandler{})
@@ -41,6 +44,12 @@ func TestDialerDialInitializesChannel(t *testing.T) {
 	}
 	if ch == nil {
 		t.Fatal("channel is nil")
+	}
+	if channel.OptionAutoRead.Get(ch.Options()) {
+		t.Fatal("client option was not applied")
+	}
+	if got, ok := clientKey.Get(ch.Attributes()); !ok || got != "bench" {
+		t.Fatalf("client attr=%q ok=%v", got, ok)
 	}
 }
 
@@ -61,6 +70,7 @@ type fakeClientTransport struct{}
 
 func (fakeClientTransport) Dial(_ context.Context, cfg ClientConfig) (channel.Channel, error) {
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	cfg.Apply(ch)
 	if err := cfg.Initializer(ch); err != nil {
 		return nil, err
 	}

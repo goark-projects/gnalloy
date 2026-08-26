@@ -20,13 +20,19 @@ type ClientConfig struct {
 
 	Group *transport.EventLoopGroup
 
-	Initializer ChannelInitializer
+	Options        *channel.ChannelOptions
+	Attributes     *channel.AttributeMap
+	Initializer    ChannelInitializer
+	ChannelFactory ChannelFactory
 }
 
 // Dialer 提供 Go 化客户端连接装配 API。
 type Dialer struct {
 	group       *transport.EventLoopGroup
+	options     *channel.ChannelOptions
+	attrs       *channel.AttributeMap
 	initializer ChannelInitializer
+	factory     ChannelFactory
 	transport   ClientTransport
 }
 
@@ -36,6 +42,24 @@ func NewDialer() *Dialer {
 
 func (d *Dialer) Group(group *transport.EventLoopGroup) *Dialer {
 	d.group = group
+	return d
+}
+
+// Option 配置客户端 Channel 选项。
+func (d *Dialer) Option(assignments ...channel.ChannelOptionAssignment) *Dialer {
+	if d.options == nil {
+		d.options = channel.NewChannelOptions()
+	}
+	d.options.Apply(assignments...)
+	return d
+}
+
+// Attr 配置客户端 Channel 属性。
+func (d *Dialer) Attr(assignments ...channel.AttributeAssignment) *Dialer {
+	if d.attrs == nil {
+		d.attrs = channel.NewAttributeMap()
+	}
+	d.attrs.Apply(assignments...)
 	return d
 }
 
@@ -53,6 +77,11 @@ func (d *Dialer) Handler(handler func(ch channel.Channel)) *Dialer {
 
 func (d *Dialer) Initializer(initializer ChannelInitializer) *Dialer {
 	d.initializer = initializer
+	return d
+}
+
+func (d *Dialer) ChannelFactory(factory ChannelFactory) *Dialer {
+	d.factory = factory
 	return d
 }
 
@@ -77,9 +106,12 @@ func (d *Dialer) DialContext(ctx context.Context, address string) (channel.Chann
 		return nil, err
 	}
 	ch, err := d.transport.Dial(ctx, ClientConfig{
-		Address:     address,
-		Group:       d.group,
-		Initializer: d.initializerOrNoop(),
+		Address:        address,
+		Group:          d.group,
+		Options:        d.options.Clone(),
+		Attributes:     d.attrs.Clone(),
+		Initializer:    d.initializerOrNoop(),
+		ChannelFactory: d.factory,
 	})
 	if err != nil {
 		if started {

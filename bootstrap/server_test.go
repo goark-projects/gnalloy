@@ -36,6 +36,7 @@ func (t *fakeTransport) Bind(_ context.Context, cfg ServerConfig) (Server, error
 		return nil, t.err
 	}
 	ch := channel.NewLocalChannel(11, buffer.NewHeapAllocator(), nil)
+	cfg.ApplyChild(ch)
 	if err := cfg.ChildInitializer(ch); err != nil {
 		return nil, err
 	}
@@ -82,10 +83,13 @@ func TestServerBootstrapBindInitializesChild(t *testing.T) {
 	boss := newBootstrapGroup(t)
 	worker := newBootstrapGroup(t)
 	ft := &fakeTransport{}
+	tenantKey := channel.NewAttributeKey[string]("tenant")
 
 	server, err := NewServerBootstrap().
 		Group(boss, worker).
 		Transport(ft).
+		ChildOption(channel.OptionAutoRead.Assignment(false)).
+		ChildAttr(tenantKey.Assignment("goark")).
 		ChildHandler(func(ch channel.Channel) {
 			_ = ch.Pipeline().AddLast("capture", &captureHandler{})
 		}).
@@ -104,6 +108,12 @@ func TestServerBootstrapBindInitializesChild(t *testing.T) {
 	}
 	if _, ok := ft.ch.Pipeline().Context("capture"); !ok {
 		t.Fatal("child handler did not initialize pipeline")
+	}
+	if channel.OptionAutoRead.Get(ft.ch.Options()) {
+		t.Fatal("child option was not applied")
+	}
+	if got, ok := tenantKey.Get(ft.ch.Attributes()); !ok || got != "goark" {
+		t.Fatalf("tenant=%q ok=%v", got, ok)
 	}
 }
 
