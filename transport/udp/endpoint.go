@@ -12,9 +12,10 @@ type endpoint struct {
 	id transport.ChannelID
 	fd transport.FDRef
 
-	loop  *transport.EventLoop
-	ch    *channel.LocalChannel
-	alloc buffer.Allocator
+	loop   *transport.EventLoop
+	ch     *channel.LocalChannel
+	alloc  buffer.Allocator
+	remote Address
 
 	readBufferSize int
 	writeInterest  bool
@@ -105,7 +106,7 @@ func (e *endpoint) HandleEvent(ev transport.PollEvent) {
 }
 
 func (e *endpoint) Write(msg any) error {
-	datagram, ok := asDatagram(msg)
+	datagram, ok := e.datagramFromMessage(msg)
 	if !ok || !datagram.Valid() {
 		releaseMessage(msg)
 		return ErrInvalidDatagram
@@ -500,6 +501,17 @@ func asDatagram(msg any) (Datagram, bool) {
 	default:
 		return Datagram{}, false
 	}
+}
+
+func (e *endpoint) datagramFromMessage(msg any) (Datagram, bool) {
+	if datagram, ok := asDatagram(msg); ok {
+		return datagram, true
+	}
+	buf, ok := msg.(buffer.ByteBuf)
+	if !ok || buf == nil || !e.remote.Valid() {
+		return Datagram{}, false
+	}
+	return Datagram{Payload: buf, Addr: e.remote}, true
 }
 
 func releaseMessage(msg any) {

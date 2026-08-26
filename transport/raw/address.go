@@ -32,6 +32,10 @@ func (a Address) String() string {
 	return host
 }
 
+func (a Address) Valid() bool {
+	return a.IP != nil
+}
+
 type parsedAddress struct {
 	host string
 	ip   net.IP

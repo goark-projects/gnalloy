@@ -29,6 +29,10 @@ func (a Address) String() string {
 	return net.JoinHostPort(host, strconv.Itoa(a.Port))
 }
 
+func (a Address) Valid() bool {
+	return a.IP != nil && a.Port >= 0 && a.Port <= 65535
+}
+
 type parsedAddress struct {
 	host string
 	port int
@@ -73,6 +77,10 @@ func (a parsedAddress) String() string {
 		host += "%" + a.zone
 	}
 	return net.JoinHostPort(host, strconv.Itoa(a.port))
+}
+
+func (a parsedAddress) Address() Address {
+	return Address{IP: a.ip, Port: a.port, Zone: a.zone}
 }
 
 func zoneID(zone string) uint32 {

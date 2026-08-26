@@ -12,9 +12,10 @@ type endpoint struct {
 	id transport.ChannelID
 	fd transport.FDRef
 
-	loop  *transport.EventLoop
-	ch    *channel.LocalChannel
-	alloc buffer.Allocator
+	loop   *transport.EventLoop
+	ch     *channel.LocalChannel
+	alloc  buffer.Allocator
+	remote Address
 
 	protocol       int
 	readBufferSize int
@@ -106,7 +107,7 @@ func (e *endpoint) HandleEvent(ev transport.PollEvent) {
 }
 
 func (e *endpoint) Write(msg any) error {
-	packet, ok := asPacket(msg)
+	packet, ok := e.packetFromMessage(msg)
 	if !ok {
 		releaseMessage(msg)
 		return ErrInvalidPacket
@@ -508,6 +509,17 @@ func asPacket(msg any) (Packet, bool) {
 	default:
 		return Packet{}, false
 	}
+}
+
+func (e *endpoint) packetFromMessage(msg any) (Packet, bool) {
+	if packet, ok := asPacket(msg); ok {
+		return packet, true
+	}
+	buf, ok := msg.(buffer.ByteBuf)
+	if !ok || buf == nil || !e.remote.Valid() {
+		return Packet{}, false
+	}
+	return Packet{Payload: buf, Addr: e.remote, Protocol: e.protocol}, true
 }
 
 func releaseMessage(msg any) {
