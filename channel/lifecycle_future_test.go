@@ -131,6 +131,59 @@ func TestPromiseTimeoutSuccessAndRemoveListener(t *testing.T) {
 	}
 }
 
+type recordingFutureExecutor struct {
+	tasks []transport.Task
+}
+
+func (e *recordingFutureExecutor) Submit(task transport.Task) error {
+	e.tasks = append(e.tasks, task)
+	return nil
+}
+
+func TestPromiseListenersUseConfiguredExecutor(t *testing.T) {
+	executor := &recordingFutureExecutor{}
+	promise := NewPromiseWithExecutor(executor)
+	called := false
+	promise.AddListener(func(Future) {
+		called = true
+	})
+	if !promise.SetSuccess() {
+		t.Fatal("completion failed")
+	}
+	if called {
+		t.Fatal("listener ran inline before executor drained")
+	}
+	if len(executor.tasks) != 1 {
+		t.Fatalf("tasks=%d, want 1", len(executor.tasks))
+	}
+	executor.tasks[0]()
+	if !called {
+		t.Fatal("listener was not dispatched through executor")
+	}
+}
+
+func TestCompletedPromiseListenerUsesConfiguredExecutor(t *testing.T) {
+	executor := &recordingFutureExecutor{}
+	promise := NewPromiseWithExecutor(executor)
+	if !promise.SetSuccess() {
+		t.Fatal("completion failed")
+	}
+	called := false
+	promise.AddListener(func(Future) {
+		called = true
+	})
+	if called {
+		t.Fatal("post-completion listener ran inline before executor drained")
+	}
+	if len(executor.tasks) != 1 {
+		t.Fatalf("tasks=%d, want 1", len(executor.tasks))
+	}
+	executor.tasks[0]()
+	if !called {
+		t.Fatal("post-completion listener was not dispatched through executor")
+	}
+}
+
 func TestUnsafeWriteFutureCompletesAfterDrain(t *testing.T) {
 	rw := &partialWriteRW{steps: []writeStep{{n: 2, again: true}, {n: 2}}}
 	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{

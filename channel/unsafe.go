@@ -59,6 +59,7 @@ type Unsafe struct {
 	outTail       *outboundEntry
 	outFree       *outboundEntry
 	outboundBytes atomic.Int64
+	eventExecutor atomic.Value
 	readPending   bool
 	writePending  bool
 	writeInterest bool
@@ -103,6 +104,7 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 	u.ch = NewLocalChannelWithTimer(cfg.ID, cfg.Allocator, u, cfg.Timer)
 	OptionReadBufferSize.Set(u.ch.Options(), readBufferSize)
 	OptionWriteBufferWatermark.Set(u.ch.Options(), watermark)
+	OptionMaxMessagesPerRead.Set(u.ch.Options(), OptionMaxMessagesPerRead.Get(u.ch.Options()))
 	return u.ch, u
 }
 
@@ -116,6 +118,15 @@ func (u *Unsafe) FD() transport.FDRef {
 
 func (u *Unsafe) Channel() *LocalChannel {
 	return u.ch
+}
+
+// BindEventExecutor 绑定 Channel 所属 EventLoop，保证 Future listener 回到 owner loop。
+func (u *Unsafe) BindEventExecutor(executor interface{ Submit(transport.Task) error }) {
+	if executor == nil {
+		return
+	}
+	u.eventExecutor.Store(executor)
+	u.closePromise.SetListenerExecutor(executor)
 }
 
 // MarkRegistered 由 EventLoop 在 fd 成功注册到底层 poller 后调用。
@@ -173,7 +184,7 @@ func (u *Unsafe) WriteFuture(msg any) Future {
 	if !ok {
 		return FailedFuture(ErrInvalidMessage)
 	}
-	promise := NewPromise()
+	promise := u.newPromise()
 	if buf.ReadableBytes() == 0 {
 		buf.Release()
 		promise.SetSuccess()
@@ -192,7 +203,7 @@ func (u *Unsafe) Flush() error {
 }
 
 func (u *Unsafe) FlushFuture() Future {
-	promise := NewPromise()
+	promise := u.newPromise()
 	if u.outHead == nil {
 		promise.SetSuccess()
 		u.ch.Pipeline().FireFlushComplete()
@@ -362,7 +373,9 @@ func (u *Unsafe) readReady() {
 		return
 	}
 	read := false
-	for !u.closed.Load() {
+	messages := 0
+	maxMessages := u.maxMessagesPerRead()
+	for !u.closed.Load() && messages < maxMessages {
 		buf, err := u.ch.Allocator().Acquire(u.readBufferSize)
 		if err != nil {
 			u.fail(err)
@@ -378,6 +391,7 @@ func (u *Unsafe) readReady() {
 			}
 			u.ch.Pipeline().FireChannelRead(buf)
 			read = true
+			messages++
 		} else {
 			buf.Release()
 		}
@@ -398,6 +412,9 @@ func (u *Unsafe) readReady() {
 			}
 			return
 		}
+	}
+	if read {
+		u.ch.Pipeline().FireChannelReadComplete()
 	}
 }
 
@@ -616,6 +633,21 @@ func (u *Unsafe) readInterest() transport.ReadyMask {
 		return transport.ReadyRead
 	}
 	return 0
+}
+
+func (u *Unsafe) maxMessagesPerRead() int {
+	maxMessages := OptionMaxMessagesPerRead.Get(u.ch.Options())
+	if maxMessages <= 0 {
+		return 1
+	}
+	return maxMessages
+}
+
+func (u *Unsafe) newPromise() *DefaultPromise {
+	if executor, ok := u.eventExecutor.Load().(FutureListenerExecutor); ok {
+		return NewPromiseWithExecutor(executor)
+	}
+	return NewPromise()
 }
 
 func (u *Unsafe) releaseOutbound() {

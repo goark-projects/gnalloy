@@ -4,6 +4,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"goark.dev/gnalloy/transport"
 )
 
 // Future 表示异步 Channel 操作的最终结果。
@@ -27,6 +29,14 @@ type Promise interface {
 	SetFailure(error) bool
 }
 
+// FutureListenerExecutor 抽象 Future listener 的执行器。
+//
+// Channel 相关 Future 应绑定到所属 EventLoop，避免 listener 在完成线程或调用线程中
+// 直接运行，保持和 Netty EventExecutor 语义一致。
+type FutureListenerExecutor interface {
+	Submit(transport.Task) error
+}
+
 // DefaultPromise 是无外部依赖的 Future/Promise 实现。
 type DefaultPromise struct {
 	done      chan struct{}
@@ -34,6 +44,7 @@ type DefaultPromise struct {
 	mu        sync.Mutex
 	err       error
 	completed bool
+	executor  FutureListenerExecutor
 	nextID    atomic.Uint64
 	listeners []futureListenerEntry
 }
@@ -50,6 +61,12 @@ type futureListenerEntry struct {
 
 func NewPromise() *DefaultPromise {
 	return &DefaultPromise{done: make(chan struct{})}
+}
+
+func NewPromiseWithExecutor(executor FutureListenerExecutor) *DefaultPromise {
+	promise := NewPromise()
+	promise.executor = executor
+	return promise
 }
 
 func SucceededFuture() Future {
@@ -124,15 +141,17 @@ func (p *DefaultPromise) AddListenerHandle(listener func(Future)) FutureListener
 	}
 	handle := FutureListenerHandle{id: p.nextID.Add(1)}
 	callNow := false
+	executor := p.listenerExecutor()
 	p.mu.Lock()
 	if p.completed {
 		callNow = true
+		executor = p.executor
 	} else {
 		p.listeners = append(p.listeners, futureListenerEntry{handle: handle, listener: listener})
 	}
 	p.mu.Unlock()
 	if callNow {
-		listener(p)
+		p.dispatchListener(executor, listener)
 	}
 	return handle
 }
@@ -168,21 +187,51 @@ func (p *DefaultPromise) SetFailure(err error) bool {
 	return p.complete(err)
 }
 
+// SetListenerExecutor 设置后续 listener 的执行器。
+//
+// 该方法用于 Channel 注册到 EventLoop 后补齐 closeFuture 等早期创建 Promise 的
+// 执行归属。已经派发出去的 listener 不会被迁移。
+func (p *DefaultPromise) SetListenerExecutor(executor FutureListenerExecutor) {
+	p.mu.Lock()
+	p.executor = executor
+	p.mu.Unlock()
+}
+
 func (p *DefaultPromise) complete(err error) bool {
 	completed := false
 	p.once.Do(func() {
 		p.mu.Lock()
 		p.err = err
 		p.completed = true
+		executor := p.executor
 		listeners := append([]futureListenerEntry{}, p.listeners...)
 		p.listeners = nil
 		p.mu.Unlock()
 
 		close(p.done)
 		for _, listener := range listeners {
-			listener.listener(p)
+			p.dispatchListener(executor, listener.listener)
 		}
 		completed = true
 	})
 	return completed
+}
+
+func (p *DefaultPromise) listenerExecutor() FutureListenerExecutor {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.executor
+}
+
+func (p *DefaultPromise) dispatchListener(executor FutureListenerExecutor, listener func(Future)) {
+	if executor == nil {
+		listener(p)
+		return
+	}
+	if err := executor.Submit(transport.Task(func() {
+		listener(p)
+	})); err != nil {
+		// EventLoop 关闭或队列拒绝时不能丢失 listener；此时退回同步执行。
+		listener(p)
+	}
 }

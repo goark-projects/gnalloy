@@ -28,6 +28,10 @@ type registrationAware interface {
 	MarkDeregistered()
 }
 
+type eventExecutorAware interface {
+	BindEventExecutor(interface{ Submit(Task) error })
+}
+
 type EventLoopConfig struct {
 	ID              EventLoopID
 	Poller          Poller
@@ -112,6 +116,9 @@ func (l *EventLoop) Register(ch EventHandler, interest ReadyMask) error {
 		return err
 	}
 	l.channels[ch.ID()] = ch
+	if aware, ok := ch.(eventExecutorAware); ok {
+		aware.BindEventExecutor(l)
+	}
 	if aware, ok := ch.(registrationAware); ok {
 		aware.MarkRegistered()
 	}

@@ -529,6 +529,40 @@ func TestUnsafeReadinessAutoReadFalseIgnoresReadableEventUntilManualRead(t *test
 	}
 }
 
+func TestUnsafeReadinessHonorsMaxMessagesPerRead(t *testing.T) {
+	rw := &scriptedReadRW{steps: []readStep{
+		{data: "a"},
+		{data: "b"},
+		{data: "c", again: true},
+	}}
+	ch, _ := NewUnsafeChannel(UnsafeConfig{
+		ID:             1,
+		FD:             transport.FDRef{FD: 1},
+		Allocator:      buffer.NewHeapAllocator(),
+		Poller:         &fakeReadyPoller{},
+		ReadWriter:     rw,
+		ReadBufferSize: 1,
+	})
+	OptionMaxMessagesPerRead.Set(ch.Options(), 2)
+	reader := &releaseReadHandler{}
+	if err := ch.Pipeline().AddLast("reader", reader); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ch.Read(); err != nil {
+		t.Fatal(err)
+	}
+	if rw.reads != 2 || reader.reads != 2 {
+		t.Fatalf("reads=%d handler=%d, want 2 after first read loop", rw.reads, reader.reads)
+	}
+	if err := ch.Read(); err != nil {
+		t.Fatal(err)
+	}
+	if rw.reads != 3 || reader.reads != 3 {
+		t.Fatalf("reads=%d handler=%d, want remaining message after second read loop", rw.reads, reader.reads)
+	}
+}
+
 func TestUnsafeCompletionWriteKeepsPendingBufferAliveUntilEvent(t *testing.T) {
 	poller := &fakeCompletionPoller{}
 	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
