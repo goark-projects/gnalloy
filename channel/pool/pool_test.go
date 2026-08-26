@@ -112,6 +112,82 @@ func TestPoolCloseAndDiscard(t *testing.T) {
 	}
 }
 
+func TestSimplePoolLifecycleHandler(t *testing.T) {
+	lifecycle := &poolLifecycleRecorder{}
+	p, err := NewSimple(SimpleConfig{
+		MaxIdle: 1,
+		Handler: lifecycle,
+		Factory: func(context.Context) (channel.Channel, error) {
+			ch, _ := newPoolTestChannel(1)
+			return ch, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, err := p.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Put(ch); err != nil {
+		t.Fatal(err)
+	}
+	again, err := p.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch != again {
+		t.Fatal("simple pool should reuse released channel")
+	}
+	if lifecycle.created != 1 || lifecycle.acquired != 2 || lifecycle.released != 1 {
+		t.Fatalf("lifecycle=%+v, want created=1 acquired=2 released=1", lifecycle)
+	}
+}
+
+func TestChannelPoolMapCreatesOnePoolPerKey(t *testing.T) {
+	var created int
+	m, err := NewMap(func(key string) (ChannelPool, error) {
+		created++
+		return NewSimple(SimpleConfig{
+			MaxIdle: 1,
+			Factory: func(context.Context) (channel.Channel, error) {
+				ch, _ := newPoolTestChannel(transport.ChannelID(len(key)))
+				return ch, nil
+			},
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := m.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := m.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := m.Get("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != again || a == b || created != 2 || m.Len() != 2 {
+		t.Fatalf("a=%p again=%p b=%p created=%d len=%d", a, again, b, created, m.Len())
+	}
+	if err := m.Remove("a"); err != nil {
+		t.Fatal(err)
+	}
+	if m.Len() != 1 {
+		t.Fatalf("len=%d, want 1 after remove", m.Len())
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Get("c"); !errors.Is(err, ErrClosedPool) {
+		t.Fatalf("err=%v, want %v", err, ErrClosedPool)
+	}
+}
+
 type poolTestSink struct {
 	closes int
 }
@@ -133,4 +209,25 @@ func newPoolTestChannel(id transport.ChannelID) (*channel.LocalChannel, *poolTes
 	sink := &poolTestSink{}
 	ch := channel.NewLocalChannel(id, buffer.NewHeapAllocator(), sink)
 	return ch, sink
+}
+
+type poolLifecycleRecorder struct {
+	created  int
+	acquired int
+	released int
+}
+
+func (r *poolLifecycleRecorder) ChannelCreated(channel.Channel) error {
+	r.created++
+	return nil
+}
+
+func (r *poolLifecycleRecorder) ChannelAcquired(channel.Channel) error {
+	r.acquired++
+	return nil
+}
+
+func (r *poolLifecycleRecorder) ChannelReleased(channel.Channel) error {
+	r.released++
+	return nil
 }

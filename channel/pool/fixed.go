@@ -24,6 +24,8 @@ type FixedConfig struct {
 	MaxPendingAcquire int
 	// AcquireTimeout 限制排队等待时间，0 表示只受调用方 context 控制。
 	AcquireTimeout time.Duration
+	// Handler 接收 Channel 创建、借出、归还生命周期回调。
+	Handler any
 }
 
 // FixedStats 是 FixedPool 的低基数容量快照。
@@ -42,6 +44,7 @@ type FixedPool struct {
 	maxIdle        int
 	maxPending     int
 	acquireTimeout time.Duration
+	handler        any
 
 	mu      sync.Mutex
 	total   int
@@ -85,6 +88,7 @@ func NewFixed(cfg FixedConfig) (*FixedPool, error) {
 		maxIdle:        maxIdle,
 		maxPending:     maxPending,
 		acquireTimeout: cfg.AcquireTimeout,
+		handler:        cfg.Handler,
 		idle:           make([]channel.Channel, 0, maxIdle),
 	}, nil
 }
@@ -109,6 +113,11 @@ func (p *FixedPool) Get(ctx context.Context) (channel.Channel, error) {
 			return nil, err
 		}
 		if ch != nil {
+			if err := notifyAcquired(p.handler, ch); err != nil {
+				_ = ch.Close()
+				p.releaseCapacity()
+				return nil, err
+			}
 			return ch, nil
 		}
 		if create {
@@ -119,6 +128,11 @@ func (p *FixedPool) Get(ctx context.Context) (channel.Channel, error) {
 			return nil, err
 		}
 		if acquired != nil {
+			if err := notifyAcquired(p.handler, acquired); err != nil {
+				_ = acquired.Close()
+				p.releaseCapacity()
+				return nil, err
+			}
 			return acquired, nil
 		}
 	}
@@ -136,6 +150,11 @@ func (p *FixedPool) Put(ch channel.Channel) error {
 		_ = ch.Close()
 		p.releaseCapacity()
 		return nil
+	}
+	if err := notifyReleased(p.handler, ch); err != nil {
+		_ = ch.Close()
+		p.releaseCapacity()
+		return err
 	}
 	p.mu.Lock()
 	if p.closed {
@@ -267,6 +286,16 @@ func (p *FixedPool) createReserved(ctx context.Context) (channel.Channel, error)
 		return nil, ErrClosedPool
 	}
 	p.mu.Unlock()
+	if err := notifyCreated(p.handler, ch); err != nil {
+		_ = ch.Close()
+		p.releaseCapacity()
+		return nil, err
+	}
+	if err := notifyAcquired(p.handler, ch); err != nil {
+		_ = ch.Close()
+		p.releaseCapacity()
+		return nil, err
+	}
 	return ch, nil
 }
 

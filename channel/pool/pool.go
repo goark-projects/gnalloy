@@ -17,6 +17,8 @@ type Config struct {
 	Factory     Factory
 	HealthCheck HealthCheck
 	MaxIdle     int
+	// Handler 接收 Channel 创建、借出、归还生命周期回调。
+	Handler any
 }
 
 // Pool 复用可安全再次借出的 Channel。
@@ -24,6 +26,7 @@ type Pool struct {
 	factory Factory
 	health  HealthCheck
 	maxIdle int
+	handler any
 
 	mu     sync.Mutex
 	idle   []channel.Channel
@@ -42,7 +45,7 @@ func New(cfg Config) (*Pool, error) {
 	if health == nil {
 		health = func(channel.Channel) bool { return true }
 	}
-	return &Pool{factory: cfg.Factory, health: health, maxIdle: maxIdle, idle: make([]channel.Channel, 0, maxIdle)}, nil
+	return &Pool{factory: cfg.Factory, health: health, maxIdle: maxIdle, handler: cfg.Handler, idle: make([]channel.Channel, 0, maxIdle)}, nil
 }
 
 func (p *Pool) Get(ctx context.Context) (channel.Channel, error) {
@@ -58,6 +61,10 @@ func (p *Pool) Get(ctx context.Context) (channel.Channel, error) {
 			return p.newChannel(ctx)
 		}
 		if p.health(ch) {
+			if err := notifyAcquired(p.handler, ch); err != nil {
+				_ = ch.Close()
+				return nil, err
+			}
 			return ch, nil
 		}
 		_ = ch.Close()
@@ -70,6 +77,10 @@ func (p *Pool) Put(ch channel.Channel) error {
 	}
 	if !p.health(ch) {
 		return ch.Close()
+	}
+	if err := notifyReleased(p.handler, ch); err != nil {
+		_ = ch.Close()
+		return err
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -151,6 +162,14 @@ func (p *Pool) newChannel(ctx context.Context) (channel.Channel, error) {
 	if closed {
 		_ = ch.Close()
 		return nil, ErrClosedPool
+	}
+	if err := notifyCreated(p.handler, ch); err != nil {
+		_ = ch.Close()
+		return nil, err
+	}
+	if err := notifyAcquired(p.handler, ch); err != nil {
+		_ = ch.Close()
+		return nil, err
 	}
 	return ch, nil
 }

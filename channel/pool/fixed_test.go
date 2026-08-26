@@ -106,3 +106,41 @@ func TestFixedPoolRejectsExcessPendingAcquire(t *testing.T) {
 	cancel()
 	<-pending
 }
+
+func TestFixedPoolLifecycleHandler(t *testing.T) {
+	lifecycle := &poolLifecycleRecorder{}
+	p, err := NewFixed(FixedConfig{
+		MaxConnections: 1,
+		MaxIdle:        1,
+		Handler:        lifecycle,
+		Factory: func(context.Context) (channel.Channel, error) {
+			ch, _ := newPoolTestChannel(1)
+			return ch, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	ch, err := p.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Put(ch); err != nil {
+		t.Fatal(err)
+	}
+	again, err := p.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ch != again {
+		t.Fatal("fixed pool should reuse released channel")
+	}
+	if lifecycle.created != 1 || lifecycle.acquired != 2 || lifecycle.released != 1 {
+		t.Fatalf("lifecycle=%+v, want created=1 acquired=2 released=1", lifecycle)
+	}
+	if err := p.Put(again); err != nil {
+		t.Fatal(err)
+	}
+}
