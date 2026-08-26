@@ -70,11 +70,15 @@ func dialTCP(address string, opts socketOptions) (transport.FDRef, error) {
 		return transport.FDRef{}, err
 	}
 	unix.CloseOnExec(fd)
-	if err := unix.Connect(fd, sa); err != nil {
+	if err := unix.SetNonblock(fd, true); err != nil {
 		_ = unix.Close(fd)
 		return transport.FDRef{}, err
 	}
-	if err := unix.SetNonblock(fd, true); err != nil {
+	if err := unix.Connect(fd, sa); err != nil && !connectInProgress(err) {
+		_ = unix.Close(fd)
+		return transport.FDRef{}, err
+	}
+	if err := waitConnected(fd, opts.connectTimeoutMillis); err != nil {
 		_ = unix.Close(fd)
 		return transport.FDRef{}, err
 	}

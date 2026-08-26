@@ -20,7 +20,7 @@ func (t *Transport) Dial(ctx context.Context, cfg bootstrap.ClientConfig) (chann
 	if cfg.Initializer == nil {
 		cfg.Initializer = func(channel.Channel) error { return nil }
 	}
-	opts := t.cfg.socketOptions()
+	opts := t.cfg.socketOptions().withClientOptions(cfg.Options)
 	fd, err := dialTCP(cfg.Address, opts)
 	if err != nil {
 		return nil, err

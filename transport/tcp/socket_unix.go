@@ -68,6 +68,9 @@ func setListenOptions(fd int, family int, opts socketOptions) error {
 			return err
 		}
 	}
+	if err := setCommonSocketOptions(fd, opts); err != nil {
+		return err
+	}
 	if family == unix.AF_INET6 {
 		if err := unix.SetsockoptInt(fd, unix.IPPROTO_IPV6, unix.IPV6_V6ONLY, 1); err != nil {
 			return err
@@ -78,9 +81,68 @@ func setListenOptions(fd int, family int, opts socketOptions) error {
 
 func setAcceptedOptions(fd transport.FDRef, opts socketOptions) error {
 	if opts.noDelay {
-		return unix.SetsockoptInt(fd.FD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1)
+		if err := unix.SetsockoptInt(fd.FD, unix.IPPROTO_TCP, unix.TCP_NODELAY, 1); err != nil {
+			return err
+		}
+	}
+	if opts.keepAlive {
+		if err := unix.SetsockoptInt(fd.FD, unix.SOL_SOCKET, unix.SO_KEEPALIVE, 1); err != nil {
+			return err
+		}
+	}
+	return setCommonSocketOptions(fd.FD, opts)
+}
+
+func setCommonSocketOptions(fd int, opts socketOptions) error {
+	if opts.sendBufferSize > 0 {
+		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, opts.sendBufferSize); err != nil {
+			return err
+		}
+	}
+	if opts.receiveBufferSize > 0 {
+		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVBUF, opts.receiveBufferSize); err != nil {
+			return err
+		}
+	}
+	if opts.soLinger >= 0 {
+		linger := &unix.Linger{Onoff: 1, Linger: int32(opts.soLinger)}
+		if err := unix.SetsockoptLinger(fd, unix.SOL_SOCKET, unix.SO_LINGER, linger); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func waitConnected(fd int, timeoutMillis int) error {
+	timeout := -1
+	if timeoutMillis > 0 {
+		timeout = timeoutMillis
+	}
+	for {
+		events := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}}
+		n, err := unix.Poll(events, timeout)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return ErrConnectTimeout
+		}
+		soerr, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ERROR)
+		if err != nil {
+			return err
+		}
+		if soerr != 0 {
+			return unix.Errno(soerr)
+		}
+		return nil
+	}
+}
+
+func connectInProgress(err error) bool {
+	return errors.Is(err, unix.EINPROGRESS) || errors.Is(err, unix.EALREADY)
 }
 
 func closeFD(fd transport.FDRef) error {

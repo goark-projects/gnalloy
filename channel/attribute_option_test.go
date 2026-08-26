@@ -43,3 +43,25 @@ func TestChannelOptionsTypedDefaultsAndSet(t *testing.T) {
 		t.Fatalf("watermark=%+v", got)
 	}
 }
+
+func TestChannelOptionGetIfSetDistinguishesExplicitZero(t *testing.T) {
+	options := NewChannelOptions()
+	if got, ok := OptionConnectTimeoutMillis.GetIfSet(options); ok || got != 0 {
+		t.Fatalf("unset timeout got=%d ok=%v", got, ok)
+	}
+	if OptionConnectTimeoutMillis.IsSet(options) {
+		t.Fatal("timeout should not be marked as set")
+	}
+
+	OptionConnectTimeoutMillis.Set(options, 0)
+	got, ok := OptionConnectTimeoutMillis.GetIfSet(options)
+	if !ok || got != 0 {
+		t.Fatalf("explicit zero timeout got=%d ok=%v", got, ok)
+	}
+	if !OptionConnectTimeoutMillis.IsSet(options) {
+		t.Fatal("timeout should be marked as set")
+	}
+	if got := OptionConnectTimeoutMillis.Get(options); got != 0 {
+		t.Fatalf("timeout get=%d, want explicit zero", got)
+	}
+}

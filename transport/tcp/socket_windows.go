@@ -95,6 +95,10 @@ func listenTCP(address string, opts socketOptions) (listenSocket, error) {
 			return listenSocket{}, err
 		}
 	}
+	if err := setCommonSocketOptions(fd, opts); err != nil {
+		_ = windows.Closesocket(fd)
+		return listenSocket{}, err
+	}
 	if err := windows.Bind(fd, sa); err != nil {
 		_ = windows.Closesocket(fd)
 		return listenSocket{}, err
@@ -123,7 +127,7 @@ func dialTCP(address string, opts socketOptions) (transport.FDRef, error) {
 	if err != nil {
 		return transport.FDRef{}, err
 	}
-	if err := windows.Connect(fd, sa); err != nil {
+	if err := connectWindows(fd, family, sa, opts.connectTimeoutMillis); err != nil {
 		_ = windows.Closesocket(fd)
 		return transport.FDRef{}, err
 	}
@@ -140,8 +144,36 @@ func dialTCP(address string, opts socketOptions) (transport.FDRef, error) {
 }
 
 func setAcceptedOptions(fd transport.FDRef, opts socketOptions) error {
+	handle := windows.Handle(uintptr(fd.FD))
 	if opts.noDelay {
-		return windows.SetsockoptInt(windows.Handle(uintptr(fd.FD)), windows.IPPROTO_TCP, windows.TCP_NODELAY, 1)
+		if err := windows.SetsockoptInt(handle, windows.IPPROTO_TCP, windows.TCP_NODELAY, 1); err != nil {
+			return err
+		}
+	}
+	if opts.keepAlive {
+		if err := windows.SetsockoptInt(handle, windows.SOL_SOCKET, windows.SO_KEEPALIVE, 1); err != nil {
+			return err
+		}
+	}
+	return setCommonSocketOptions(handle, opts)
+}
+
+func setCommonSocketOptions(fd windows.Handle, opts socketOptions) error {
+	if opts.sendBufferSize > 0 {
+		if err := windows.SetsockoptInt(fd, windows.SOL_SOCKET, windows.SO_SNDBUF, opts.sendBufferSize); err != nil {
+			return err
+		}
+	}
+	if opts.receiveBufferSize > 0 {
+		if err := windows.SetsockoptInt(fd, windows.SOL_SOCKET, windows.SO_RCVBUF, opts.receiveBufferSize); err != nil {
+			return err
+		}
+	}
+	if opts.soLinger >= 0 {
+		linger := windows.Linger{Onoff: 1, Linger: int32(opts.soLinger)}
+		if err := windows.SetsockoptLinger(fd, windows.SOL_SOCKET, windows.SO_LINGER, &linger); err != nil {
+			return err
+		}
 	}
 	return nil
 }

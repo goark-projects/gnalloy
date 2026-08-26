@@ -11,9 +11,34 @@ type ChannelOption[T any] struct {
 }
 
 var (
-	OptionAutoRead             = NewChannelOption("AUTO_READ", true)
-	OptionReadBufferSize       = NewChannelOption("READ_BUFFER_SIZE", 0)
+	// OptionAutoRead 控制 Channel 激活后是否自动注册读兴趣。
+	OptionAutoRead = NewChannelOption("AUTO_READ", true)
+	// OptionReadBufferSize 控制单次底层读缓冲区大小，0 表示使用传输默认值。
+	OptionReadBufferSize = NewChannelOption("READ_BUFFER_SIZE", 0)
+	// OptionWriteBufferWatermark 控制出站缓冲区的高低水位线。
 	OptionWriteBufferWatermark = NewChannelOption("WRITE_BUFFER_WATERMARK", transport.DefaultWriteBufferWatermark())
+	// OptionConnectTimeoutMillis 控制客户端 TCP connect 超时时间，0 表示不设置超时。
+	OptionConnectTimeoutMillis = NewChannelOption("CONNECT_TIMEOUT_MILLIS", 30000)
+	// OptionSoBacklog 控制监听 socket 的 accept backlog。
+	OptionSoBacklog = NewChannelOption("SO_BACKLOG", 1024)
+	// OptionSoReuseAddr 控制监听 socket 的 SO_REUSEADDR。
+	OptionSoReuseAddr = NewChannelOption("SO_REUSEADDR", true)
+	// OptionSoReusePort 控制监听 socket 的 SO_REUSEPORT。
+	OptionSoReusePort = NewChannelOption("SO_REUSEPORT", false)
+	// OptionTcpNoDelay 控制 TCP_NODELAY，默认关闭 Nagle 以降低交互延迟。
+	OptionTcpNoDelay = NewChannelOption("TCP_NODELAY", true)
+	// OptionSoKeepAlive 控制连接 socket 的 SO_KEEPALIVE。
+	OptionSoKeepAlive = NewChannelOption("SO_KEEPALIVE", false)
+	// OptionSoSndBuf 控制 socket 发送缓冲区大小，0 表示使用系统默认值。
+	OptionSoSndBuf = NewChannelOption("SO_SNDBUF", 0)
+	// OptionSoRcvBuf 控制 socket 接收缓冲区大小，0 表示使用系统默认值。
+	OptionSoRcvBuf = NewChannelOption("SO_RCVBUF", 0)
+	// OptionSoLinger 控制连接 socket 的 SO_LINGER，-1 表示禁用 linger。
+	OptionSoLinger = NewChannelOption("SO_LINGER", -1)
+	// OptionWriteSpinCount 控制单次可写事件内的出站写重试次数。
+	OptionWriteSpinCount = NewChannelOption("WRITE_SPIN_COUNT", 16)
+	// OptionMaxMessagesPerRead 控制单次可读事件最多连续读取的消息数。
+	OptionMaxMessagesPerRead = NewChannelOption("MAX_MESSAGES_PER_READ", 16)
 )
 
 func NewChannelOption[T any](name string, defaultValue T) ChannelOption[T] {
@@ -41,6 +66,32 @@ func (o ChannelOption[T]) Get(options *ChannelOptions) T {
 		return o.defaultValue
 	}
 	return typed
+}
+
+// GetIfSet 只在调用方显式配置该选项时返回值，用于区分零值和默认值。
+func (o ChannelOption[T]) GetIfSet(options *ChannelOptions) (T, bool) {
+	var zero T
+	if options == nil {
+		return zero, false
+	}
+	value, ok := options.get(o.name)
+	if !ok {
+		return zero, false
+	}
+	typed, ok := value.(T)
+	if !ok {
+		return zero, false
+	}
+	return typed, true
+}
+
+// IsSet 判断调用方是否显式配置了该选项。
+func (o ChannelOption[T]) IsSet(options *ChannelOptions) bool {
+	if options == nil {
+		return false
+	}
+	_, ok := options.get(o.name)
+	return ok
 }
 
 func (o ChannelOption[T]) Set(options *ChannelOptions, value T) {

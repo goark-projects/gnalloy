@@ -55,15 +55,15 @@ func dialTCP(address string, opts socketOptions) (transport.FDRef, error) {
 	if err != nil {
 		return transport.FDRef{}, err
 	}
-	fd, err := unix.Socket(family, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
+	fd, err := unix.Socket(family, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
 	if err != nil {
 		return transport.FDRef{}, err
 	}
-	if err := unix.Connect(fd, sa); err != nil {
+	if err := unix.Connect(fd, sa); err != nil && !connectInProgress(err) {
 		_ = unix.Close(fd)
 		return transport.FDRef{}, err
 	}
-	if err := unix.SetNonblock(fd, true); err != nil {
+	if err := waitConnected(fd, opts.connectTimeoutMillis); err != nil {
 		_ = unix.Close(fd)
 		return transport.FDRef{}, err
 	}

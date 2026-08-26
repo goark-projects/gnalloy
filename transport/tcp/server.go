@@ -45,15 +45,17 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 	if cfg.ChildInitializer == nil {
 		return nil, bootstrap.ErrMissingChildHandler
 	}
-	opts := t.cfg.socketOptions()
-	listeners, err := t.listenAll(cfg.Address, cfg.BossGroup.Size(), opts)
+	baseOptions := t.cfg.socketOptions()
+	listenOptions := baseOptions.withListenOptions(cfg.Options)
+	childOptions := baseOptions.withChildOptions(cfg.ChildOptions)
+	listeners, err := t.listenAll(cfg.Address, cfg.BossGroup.Size(), listenOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	server := &Server{
 		addr:              listeners[0].addr,
-		options:           opts,
+		options:           childOptions,
 		serverConfig:      cfg,
 		workerGroup:       cfg.WorkerGroup,
 		childInitializer:  cfg.ChildInitializer,
@@ -65,7 +67,7 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 		bossLoops:         make([]*transport.EventLoop, 0, len(listeners)),
 	}
 
-	if opts.iouringFixed {
+	if childOptions.iouringFixed {
 		for _, worker := range cfg.WorkerGroup.Loops() {
 			if _, err := server.allocatorFor(worker); err != nil {
 				closeListenSockets(listeners)
