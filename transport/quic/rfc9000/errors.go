@@ -21,4 +21,8 @@ var (
 	ErrUnsupportedWebTransport = errors.New("gnalloy/transport/quic/rfc9000: unsupported webtransport")
 	// ErrClosed 表示适配对象已经关闭或没有绑定底层实现。
 	ErrClosed = errors.New("gnalloy/transport/quic/rfc9000: closed")
+	// ErrInvalidStream 表示缺少可读写的 QUIC stream。
+	ErrInvalidStream = errors.New("gnalloy/transport/quic/rfc9000: invalid stream")
+	// ErrWriteUnsupported 表示出站消息无法写入 QUIC stream。
+	ErrWriteUnsupported = errors.New("gnalloy/transport/quic/rfc9000: write unsupported")
 )
