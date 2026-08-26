@@ -1,7 +1,9 @@
 package observability
 
 import (
+	"bytes"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -72,6 +74,30 @@ func TestNormalizeObservabilityDefaults(t *testing.T) {
 	}
 	if NormalizeChannelRecorder(nil) == nil {
 		t.Fatal("nil recorder should normalize to noop")
+	}
+}
+
+func TestPrometheusExporterWritesTextFormat(t *testing.T) {
+	recorder := NewAtomicChannelRecorder()
+	recorder.RecordChannelActive(1)
+	recorder.RecordChannelRead(1, 128)
+	recorder.RecordChannelWriteDuration(1, 3*time.Nanosecond)
+
+	var out bytes.Buffer
+	exporter := NewPrometheusExporter(PrometheusConfig{Prefix: "gnalloy-test"})
+	if err := ExportSnapshot(&out, recorder, exporter); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	for _, want := range []string{
+		"# TYPE gnalloy_test_active gauge",
+		"gnalloy_test_active 1",
+		"gnalloy_test_inbound_bytes_total 128",
+		"gnalloy_test_outbound_write_duration_nanoseconds_total 3",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in\n%s", want, text)
+		}
 	}
 }
 
