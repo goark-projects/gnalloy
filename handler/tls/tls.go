@@ -26,6 +26,8 @@ type Config struct {
 	StartTLS bool
 	// VerifyPeerName 在握手完成后对对端证书执行主机名校验，空值表示不额外校验。
 	VerifyPeerName string
+	// BytePool 复用 TLS 中转切片；nil 时使用默认池化实现。
+	BytePool BytePool
 }
 
 type HandshakeEvent struct {
@@ -50,10 +52,11 @@ type Handler struct {
 	closeOnce sync.Once
 	closed    chan struct{}
 	ready     chan struct{}
-	plain     chan []byte
-	app       chan []byte
+	plain     chan byteChunk
+	app       chan byteChunk
 	events    chan HandshakeEvent
 	errs      chan error
+	bytePool  BytePool
 
 	handshake bool
 	active    bool
@@ -70,14 +73,15 @@ func Server(cfg Config) *Handler {
 
 func newHandler(mode Mode, cfg Config) *Handler {
 	return &Handler{
-		mode:   mode,
-		cfg:    cfg,
-		closed: make(chan struct{}),
-		ready:  make(chan struct{}),
-		plain:  make(chan []byte, 32),
-		app:    make(chan []byte, 32),
-		events: make(chan HandshakeEvent, 4),
-		errs:   make(chan error, 8),
+		mode:     mode,
+		cfg:      cfg,
+		closed:   make(chan struct{}),
+		ready:    make(chan struct{}),
+		plain:    make(chan byteChunk, 32),
+		app:      make(chan byteChunk, 32),
+		events:   make(chan HandshakeEvent, 4),
+		errs:     make(chan error, 8),
+		bytePool: normalizeBytePool(cfg.BytePool),
 	}
 }
 
@@ -116,7 +120,7 @@ func (h *Handler) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		return
 	}
 	h.ensureStarted()
-	data := copyReadableBytes(buf)
+	data := copyReadableBytes(buf, h.bytePool)
 	buf.Release()
 	err := h.raw.feedOwned(data)
 	if err != nil {
@@ -139,15 +143,17 @@ func (h *Handler) Write(ctx *channel.HandlerContext, msg any) error {
 	if !ok {
 		return ctx.Write(msg)
 	}
-	data := copyReadableBytes(buf)
+	data := copyReadableBytes(buf, h.bytePool)
 	buf.Release()
 	if len(data) == 0 {
 		return nil
 	}
+	chunk := newByteChunk(data, h.bytePool)
 	h.ensureStarted()
 	select {
-	case h.app <- data:
+	case h.app <- chunk:
 	case <-h.closed:
+		chunk.releaseOwned()
 		return io.ErrClosedPipe
 	}
 	h.drain(ctx, false, true)
@@ -182,7 +188,7 @@ func (h *Handler) Close(ctx *channel.HandlerContext) error {
 
 func (h *Handler) ensureStarted() {
 	h.startOnce.Do(func() {
-		h.raw = newMemoryConn()
+		h.raw = newMemoryConn(h.bytePool)
 		cfg := &cryptotls.Config{}
 		if h.cfg.TLS != nil {
 			cfg = h.cfg.TLS.Clone()
@@ -233,10 +239,11 @@ func (h *Handler) runReader() {
 	for {
 		n, err := h.conn.Read(scratch[:])
 		if n > 0 {
-			data := append([]byte(nil), scratch[:n]...)
+			chunk := newByteChunk(copyBytes(scratch[:n], h.bytePool), h.bytePool)
 			select {
-			case h.plain <- data:
+			case h.plain <- chunk:
 			case <-h.closed:
+				chunk.releaseOwned()
 				return
 			}
 		}
@@ -259,11 +266,13 @@ func (h *Handler) runWriter() {
 	}
 	for {
 		select {
-		case data := <-h.app:
-			if _, err := h.conn.Write(data); err != nil {
+		case chunk := <-h.app:
+			if _, err := h.conn.Write(chunk.data); err != nil {
+				chunk.releaseOwned()
 				h.sendErr(err)
 				return
 			}
+			chunk.releaseOwned()
 		case <-h.closed:
 			return
 		}
@@ -281,21 +290,25 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 	for {
 		drained := false
 		select {
-		case data := <-h.raw.out:
+		case chunk := <-h.raw.out:
 			drained = true
-			if err := h.writeCipher(ctx, data); err != nil {
+			if err := h.writeCipher(ctx, chunk.data); err != nil {
+				chunk.releaseOwned()
 				h.fail(ctx, err)
 				return
 			}
+			chunk.releaseOwned()
 		default:
 		}
 		select {
-		case data := <-h.plain:
+		case chunk := <-h.plain:
 			drained = true
-			if err := h.firePlain(ctx, data); err != nil {
+			if err := h.firePlain(ctx, chunk.data); err != nil {
+				chunk.releaseOwned()
 				h.fail(ctx, err)
 				return
 			}
+			chunk.releaseOwned()
 		default:
 		}
 		select {
