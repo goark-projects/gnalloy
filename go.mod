@@ -8,4 +8,8 @@ require (
 	golang.org/x/sys v0.47.0
 )
 
-require github.com/cespare/xxhash/v2 v2.3.0 // indirect
+require (
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+)

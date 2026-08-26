@@ -8,4 +8,6 @@ var (
 	ErrInvalidStreamID    = errors.New("gnalloy/codec/http2: invalid stream id")
 	ErrInvalidStreamState = errors.New("gnalloy/codec/http2: invalid stream state")
 	ErrFlowControl        = errors.New("gnalloy/codec/http2: flow control violation")
+	ErrHeaderBlock        = errors.New("gnalloy/codec/http2: invalid header block")
+	ErrHeaderListTooLarge = errors.New("gnalloy/codec/http2: header list too large")
 )

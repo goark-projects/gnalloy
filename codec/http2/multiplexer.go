@@ -91,6 +91,8 @@ func (m *StreamMultiplexer) ChannelRead(ctx *channel.HandlerContext, msg any) {
 	switch frame := msg.(type) {
 	case HeadersFrame:
 		m.readHeaders(ctx, frame)
+	case HeadersBlock:
+		m.readHeadersBlock(ctx, frame)
 	case DataFrame:
 		m.readData(ctx, frame)
 	case RSTStreamFrame:
@@ -110,6 +112,10 @@ func (m *StreamMultiplexer) Write(ctx *channel.HandlerContext, msg any) error {
 	case HeadersFrame:
 		if err := m.writeHeaders(frame); err != nil {
 			frame.Release()
+			return err
+		}
+	case HeadersBlock:
+		if err := m.writeHeadersBlock(frame); err != nil {
 			return err
 		}
 	case DataFrame:
@@ -133,13 +139,21 @@ func (m *StreamMultiplexer) ActiveStreams() int {
 }
 
 func (m *StreamMultiplexer) readHeaders(ctx *channel.HandlerContext, frame HeadersFrame) {
-	stream, created, err := m.stream(frame.StreamID, false)
+	m.readHeaderState(ctx, frame.StreamID, frame.Flags&FlagEndStream != 0, frame)
+}
+
+func (m *StreamMultiplexer) readHeadersBlock(ctx *channel.HandlerContext, frame HeadersBlock) {
+	m.readHeaderState(ctx, frame.StreamID, frame.EndStream, frame)
+}
+
+func (m *StreamMultiplexer) readHeaderState(ctx *channel.HandlerContext, streamID StreamID, endStream bool, frame TypedFrame) {
+	stream, created, err := m.stream(streamID, false)
 	if err != nil {
 		frame.Release()
 		ctx.FireExceptionCaught(err)
 		return
 	}
-	if err := stream.openRemote(frame.Flags&FlagEndStream != 0); err != nil {
+	if err := stream.openRemote(endStream); err != nil {
 		frame.Release()
 		ctx.FireExceptionCaught(err)
 		return
@@ -215,6 +229,14 @@ func (m *StreamMultiplexer) writeHeaders(frame HeadersFrame) error {
 		return err
 	}
 	return stream.openLocal(frame.Flags&FlagEndStream != 0)
+}
+
+func (m *StreamMultiplexer) writeHeadersBlock(frame HeadersBlock) error {
+	stream, _, err := m.stream(frame.StreamID, true)
+	if err != nil {
+		return err
+	}
+	return stream.openLocal(frame.EndStream)
 }
 
 func (m *StreamMultiplexer) writeData(frame DataFrame) error {
