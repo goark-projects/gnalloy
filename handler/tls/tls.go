@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	cryptotls "crypto/tls"
@@ -21,6 +22,10 @@ const (
 
 type Config struct {
 	TLS *cryptotls.Config
+	// StartTLS 表示连接建立后先透传明文，收到 StartEvent 后再启动 TLS 握手。
+	StartTLS bool
+	// VerifyPeerName 在握手完成后对对端证书执行主机名校验，空值表示不额外校验。
+	VerifyPeerName string
 }
 
 type HandshakeEvent struct {
@@ -30,6 +35,9 @@ type HandshakeEvent struct {
 	CipherSuite        uint16
 	Version            uint16
 }
+
+// StartEvent 触发 StartTLS 模式下的 TLS 握手。
+type StartEvent struct{}
 
 type Handler struct {
 	mode Mode
@@ -49,6 +57,7 @@ type Handler struct {
 
 	handshake bool
 	active    bool
+	started   atomic.Bool
 }
 
 func Client(cfg Config) *Handler {
@@ -76,16 +85,27 @@ func (h *Handler) HandlerAdded(*channel.HandlerContext) error {
 	if h.mode != ModeClient && h.mode != ModeServer {
 		return ErrInvalidConfig
 	}
-	h.ensureStarted()
+	if !h.cfg.StartTLS {
+		h.ensureStarted()
+	}
 	return nil
 }
 
 func (h *Handler) ChannelActive(ctx *channel.HandlerContext) {
+	if h.cfg.StartTLS && !h.started.Load() {
+		h.active = true
+		ctx.FireChannelActive()
+		return
+	}
 	h.ensureStarted()
 	h.drain(ctx, true, h.mode == ModeClient)
 }
 
 func (h *Handler) ChannelRead(ctx *channel.HandlerContext, msg any) {
+	if h.cfg.StartTLS && !h.started.Load() {
+		ctx.FireChannelRead(msg)
+		return
+	}
 	buf, ok := msg.(buffer.ByteBuf)
 	if !ok {
 		if h.handshake {
@@ -111,6 +131,9 @@ func (h *Handler) ChannelInactive(ctx *channel.HandlerContext) {
 }
 
 func (h *Handler) Write(ctx *channel.HandlerContext, msg any) error {
+	if h.cfg.StartTLS && !h.started.Load() {
+		return ctx.Write(msg)
+	}
 	buf, ok := msg.(buffer.ByteBuf)
 	if !ok {
 		return ctx.Write(msg)
@@ -131,12 +154,27 @@ func (h *Handler) Write(ctx *channel.HandlerContext, msg any) error {
 }
 
 func (h *Handler) Flush(ctx *channel.HandlerContext) error {
+	if h.cfg.StartTLS && !h.started.Load() {
+		return ctx.Flush()
+	}
 	h.drain(ctx, false, true)
 	return ctx.Flush()
 }
 
+func (h *Handler) UserEventTriggered(ctx *channel.HandlerContext, event any) {
+	if _, ok := event.(StartEvent); ok {
+		h.ensureStarted()
+		h.drain(ctx, true, h.mode == ModeClient)
+		return
+	}
+	ctx.FireUserEventTriggered(event)
+}
+
 func (h *Handler) Close(ctx *channel.HandlerContext) error {
 	h.close()
+	if !h.started.Load() {
+		return ctx.Close()
+	}
 	h.drain(ctx, true, false)
 	return ctx.Close()
 }
@@ -153,6 +191,7 @@ func (h *Handler) ensureStarted() {
 		} else {
 			h.conn = cryptotls.Client(h.raw, cfg)
 		}
+		h.started.Store(true)
 		go h.runHandshake()
 		go h.runWriter()
 	})
@@ -164,6 +203,12 @@ func (h *Handler) runHandshake() {
 		return
 	}
 	state := h.conn.ConnectionState()
+	if h.cfg.VerifyPeerName != "" {
+		if err := verifyPeerName(state, h.cfg.VerifyPeerName); err != nil {
+			h.sendErr(err)
+			return
+		}
+	}
 	h.events <- HandshakeEvent{
 		ServerName:         state.ServerName,
 		NegotiatedProtocol: state.NegotiatedProtocol,
@@ -173,6 +218,13 @@ func (h *Handler) runHandshake() {
 	}
 	close(h.ready)
 	h.runReader()
+}
+
+func verifyPeerName(state cryptotls.ConnectionState, name string) error {
+	if len(state.PeerCertificates) == 0 {
+		return ErrPeerCertificateUnavailable
+	}
+	return state.PeerCertificates[0].VerifyHostname(name)
 }
 
 func (h *Handler) runReader() {
@@ -218,6 +270,12 @@ func (h *Handler) runWriter() {
 }
 
 func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
+	if !h.started.Load() || h.raw == nil {
+		if flush {
+			_ = ctx.Flush()
+		}
+		return
+	}
 	deadline := time.Now().Add(20 * time.Millisecond)
 	for {
 		drained := false

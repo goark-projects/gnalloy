@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -60,6 +61,154 @@ func TestHandlerNegotiatesAndPassesPlaintext(t *testing.T) {
 	clientRecv.waitString(t, "ping")
 	if clientRecv.protocol != "h2" {
 		t.Fatalf("alpn=%q, want h2 clientHandshake=%v serverHandshake=%v", clientRecv.protocol, clientTLS.handshake, serverTLS.handshake)
+	}
+}
+
+func TestStartTLSPassesPlaintextUntilStartEvent(t *testing.T) {
+	cert := testCertificate(t)
+	clientSink := &pipeSink{}
+	serverSink := &pipeSink{}
+	client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+	server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+	clientSink.peer = server.Pipeline()
+	serverSink.peer = client.Pipeline()
+
+	clientRecv := &plainRecorder{}
+	serverEcho := &plainEcho{}
+	clientTLS := Client(Config{
+		StartTLS: true,
+		TLS: &cryptotls.Config{
+			ServerName:         "gnalloy.local",
+			InsecureSkipVerify: true,
+			NextProtos:         []string{"h2"},
+		},
+	})
+	serverTLS := Server(Config{
+		StartTLS: true,
+		TLS: &cryptotls.Config{
+			Certificates: []cryptotls.Certificate{cert},
+			NextProtos:   []string{"h2"},
+		},
+	})
+	if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Pipeline().AddLast("recorder", clientRecv); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("echo", serverEcho); err != nil {
+		t.Fatal(err)
+	}
+
+	server.Pipeline().FireChannelActive()
+	client.Pipeline().FireChannelActive()
+	writePlain(t, client, "clear")
+	clientRecv.waitString(t, "clear")
+
+	server.Pipeline().FireUserEventTriggered(StartEvent{})
+	client.Pipeline().FireUserEventTriggered(StartEvent{})
+	writePlain(t, client, "secure")
+	clientRecv.waitString(t, "clearsecure")
+	if clientRecv.protocol != "h2" {
+		t.Fatalf("alpn=%q, want h2", clientRecv.protocol)
+	}
+}
+
+func TestServerConfigWithSNISelectsDomainConfig(t *testing.T) {
+	defaultCert := testCertificateForName(t, "default.local")
+	selectedCert := testCertificateForName(t, "selected.local")
+	clientSink := &pipeSink{}
+	serverSink := &pipeSink{}
+	client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+	server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+	clientSink.peer = server.Pipeline()
+	serverSink.peer = client.Pipeline()
+
+	clientRecv := &plainRecorder{}
+	serverEcho := &plainEcho{}
+	clientTLS := Client(Config{
+		TLS: &cryptotls.Config{
+			ServerName:         "selected.local",
+			InsecureSkipVerify: true,
+			NextProtos:         []string{"h2", "http/1.1"},
+		},
+	})
+	serverTLS := Server(Config{
+		TLS: ServerConfigWithSNI(
+			&cryptotls.Config{Certificates: []cryptotls.Certificate{defaultCert}, NextProtos: []string{"http/1.1"}},
+			ServerConfigMap(map[string]*cryptotls.Config{
+				"selected.local": &cryptotls.Config{Certificates: []cryptotls.Certificate{selectedCert}, NextProtos: []string{"h2"}},
+			}),
+		),
+	})
+	if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Pipeline().AddLast("recorder", clientRecv); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("echo", serverEcho); err != nil {
+		t.Fatal(err)
+	}
+
+	server.Pipeline().FireChannelActive()
+	client.Pipeline().FireChannelActive()
+	writePlain(t, client, "sni")
+
+	clientRecv.waitString(t, "sni")
+	if clientRecv.protocol != "h2" {
+		t.Fatalf("alpn=%q, want h2 from selected SNI config", clientRecv.protocol)
+	}
+}
+
+func TestHandlerVerifyPeerNameRejectsMismatchedCertificate(t *testing.T) {
+	cert := testCertificate(t)
+	clientSink := &pipeSink{}
+	serverSink := &pipeSink{}
+	client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+	server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+	clientSink.peer = server.Pipeline()
+	serverSink.peer = client.Pipeline()
+
+	errorsSeen := &errorRecorder{ch: make(chan error, 4)}
+	clientTLS := Client(Config{
+		VerifyPeerName: "other.local",
+		TLS: &cryptotls.Config{
+			ServerName:         "gnalloy.local",
+			InsecureSkipVerify: true,
+		},
+	})
+	serverTLS := Server(Config{TLS: &cryptotls.Config{Certificates: []cryptotls.Certificate{cert}}})
+	if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Pipeline().AddLast("errors", errorsSeen); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("echo", plainEcho{}); err != nil {
+		t.Fatal(err)
+	}
+
+	server.Pipeline().FireChannelActive()
+	client.Pipeline().FireChannelActive()
+	writePlain(t, client, "ping")
+
+	select {
+	case err := <-errorsSeen.ch:
+		if err == nil || errors.Is(err, ErrPeerCertificateUnavailable) {
+			t.Fatalf("err=%v, want hostname verification error", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for hostname verification error")
 	}
 }
 
@@ -150,6 +299,10 @@ func (plainEcho) ChannelRead(ctx *channel.HandlerContext, msg any) {
 }
 
 func testCertificate(t *testing.T) cryptotls.Certificate {
+	return testCertificateForName(t, "gnalloy.local")
+}
+
+func testCertificateForName(t *testing.T, name string) cryptotls.Certificate {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -157,10 +310,10 @@ func testCertificate(t *testing.T) cryptotls.Certificate {
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "gnalloy.local"},
+		Subject:      pkix.Name{CommonName: name},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
-		DNSNames:     []string{"gnalloy.local"},
+		DNSNames:     []string{name},
 		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
@@ -175,4 +328,12 @@ func testCertificate(t *testing.T) cryptotls.Certificate {
 		t.Fatal(err)
 	}
 	return cert
+}
+
+type errorRecorder struct {
+	ch chan error
+}
+
+func (r *errorRecorder) ExceptionCaught(_ *channel.HandlerContext, err error) {
+	r.ch <- err
 }
