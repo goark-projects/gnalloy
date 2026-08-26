@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"time"
+
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/observability"
 	"goark.dev/gnalloy/transport"
@@ -17,12 +19,16 @@ type Config struct {
 // ChannelMetricsHandler 把 Pipeline 生命周期、读写、flush、close 和异常事件记录为指标。
 type ChannelMetricsHandler struct {
 	recorder observability.ChannelRecorder
+	latency  observability.ChannelLatencyRecorder
 	sizer    observability.MessageSizer
 }
 
 func NewChannelMetricsHandler(config Config) *ChannelMetricsHandler {
+	recorder := observability.NormalizeChannelRecorder(config.Recorder)
+	latency, _ := recorder.(observability.ChannelLatencyRecorder)
 	return &ChannelMetricsHandler{
-		recorder: observability.NormalizeChannelRecorder(config.Recorder),
+		recorder: recorder,
+		latency:  latency,
 		sizer:    observability.NormalizeMessageSizer(config.Sizer),
 	}
 }
@@ -48,8 +54,15 @@ func (h *ChannelMetricsHandler) ChannelInactive(ctx *channel.HandlerContext) {
 }
 
 func (h *ChannelMetricsHandler) ChannelRead(ctx *channel.HandlerContext, msg any) {
-	h.recorder.RecordChannelRead(channelID(ctx), h.messageSize(msg))
+	id := channelID(ctx)
+	h.recorder.RecordChannelRead(id, h.messageSize(msg))
+	if h.latency == nil {
+		ctx.FireChannelRead(msg)
+		return
+	}
+	start := time.Now()
 	ctx.FireChannelRead(msg)
+	h.latency.RecordChannelReadDuration(id, time.Since(start))
 }
 
 func (h *ChannelMetricsHandler) ChannelReadComplete(ctx *channel.HandlerContext) {
@@ -65,7 +78,15 @@ func (h *ChannelMetricsHandler) ExceptionCaught(ctx *channel.HandlerContext, err
 func (h *ChannelMetricsHandler) Write(ctx *channel.HandlerContext, msg any) error {
 	id := channelID(ctx)
 	h.recorder.RecordChannelWrite(id, h.messageSize(msg))
-	if err := ctx.Write(msg); err != nil {
+	var start time.Time
+	if h.latency != nil {
+		start = time.Now()
+	}
+	err := ctx.Write(msg)
+	if h.latency != nil {
+		h.latency.RecordChannelWriteDuration(id, time.Since(start))
+	}
+	if err != nil {
 		h.recorder.RecordException(id, err)
 		return err
 	}
@@ -75,7 +96,15 @@ func (h *ChannelMetricsHandler) Write(ctx *channel.HandlerContext, msg any) erro
 func (h *ChannelMetricsHandler) Flush(ctx *channel.HandlerContext) error {
 	id := channelID(ctx)
 	h.recorder.RecordChannelFlush(id)
-	if err := ctx.Flush(); err != nil {
+	var start time.Time
+	if h.latency != nil {
+		start = time.Now()
+	}
+	err := ctx.Flush()
+	if h.latency != nil {
+		h.latency.RecordChannelFlushDuration(id, time.Since(start))
+	}
+	if err != nil {
 		h.recorder.RecordException(id, err)
 		return err
 	}
@@ -85,7 +114,15 @@ func (h *ChannelMetricsHandler) Flush(ctx *channel.HandlerContext) error {
 func (h *ChannelMetricsHandler) Close(ctx *channel.HandlerContext) error {
 	id := channelID(ctx)
 	h.recorder.RecordChannelClose(id)
-	if err := ctx.Close(); err != nil {
+	var start time.Time
+	if h.latency != nil {
+		start = time.Now()
+	}
+	err := ctx.Close()
+	if h.latency != nil {
+		h.latency.RecordChannelCloseDuration(id, time.Since(start))
+	}
+	if err != nil {
 		h.recorder.RecordException(id, err)
 		return err
 	}

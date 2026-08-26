@@ -3,6 +3,7 @@ package metrics
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
@@ -11,9 +12,12 @@ import (
 
 func TestChannelMetricsHandlerRecordsInboundOutboundAndLifecycle(t *testing.T) {
 	recorder := observability.NewAtomicChannelRecorder()
-	sink := &metricsSink{}
+	sink := &metricsSink{delay: time.Millisecond}
 	ch := channel.NewLocalChannel(42, buffer.NewHeapAllocator(), sink)
 	if err := ch.Pipeline().AddLast("metrics", NewChannelMetricsHandler(Config{Recorder: recorder})); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("slow", slowMetricsHandler{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -42,6 +46,9 @@ func TestChannelMetricsHandlerRecordsInboundOutboundAndLifecycle(t *testing.T) {
 	}
 	if snapshot.OutboundMessages != 1 || snapshot.OutboundBytes != 3 || snapshot.Flushes != 1 || snapshot.Closes != 1 {
 		t.Fatalf("outbound=%+v", snapshot)
+	}
+	if snapshot.InboundReadNanos == 0 || snapshot.OutboundWriteNanos == 0 || snapshot.FlushNanos == 0 || snapshot.CloseNanos == 0 {
+		t.Fatalf("latency not recorded: %+v", snapshot)
 	}
 	if len(sink.writes) != 1 || string(sink.writes[0].Bytes()) != "out" || sink.flushes != 1 || sink.closes != 1 {
 		t.Fatalf("sink writes=%d flushes=%d closes=%d", len(sink.writes), sink.flushes, sink.closes)
@@ -82,9 +89,13 @@ type metricsSink struct {
 	flushes  int
 	closes   int
 	writeErr error
+	delay    time.Duration
 }
 
 func (s *metricsSink) Write(msg any) error {
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
 	if s.writeErr != nil {
 		return s.writeErr
 	}
@@ -95,11 +106,17 @@ func (s *metricsSink) Write(msg any) error {
 }
 
 func (s *metricsSink) Flush() error {
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
 	s.flushes++
 	return nil
 }
 
 func (s *metricsSink) Close() error {
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
 	s.closes++
 	return nil
 }
@@ -118,4 +135,11 @@ func metricsBuffer(t *testing.T, value string) buffer.ByteBuf {
 		t.Fatal(err)
 	}
 	return buf
+}
+
+type slowMetricsHandler struct{}
+
+func (slowMetricsHandler) ChannelRead(ctx *channel.HandlerContext, msg any) {
+	time.Sleep(time.Millisecond)
+	ctx.FireChannelRead(msg)
 }

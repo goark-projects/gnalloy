@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/transport"
@@ -19,6 +20,11 @@ func TestAtomicChannelRecorderAggregatesChannelMetrics(t *testing.T) {
 	recorder.RecordChannelRead(id, -1)
 	recorder.RecordChannelReadComplete(id)
 	recorder.RecordChannelWrite(id, 3)
+	recorder.RecordChannelReadDuration(id, 2*time.Nanosecond)
+	recorder.RecordChannelReadDuration(id, time.Nanosecond)
+	recorder.RecordChannelWriteDuration(id, 3*time.Nanosecond)
+	recorder.RecordChannelFlushDuration(id, 4*time.Nanosecond)
+	recorder.RecordChannelCloseDuration(id, 5*time.Nanosecond)
 	recorder.RecordChannelFlush(id)
 	recorder.RecordException(id, errors.New("boom"))
 	recorder.RecordChannelClose(id)
@@ -37,6 +43,12 @@ func TestAtomicChannelRecorderAggregatesChannelMetrics(t *testing.T) {
 	}
 	if snapshot.OutboundMessages != 1 || snapshot.OutboundBytes != 3 || snapshot.Flushes != 1 || snapshot.Closes != 1 || snapshot.Exceptions != 1 {
 		t.Fatalf("outbound=%+v", snapshot)
+	}
+	if snapshot.InboundReadNanos != 3 || snapshot.MaxInboundReadNanos != 2 {
+		t.Fatalf("read latency=%+v", snapshot)
+	}
+	if snapshot.OutboundWriteNanos != 3 || snapshot.FlushNanos != 4 || snapshot.CloseNanos != 5 {
+		t.Fatalf("operation latency=%+v", snapshot)
 	}
 }
 
