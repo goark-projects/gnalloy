@@ -42,14 +42,15 @@ type Report struct {
 
 // ScenarioResult 描述单个压测命令的执行结果。
 type ScenarioResult struct {
-	Scenario Scenario      `json:"scenario"`
-	Started  time.Time     `json:"started"`
-	Finished time.Time     `json:"finished"`
-	Duration time.Duration `json:"duration"`
-	ExitCode int           `json:"exitCode"`
-	Skipped  bool          `json:"skipped"`
-	Output   string        `json:"output,omitempty"`
-	Error    string        `json:"error,omitempty"`
+	Scenario Scenario          `json:"scenario"`
+	Started  time.Time         `json:"started"`
+	Finished time.Time         `json:"finished"`
+	Duration time.Duration     `json:"duration"`
+	ExitCode int               `json:"exitCode"`
+	Skipped  bool              `json:"skipped"`
+	Metrics  []BenchmarkMetric `json:"metrics,omitempty"`
+	Output   string            `json:"output,omitempty"`
+	Error    string            `json:"error,omitempty"`
 }
 
 // Run 执行全部场景并返回报告。单个场景失败不会中止后续场景。
@@ -68,7 +69,8 @@ func (r Runner) Run(ctx context.Context, spec Spec) (Report, error) {
 		Machine:   DetectMachine(),
 		Scenarios: make([]ScenarioResult, 0, len(spec.Scenarios)),
 	}
-	for _, scenario := range spec.Scenarios {
+	for _, original := range spec.Scenarios {
+		scenario := expandScenario(original, spec.Variables)
 		result := r.runScenario(ctx, scenario)
 		report.Scenarios = append(report.Scenarios, result)
 	}
@@ -79,6 +81,13 @@ func (r Runner) Run(ctx context.Context, spec Spec) (Report, error) {
 func (r Runner) runScenario(ctx context.Context, scenario Scenario) ScenarioResult {
 	started := r.now()
 	result := ScenarioResult{Scenario: scenario, Started: started}
+	if scenario.Skip {
+		result.Skipped = true
+		result.Output = scenario.SkipReason
+		result.Finished = r.now()
+		result.Duration = result.Finished.Sub(started)
+		return result
+	}
 	if r.DryRun {
 		result.Skipped = true
 		result.Finished = r.now()
@@ -103,6 +112,7 @@ func (r Runner) runScenario(ctx context.Context, scenario Scenario) ScenarioResu
 	cmd.Stderr = &out
 	err := cmd.Run()
 	result.Output = out.String()
+	result.Metrics = ParseBenchmarkMetrics(result.Output)
 	result.Finished = r.now()
 	result.Duration = result.Finished.Sub(started)
 	result.ExitCode = exitCode(err)

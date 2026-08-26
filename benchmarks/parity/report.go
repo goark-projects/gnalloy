@@ -65,12 +65,27 @@ func writeMarkdown(w io.Writer, report Report) error {
 	writeRow(&b, "cpus", strconv.Itoa(report.Machine.CPUs))
 	writeRow(&b, "go", report.Machine.Go)
 	writeRow(&b, "ips", report.Machine.IPs)
+	writeSummary(&b, report)
 	b.WriteString("\n## Scenarios\n\n")
 	for _, result := range report.Scenarios {
 		writeScenario(&b, result)
 	}
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+func writeSummary(b *strings.Builder, report Report) {
+	if !hasMetrics(report) {
+		return
+	}
+	b.WriteString("\n## Summary\n\n")
+	b.WriteString("| Scenario | Framework | Protocol | Benchmark | ns/op | B/op | allocs/op |\n")
+	b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: |\n")
+	for _, result := range report.Scenarios {
+		for _, metric := range result.Metrics {
+			writeMetricRow(b, result.Scenario, metric)
+		}
+	}
 }
 
 func writeScenario(b *strings.Builder, result ScenarioResult) {
@@ -97,6 +112,25 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 		b.WriteString(escapeFence(result.Output))
 		b.WriteString("\n```\n\n")
 	}
+	if len(result.Metrics) > 0 {
+		b.WriteString("Metrics:\n\n")
+		b.WriteString("| Benchmark | Iterations | ns/op | B/op | allocs/op |\n")
+		b.WriteString("| --- | ---: | ---: | ---: | ---: |\n")
+		for _, metric := range result.Metrics {
+			b.WriteString("| ")
+			b.WriteString(escapeCell(metric.Name))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(metric.Iterations, 10))
+			b.WriteString(" | ")
+			b.WriteString(formatFloat(metric.NsPerOp))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(metric.BytesPerOp, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(metric.AllocsPerOp, 10))
+			b.WriteString(" |\n")
+		}
+		b.WriteString("\n")
+	}
 }
 
 func writeRow(b *strings.Builder, key string, value string) {
@@ -118,4 +152,35 @@ func escapeCell(value string) string {
 
 func escapeFence(value string) string {
 	return strings.ReplaceAll(value, "```", "`\u200b``")
+}
+
+func hasMetrics(report Report) bool {
+	for _, result := range report.Scenarios {
+		if len(result.Metrics) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func writeMetricRow(b *strings.Builder, scenario Scenario, metric BenchmarkMetric) {
+	b.WriteString("| ")
+	b.WriteString(escapeCell(scenario.Name))
+	b.WriteString(" | ")
+	b.WriteString(escapeCell(scenario.Framework))
+	b.WriteString(" | ")
+	b.WriteString(escapeCell(scenario.Protocol))
+	b.WriteString(" | ")
+	b.WriteString(escapeCell(metric.Name))
+	b.WriteString(" | ")
+	b.WriteString(formatFloat(metric.NsPerOp))
+	b.WriteString(" | ")
+	b.WriteString(strconv.FormatInt(metric.BytesPerOp, 10))
+	b.WriteString(" | ")
+	b.WriteString(strconv.FormatInt(metric.AllocsPerOp, 10))
+	b.WriteString(" |\n")
+}
+
+func formatFloat(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }

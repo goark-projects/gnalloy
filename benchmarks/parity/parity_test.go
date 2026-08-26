@@ -17,6 +17,49 @@ func TestLoadSpecRejectsInvalidScenario(t *testing.T) {
 	}
 }
 
+func TestLoadSpecAllowsSkippedExternalScenarioWithoutCommand(t *testing.T) {
+	spec, err := LoadSpec(strings.NewReader(`{
+		"scenarios": [{
+			"name": "netty tcp echo",
+			"framework": "netty",
+			"protocol": "tcp-echo",
+			"skip": true,
+			"skipReason": "external harness is not installed"
+		}]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !spec.Scenarios[0].Skip || spec.Scenarios[0].SkipReason == "" {
+		t.Fatalf("scenario=%+v", spec.Scenarios[0])
+	}
+}
+
+func TestBaselineSpecLoads(t *testing.T) {
+	file, err := os.Open("baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) < 5 {
+		t.Fatalf("scenarios=%d, want external baseline set", len(spec.Scenarios))
+	}
+	hasSkippedExternal := false
+	for _, scenario := range spec.Scenarios {
+		if scenario.Skip && scenario.SkipReason != "" && scenario.Framework != "gnalloy" {
+			hasSkippedExternal = true
+		}
+	}
+	if !hasSkippedExternal {
+		t.Fatal("baseline must include skipped external framework scenarios")
+	}
+}
+
 func TestRunnerDryRunProducesSkippedResults(t *testing.T) {
 	spec := Spec{
 		Name: "dry-run",
@@ -36,9 +79,30 @@ func TestRunnerDryRunProducesSkippedResults(t *testing.T) {
 	}
 }
 
+func TestRunnerSkipsScenarioMarkedSkip(t *testing.T) {
+	spec := Spec{
+		Name: "skip",
+		Scenarios: []Scenario{{
+			Name:       "netty",
+			Framework:  "netty",
+			Protocol:   "tcp-echo",
+			Skip:       true,
+			SkipReason: "external harness missing",
+		}},
+	}
+	report, err := Runner{Now: fixedNow()}.Run(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := report.Scenarios[0]
+	if !result.Skipped || result.Output != "external harness missing" || result.ExitCode != 0 {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
 func TestRunnerCapturesCommandOutput(t *testing.T) {
 	if os.Getenv("GNALLOY_PARITY_HELPER") == "1" {
-		os.Stdout.WriteString("helper-output\n")
+		os.Stdout.WriteString("helper-output\nBenchmarkEcho-16 1000 123 ns/op 64 B/op 2 allocs/op\n")
 		return
 	}
 	spec := Spec{
@@ -60,6 +124,40 @@ func TestRunnerCapturesCommandOutput(t *testing.T) {
 	if result.ExitCode != 0 || !strings.Contains(result.Output, "helper-output") {
 		t.Fatalf("result=%+v", result)
 	}
+	if len(result.Metrics) != 1 || result.Metrics[0].Name != "BenchmarkEcho-16" || result.Metrics[0].NsPerOp != 123 {
+		t.Fatalf("metrics=%+v", result.Metrics)
+	}
+}
+
+func TestRunnerExpandsScenarioVariables(t *testing.T) {
+	if os.Getenv("GNALLOY_PARITY_HELPER") == "2" {
+		os.Stdout.WriteString(os.Getenv("GNALLOY_PARITY_PAYLOAD"))
+		return
+	}
+	spec := Spec{
+		Name:      "vars",
+		Variables: map[string]string{"PAYLOAD": "1KiB"},
+		Scenarios: []Scenario{{
+			Name:      "helper",
+			Framework: "test",
+			Protocol:  "raw",
+			Payload:   "${PAYLOAD}",
+			Command:   []string{os.Args[0], "-test.run=TestRunnerExpandsScenarioVariables"},
+			Env: map[string]string{
+				"GNALLOY_PARITY_HELPER":  "2",
+				"GNALLOY_PARITY_PAYLOAD": "${PAYLOAD}",
+			},
+			Timeout: Duration(time.Second),
+		}},
+	}
+	report, err := Runner{Now: fixedNow()}.Run(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := report.Scenarios[0]
+	if result.Scenario.Payload != "1KiB" || !strings.Contains(result.Output, "1KiB") {
+		t.Fatalf("result=%+v", result)
+	}
 }
 
 func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
@@ -69,6 +167,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		Scenarios: []ScenarioResult{{
 			Scenario: Scenario{Name: "netty", Framework: "netty", Protocol: "tcp", Command: []string{"java", "-jar", "bench.jar"}},
 			Output:   "ok\n",
+			Metrics:  []BenchmarkMetric{{Name: "BenchmarkEcho-16", Iterations: 1000, NsPerOp: 123, BytesPerOp: 64, AllocsPerOp: 2}},
 		}},
 	}
 	var out bytes.Buffer
@@ -76,7 +175,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"# parity", "| os | linux |", "### netty", "java -jar bench.jar", "ok"} {
+	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}

@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "benchmarks/parity/example.json", "parity benchmark json spec")
+	configPath := flag.String("config", "benchmarks/parity/baseline.json", "parity benchmark json spec")
 	outPath := flag.String("out", "", "report output path, empty writes stdout")
 	format := flag.String("format", "markdown", "report format: markdown or json")
 	dryRun := flag.Bool("dry-run", false, "validate spec and render report without executing commands")

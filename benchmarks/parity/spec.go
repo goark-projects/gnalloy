@@ -18,15 +18,18 @@ type Spec struct {
 
 // Scenario 描述一个可独立复现的压测命令。
 type Scenario struct {
-	Name      string            `json:"name"`
-	Framework string            `json:"framework"`
-	Protocol  string            `json:"protocol"`
-	Payload   string            `json:"payload,omitempty"`
-	Backend   string            `json:"backend,omitempty"`
-	WorkDir   string            `json:"workDir,omitempty"`
-	Command   []string          `json:"command"`
-	Env       map[string]string `json:"env,omitempty"`
-	Timeout   Duration          `json:"timeout,omitempty"`
+	Name       string            `json:"name"`
+	Framework  string            `json:"framework"`
+	Protocol   string            `json:"protocol"`
+	Payload    string            `json:"payload,omitempty"`
+	Backend    string            `json:"backend,omitempty"`
+	WorkDir    string            `json:"workDir,omitempty"`
+	Command    []string          `json:"command,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	Timeout    Duration          `json:"timeout,omitempty"`
+	Tags       []string          `json:"tags,omitempty"`
+	Skip       bool              `json:"skip,omitempty"`
+	SkipReason string            `json:"skipReason,omitempty"`
 }
 
 // Duration 为 JSON 配置提供 time.Duration 文本格式。
@@ -94,7 +97,7 @@ func (s Scenario) Validate() error {
 	if strings.TrimSpace(s.Protocol) == "" {
 		return fmt.Errorf("empty protocol")
 	}
-	if len(s.Command) == 0 || strings.TrimSpace(s.Command[0]) == "" {
+	if !s.Skip && (len(s.Command) == 0 || strings.TrimSpace(s.Command[0]) == "") {
 		return fmt.Errorf("empty command")
 	}
 	if time.Duration(s.Timeout) < 0 {
