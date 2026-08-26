@@ -7,4 +7,5 @@
 //
 // raw socket 通常需要管理员或 CAP_NET_RAW 权限；不同操作系统对 raw TCP/UDP
 // 发包限制不同，具体错误会从底层系统调用原样返回。
+// completion 后端复用 datagram IORequest，但运行成功仍取决于平台 raw socket 权限。
 package raw

@@ -12,5 +12,5 @@ var (
 	ErrInvalidVarInt         = errors.New("gnalloy/transport/quic: invalid variable-length integer")
 	ErrConnectionNotFound    = errors.New("gnalloy/transport/quic: connection not found")
 	ErrNotImplemented        = errors.New("gnalloy/transport/quic: protocol engine is not implemented yet")
-	ErrUnsupportedCompletion = errors.New("gnalloy/transport/quic: completion poller packet ops are not implemented yet")
+	ErrUnsupportedCompletion = errors.New("gnalloy/transport/quic: selected completion backend does not support UDP packet ops")
 )

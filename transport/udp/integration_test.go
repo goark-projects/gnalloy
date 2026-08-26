@@ -3,7 +3,6 @@ package udp_test
 import (
 	"context"
 	"net"
-	"runtime"
 	"testing"
 	"time"
 
@@ -16,10 +15,6 @@ import (
 )
 
 func TestBootstrapUDPResponsibilityChainEcho(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("当前 UDP 服务端暂不在 IOCP completion poller 上运行")
-	}
-
 	boss, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{
 		Size:         1,
 		PollerConfig: transport.Config{Backend: transport.DefaultBackend()},

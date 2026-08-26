@@ -89,6 +89,7 @@ go run ./examples/fixed-length -addr :9004 -backend default -workers 4 -frame-le
 Codec parity:
 
 - Netty codec 对齐清单见 `docs/netty-codec-parity.md`。
+- Transport completion 支持矩阵见 `docs/transport-completion-matrix.md`。
 
 Verification:
 
@@ -209,6 +210,9 @@ Backend matrix:
 | `iocp` | Windows | completion / Proactor | implemented for AcceptEx/WSARecv/WSASend/close |
 | `std` | all | readiness / polling fallback | implemented |
 | `memory` | all | in-process test poller | implemented for tests |
+
+Transport-level readiness/completion coverage is tracked in
+`docs/transport-completion-matrix.md`.
 
 Current validation boundary:
 

@@ -7,5 +7,5 @@ var (
 	ErrInvalidPacket         = errors.New("gnalloy/transport/raw: invalid packet")
 	ErrInvalidProtocol       = errors.New("gnalloy/transport/raw: invalid protocol")
 	ErrServerClosed          = errors.New("gnalloy/transport/raw: server closed")
-	ErrUnsupportedCompletion = errors.New("gnalloy/transport/raw: completion poller packet ops are not implemented yet")
+	ErrUnsupportedCompletion = errors.New("gnalloy/transport/raw: selected completion backend does not support packet ops")
 )

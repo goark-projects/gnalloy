@@ -7,5 +7,5 @@ var (
 	ErrInvalidDatagram       = errors.New("gnalloy/transport/udp: invalid datagram")
 	ErrServerClosed          = errors.New("gnalloy/transport/udp: server closed")
 	ErrUnsupportedReusePort  = errors.New("gnalloy/transport/udp: SO_REUSEPORT is unsupported")
-	ErrUnsupportedCompletion = errors.New("gnalloy/transport/udp: completion poller datagram ops are not implemented yet")
+	ErrUnsupportedCompletion = errors.New("gnalloy/transport/udp: selected completion backend does not support datagram ops")
 )
