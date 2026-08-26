@@ -27,7 +27,13 @@ func (c *memoryConn) feed(src []byte) error {
 	if len(src) == 0 {
 		return nil
 	}
-	data := append([]byte(nil), src...)
+	return c.feedOwned(append([]byte(nil), src...))
+}
+
+func (c *memoryConn) feedOwned(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
 	select {
 	case c.in <- data:
 		return nil

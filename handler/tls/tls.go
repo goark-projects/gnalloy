@@ -116,8 +116,9 @@ func (h *Handler) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		return
 	}
 	h.ensureStarted()
-	err := h.raw.feed(buf.Bytes())
+	data := copyReadableBytes(buf)
 	buf.Release()
+	err := h.raw.feedOwned(data)
 	if err != nil {
 		h.fail(ctx, err)
 		return
@@ -138,7 +139,7 @@ func (h *Handler) Write(ctx *channel.HandlerContext, msg any) error {
 	if !ok {
 		return ctx.Write(msg)
 	}
-	data := append([]byte(nil), buf.Bytes()...)
+	data := copyReadableBytes(buf)
 	buf.Release()
 	if len(data) == 0 {
 		return nil
