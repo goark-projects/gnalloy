@@ -1,6 +1,7 @@
 param(
     [string]$Benchtime = "100ms",
-    [int]$Count = 1
+    [int]$Count = 1,
+    [string]$FuzzTime = "2s"
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,6 +30,14 @@ function Invoke-CheckedGo([string[]]$GoArgs) {
     }
 }
 
+function Invoke-FuzzSmoke([string]$Name, [string]$Target, [string]$Package) {
+    if ([string]::IsNullOrWhiteSpace($FuzzTime)) {
+        return
+    }
+    Write-Host "== fuzz: $Name"
+    Invoke-CheckedGo @("test", "-run", "^$", "-fuzz", $Target, "-fuzztime", $FuzzTime, $Package)
+}
+
 Push-Location $repo
 try {
     $go = Resolve-GoCommand
@@ -37,6 +46,12 @@ try {
     Write-Host "== tests: full suite"
     Invoke-CheckedGo @("test", "./...", "-count=$Count")
 
+    Invoke-FuzzSmoke "codec length-field" "FuzzLengthFieldBasedFrameDecoder" "./codec"
+    Invoke-FuzzSmoke "http1 request" "FuzzHTTP1RequestDecoder" "./codec/http1"
+    Invoke-FuzzSmoke "websocket frame" "FuzzWebSocketFrameDecoder" "./codec/websocket"
+    Invoke-FuzzSmoke "mqtt frame pipeline" "FuzzMQTTFramePipeline" "./codec/mqtt"
+    Invoke-FuzzSmoke "quic frame scanner" "FuzzQUICFrameScanner" "./transport/quic"
+
     Write-Host "== benchmarks: hot path allocation guards"
     Invoke-CheckedGo @(
         "test",
@@ -44,8 +59,9 @@ try {
         "./codec",
         "./queue",
         "./timer",
+        "./observability",
         "-run", "^$",
-        "-bench", "Benchmark(HeapAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|MPSCOfferPoll|WheelScheduleAdvance)$",
+        "-bench", "Benchmark(HeapAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead)$",
         "-benchmem",
         "-benchtime", $Benchtime,
         "-count=$Count"

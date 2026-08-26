@@ -50,6 +50,7 @@ run_bench "codec" 'Benchmark(LengthFieldDecoder|FixedLengthFrameDecoder|LineBase
 run_bench "codec-protocol" "." ./codec/icmp ./codec/ip
 run_bench "queue" "." ./queue
 run_bench "timer" "." ./timer
+run_bench "observability" "." ./observability
 run_bench "quic" "." ./transport/quic
 run_bench "udp" "." ./transport/udp
 run_bench "raw" "." ./transport/raw

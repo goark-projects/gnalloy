@@ -50,6 +50,9 @@ blocks:
   negotiation events.
 - `handler/proxy`: HTTP CONNECT client handler plus SOCKS5 and HAProxy v1/v2
   wire helpers for proxy negotiation and source-address metadata.
+- `handler/metrics` and `observability`: vendor-neutral Channel metrics
+  contracts, an atomic low-overhead recorder, and a Pipeline handler for
+  lifecycle, read/write byte, flush, close, and exception counters.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `resolver/dns`: Go-native DNS resolver with system fallback, explicit
   exchanger hooks, UDP query support, and A/AAAA lookup helpers.
@@ -86,8 +89,9 @@ go run ./examples/line-frame -addr :9003 -backend default -workers 4
 go run ./examples/fixed-length -addr :9004 -backend default -workers 4 -frame-length 4
 ```
 
-Codec parity:
+Netty parity:
 
+- Netty 对标总览见 `docs/netty-parity.md`。
 - Netty codec 对齐清单见 `docs/netty-codec-parity.md`。
 - Transport completion 支持矩阵见 `docs/transport-completion-matrix.md`。
 
@@ -95,6 +99,7 @@ Verification:
 
 ```bash
 go test ./...
+./scripts/verify-regression.sh
 ./scripts/verify-bench.sh
 GROUPS=codec,queue,timer ./scripts/verify-bench.sh
 ```
@@ -103,6 +108,7 @@ PowerShell:
 
 ```powershell
 go test ./...
+.\scripts\verify-regression.ps1
 .\scripts\verify-bench.ps1
 .\scripts\verify-bench.ps1 -Groups codec,queue,timer
 ```
@@ -227,6 +233,10 @@ Current validation boundary:
 - `buffer.StatAllocator` exposes allocator stats for leak checks. TCP servers
   expose cached worker allocator stats through `AllocatorStats()` when callers
   need runtime observability.
+- `handler/metrics.ChannelMetricsHandler` records Channel lifecycle, read/write
+  bytes, flush, close, and exception counters through
+  `observability.ChannelRecorder`; the bundled atomic recorder is a low-cardinality
+  default for smoke tests and embedded exporters.
 - `examples/stress-check` starts the server in-process and fails when active
   connections or allocator in-use counts do not drain to zero.
 - `Server.Close` stops acceptors, closes tracked active child channels, waits for

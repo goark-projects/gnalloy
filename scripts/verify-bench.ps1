@@ -75,6 +75,7 @@ try {
     Invoke-GoBench "codec-protocol" "." @("./codec/icmp", "./codec/ip")
     Invoke-GoBench "queue" "." @("./queue")
     Invoke-GoBench "timer" "." @("./timer")
+    Invoke-GoBench "observability" "." @("./observability")
     Invoke-GoBench "quic" "." @("./transport/quic")
     Invoke-GoBench "udp" "." @("./transport/udp")
     Invoke-GoBench "raw" "." @("./transport/raw")
