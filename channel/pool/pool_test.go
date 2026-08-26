@@ -188,6 +188,64 @@ func TestChannelPoolMapCreatesOnePoolPerKey(t *testing.T) {
 	}
 }
 
+func BenchmarkFixedPoolGetPut(b *testing.B) {
+	p, err := NewFixed(FixedConfig{
+		MaxConnections: 1,
+		MaxIdle:        1,
+		Factory: func(context.Context) (channel.Channel, error) {
+			ch, _ := newPoolTestChannel(1)
+			return ch, nil
+		},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer p.Close()
+	ch, err := p.Get(context.Background())
+	if err != nil {
+		b.Fatal(err)
+	}
+	if err := p.Put(ch); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ch, err := p.Get(context.Background())
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := p.Put(ch); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkChannelPoolMapGet(b *testing.B) {
+	m, err := NewMap(func(key string) (ChannelPool, error) {
+		return NewSimple(SimpleConfig{
+			MaxIdle: 1,
+			Factory: func(context.Context) (channel.Channel, error) {
+				ch, _ := newPoolTestChannel(1)
+				return ch, nil
+			},
+		})
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := m.Get("endpoint"); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := m.Get("endpoint"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 type poolTestSink struct {
 	closes int
 }

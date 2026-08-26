@@ -61,6 +61,7 @@
 | `HttpObjectDecoder/Encoder` | `codec/http1` | done | 支持请求/响应、Content-Length、chunked、trailers、聚合器、100-continue 和 chunked 出站。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |
 | `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame；HPACK 保持独立边界；已覆盖 fuzz smoke。 |
+| `Http2MultiplexHandler` | `codec/http2.StreamMultiplexer` | done | 支持 stream 生命周期事件、奇偶性校验、END_STREAM 半关闭、RST/GOAWAY 基础处理和连接/stream 窗口校验。 |
 | `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE 和未知扩展帧；已覆盖 fuzz smoke。 |
 | `BinaryMemcache*` | `codec/memcache` | done | 支持 Memcached binary request/response header、extras、key、value、opaque 和 CAS。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧和值解码能力；已覆盖 fuzz smoke。 |
@@ -74,6 +75,7 @@
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
 | `SslHandler` | `handler/tls` | done | 基于 `crypto/tls` 的 pipeline TLS handler，保持和 TCP/QUIC 等传输入口一致。 |
+| `SniHandler` / `StartTls` | `handler/tls` | done | 支持 StartTLS 事件启动、SNI 配置选择、握手事件和握手后主机名校验。 |
 
 ## 延后或独立扩展
 

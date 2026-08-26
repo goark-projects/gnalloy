@@ -137,6 +137,31 @@ func TestStreamMultiplexerRejectsWrongLocalStreamParity(t *testing.T) {
 	}
 }
 
+func BenchmarkStreamMultiplexerReadData(b *testing.B) {
+	mux, err := NewStreamMultiplexer(MultiplexerConfig{Server: true})
+	if err != nil {
+		b.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), discardSink{})
+	recorder := &streamEventRecorder{}
+	if err := ch.Pipeline().AddLast("mux", mux); err != nil {
+		b.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("recorder", recorder); err != nil {
+		b.Fatal(err)
+	}
+	ch.Pipeline().FireChannelRead(HeadersFrame{StreamID: 1, HeaderBlock: testHTTP2Buf(b, "h")})
+	recorder.release()
+	data := testHTTP2Buf(b, "abcd")
+	defer data.Release()
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ch.Pipeline().FireChannelRead(DataFrame{StreamID: 1, Data: data.Retain()})
+		recorder.release()
+	}
+}
+
 type streamEventRecorder struct {
 	events []StreamEvent
 }
@@ -156,7 +181,7 @@ func (r *streamEventRecorder) release() {
 	for _, event := range r.events {
 		event.Release()
 	}
-	r.events = nil
+	r.events = r.events[:0]
 }
 
 type recordingSink struct {
@@ -177,7 +202,7 @@ func (s *recordingSink) release() {
 			releasable.Release()
 		}
 	}
-	s.messages = nil
+	s.messages = s.messages[:0]
 }
 
 type discardSink struct{}
@@ -192,7 +217,7 @@ func (discardSink) Write(msg any) error {
 func (discardSink) Flush() error { return nil }
 func (discardSink) Close() error { return nil }
 
-func testHTTP2Buf(t *testing.T, data string) buffer.ByteBuf {
+func testHTTP2Buf(t testing.TB, data string) buffer.ByteBuf {
 	t.Helper()
 	buf := buffer.NewHeapBuffer(len(data))
 	if _, err := buf.WriteBytes([]byte(data)); err != nil {

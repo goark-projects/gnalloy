@@ -62,6 +62,31 @@ func TestHandlerAcceptsFirstMatchingRule(t *testing.T) {
 	recorder.release()
 }
 
+func BenchmarkIPFilterAllowedDatagram(b *testing.B) {
+	allow, err := AllowCIDR("127.0.0.0/8")
+	if err != nil {
+		b.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), &ipFilterSink{})
+	recorder := &ipFilterRecorder{}
+	if err := ch.Pipeline().AddLast("filter", NewHandler(Config{Rules: []Rule{allow}})); err != nil {
+		b.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("recorder", recorder); err != nil {
+		b.Fatal(err)
+	}
+	payload := ipFilterBuf(b, "ok")
+	defer payload.Release()
+	datagram := udp.Datagram{Payload: payload, Addr: udp.Address{IP: net.IPv4(127, 0, 0, 1), Port: 9000}}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		datagram.Payload = payload.Retain()
+		ch.Pipeline().FireChannelRead(datagram)
+		recorder.release()
+	}
+}
+
 type ipFilterRecorder struct {
 	messages []any
 }
@@ -76,7 +101,7 @@ func (r *ipFilterRecorder) release() {
 			releasable.Release()
 		}
 	}
-	r.messages = nil
+	r.messages = r.messages[:0]
 }
 
 type ipFilterSink struct {
@@ -91,7 +116,7 @@ func (s *ipFilterSink) Close() error {
 	return nil
 }
 
-func ipFilterBuf(t *testing.T, data string) buffer.ByteBuf {
+func ipFilterBuf(t testing.TB, data string) buffer.ByteBuf {
 	t.Helper()
 	buf := buffer.NewHeapBuffer(len(data))
 	if _, err := buf.WriteBytes([]byte(data)); err != nil {

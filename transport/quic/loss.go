@@ -75,7 +75,7 @@ func (r *LossRecovery) OnACK(space PacketNumberSpace, frame ACKFrame) ([]SentPac
 		if !packet.AckEliciting {
 			continue
 		}
-		if frame.LargestAcked >= pn+r.threshold {
+		if frame.LargestAcked > pn && frame.LargestAcked-pn >= r.threshold {
 			lost = append(lost, packet)
 			delete(sent, pn)
 		}

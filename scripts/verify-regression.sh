@@ -49,9 +49,9 @@ run_fuzz_smoke "http3 frame pipeline" "FuzzHTTP3FramePipeline" "./codec/http3"
 run_fuzz_smoke "quic frame scanner" "FuzzQUICFrameScanner" "./transport/quic"
 
 echo "== benchmarks: hot path allocation guards"
-"$GO_CMD" test ./buffer ./codec ./queue ./timer ./observability \
+"$GO_CMD" test ./buffer ./channel/pool ./codec ./codec/http2 ./handler/ipfilter ./handler/pcap ./queue ./timer ./observability ./transport/quic \
     -run '^$' \
-    -bench 'Benchmark(HeapAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead)$' \
+    -bench 'Benchmark(HeapAllocatorAcquireRelease|PooledAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedPoolGetPut|ChannelPoolMapGet|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|StreamMultiplexerReadData|IPFilterAllowedDatagram|PCAPCaptureByteBuf|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead|PrometheusExporter|QUICRuntimeApplyACK|QUICRuntimeReceiveStream)$' \
     -benchmem \
     -benchtime "$BENCHTIME" \
     -count="$COUNT"

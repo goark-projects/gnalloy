@@ -60,12 +60,17 @@ try {
     Invoke-CheckedGo @(
         "test",
         "./buffer",
+        "./channel/pool",
         "./codec",
+        "./codec/http2",
+        "./handler/ipfilter",
+        "./handler/pcap",
         "./queue",
         "./timer",
         "./observability",
+        "./transport/quic",
         "-run", "^$",
-        "-bench", "Benchmark(HeapAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead)$",
+        "-bench", "Benchmark(HeapAllocatorAcquireRelease|PooledAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedPoolGetPut|ChannelPoolMapGet|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|StreamMultiplexerReadData|IPFilterAllowedDatagram|PCAPCaptureByteBuf|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead|PrometheusExporter|QUICRuntimeApplyACK|QUICRuntimeReceiveStream)$",
         "-benchmem",
         "-benchtime", $Benchtime,
         "-count=$Count"

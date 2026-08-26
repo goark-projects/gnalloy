@@ -1,12 +1,24 @@
 package observability
 
 import (
-	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"sync"
 )
 
-const defaultMetricPrefix = "gnalloy_channel"
+const (
+	defaultMetricPrefix       = "gnalloy_channel"
+	initialPrometheusBufSize  = 4096
+	maxPrometheusBufCacheSize = 64 << 10
+)
+
+var prometheusBufferPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 0, initialPrometheusBufSize)
+		return &buf
+	},
+}
 
 // PrometheusConfig 描述 Prometheus 文本格式导出策略。
 type PrometheusConfig struct {
@@ -33,47 +45,82 @@ func (e *PrometheusExporter) Export(w io.Writer, metrics ChannelMetrics) error {
 	if e == nil || w == nil {
 		return ErrInvalidExporter
 	}
-	prefix := e.prefix
-	write := func(suffix string, kind string, help string, value any) error {
-		name := prefix + "_" + suffix
-		if _, err := fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s %s\n%s %v\n", name, help, name, kind, name, value); err != nil {
-			return err
-		}
-		return nil
+
+	bufPtr := prometheusBufferPool.Get().(*[]byte)
+	writer := prometheusWriter{
+		prefix: e.prefix,
+		buf:    (*bufPtr)[:0],
 	}
-	for _, metric := range []struct {
-		suffix string
-		kind   string
-		help   string
-		value  any
-	}{
-		{"registered_total", "counter", "Total registered channel events.", metrics.RegisteredChannels},
-		{"unregistered_total", "counter", "Total unregistered channel events.", metrics.UnregisteredChannels},
-		{"active_transitions_total", "counter", "Total channel active transitions.", metrics.ActiveTransitions},
-		{"inactive_transitions_total", "counter", "Total channel inactive transitions.", metrics.InactiveTransitions},
-		{"active", "gauge", "Currently active channels.", metrics.ActiveChannels},
-		{"inbound_messages_total", "counter", "Total inbound messages.", metrics.InboundMessages},
-		{"inbound_bytes_total", "counter", "Total inbound bytes.", metrics.InboundBytes},
-		{"inbound_completions_total", "counter", "Total inbound read-complete events.", metrics.InboundCompletions},
-		{"outbound_messages_total", "counter", "Total outbound messages.", metrics.OutboundMessages},
-		{"outbound_bytes_total", "counter", "Total outbound bytes.", metrics.OutboundBytes},
-		{"flushes_total", "counter", "Total flush events.", metrics.Flushes},
-		{"closes_total", "counter", "Total close events.", metrics.Closes},
-		{"exceptions_total", "counter", "Total exception events.", metrics.Exceptions},
-		{"inbound_read_duration_nanoseconds_total", "counter", "Total inbound read handler duration in nanoseconds.", metrics.InboundReadNanos},
-		{"inbound_read_duration_nanoseconds_max", "gauge", "Max inbound read handler duration in nanoseconds.", metrics.MaxInboundReadNanos},
-		{"outbound_write_duration_nanoseconds_total", "counter", "Total outbound write handler duration in nanoseconds.", metrics.OutboundWriteNanos},
-		{"outbound_write_duration_nanoseconds_max", "gauge", "Max outbound write handler duration in nanoseconds.", metrics.MaxOutboundWriteNanos},
-		{"flush_duration_nanoseconds_total", "counter", "Total flush handler duration in nanoseconds.", metrics.FlushNanos},
-		{"flush_duration_nanoseconds_max", "gauge", "Max flush handler duration in nanoseconds.", metrics.MaxFlushNanos},
-		{"close_duration_nanoseconds_total", "counter", "Total close handler duration in nanoseconds.", metrics.CloseNanos},
-		{"close_duration_nanoseconds_max", "gauge", "Max close handler duration in nanoseconds.", metrics.MaxCloseNanos},
-	} {
-		if err := write(metric.suffix, metric.kind, metric.help, metric.value); err != nil {
-			return err
-		}
+	writer.writeUint64("registered_total", "counter", "Total registered channel events.", metrics.RegisteredChannels)
+	writer.writeUint64("unregistered_total", "counter", "Total unregistered channel events.", metrics.UnregisteredChannels)
+	writer.writeUint64("active_transitions_total", "counter", "Total channel active transitions.", metrics.ActiveTransitions)
+	writer.writeUint64("inactive_transitions_total", "counter", "Total channel inactive transitions.", metrics.InactiveTransitions)
+	writer.writeInt64("active", "gauge", "Currently active channels.", metrics.ActiveChannels)
+	writer.writeUint64("inbound_messages_total", "counter", "Total inbound messages.", metrics.InboundMessages)
+	writer.writeUint64("inbound_bytes_total", "counter", "Total inbound bytes.", metrics.InboundBytes)
+	writer.writeUint64("inbound_completions_total", "counter", "Total inbound read-complete events.", metrics.InboundCompletions)
+	writer.writeUint64("outbound_messages_total", "counter", "Total outbound messages.", metrics.OutboundMessages)
+	writer.writeUint64("outbound_bytes_total", "counter", "Total outbound bytes.", metrics.OutboundBytes)
+	writer.writeUint64("flushes_total", "counter", "Total flush events.", metrics.Flushes)
+	writer.writeUint64("closes_total", "counter", "Total close events.", metrics.Closes)
+	writer.writeUint64("exceptions_total", "counter", "Total exception events.", metrics.Exceptions)
+	writer.writeUint64("inbound_read_duration_nanoseconds_total", "counter", "Total inbound read handler duration in nanoseconds.", metrics.InboundReadNanos)
+	writer.writeUint64("inbound_read_duration_nanoseconds_max", "gauge", "Max inbound read handler duration in nanoseconds.", metrics.MaxInboundReadNanos)
+	writer.writeUint64("outbound_write_duration_nanoseconds_total", "counter", "Total outbound write handler duration in nanoseconds.", metrics.OutboundWriteNanos)
+	writer.writeUint64("outbound_write_duration_nanoseconds_max", "gauge", "Max outbound write handler duration in nanoseconds.", metrics.MaxOutboundWriteNanos)
+	writer.writeUint64("flush_duration_nanoseconds_total", "counter", "Total flush handler duration in nanoseconds.", metrics.FlushNanos)
+	writer.writeUint64("flush_duration_nanoseconds_max", "gauge", "Max flush handler duration in nanoseconds.", metrics.MaxFlushNanos)
+	writer.writeUint64("close_duration_nanoseconds_total", "counter", "Total close handler duration in nanoseconds.", metrics.CloseNanos)
+	writer.writeUint64("close_duration_nanoseconds_max", "gauge", "Max close handler duration in nanoseconds.", metrics.MaxCloseNanos)
+
+	_, err := w.Write(writer.buf)
+	// 限制回池容量，避免异常大导出结果长期占用堆内存。
+	if cap(writer.buf) <= maxPrometheusBufCacheSize {
+		*bufPtr = writer.buf[:0]
+		prometheusBufferPool.Put(bufPtr)
 	}
-	return nil
+	return err
+}
+
+type prometheusWriter struct {
+	prefix string
+	buf    []byte
+}
+
+func (w *prometheusWriter) writeUint64(suffix string, kind string, help string, value uint64) {
+	w.writeHeader(suffix, kind, help)
+	w.buf = strconv.AppendUint(w.buf, value, 10)
+	w.buf = append(w.buf, '\n')
+}
+
+func (w *prometheusWriter) writeInt64(suffix string, kind string, help string, value int64) {
+	w.writeHeader(suffix, kind, help)
+	w.buf = strconv.AppendInt(w.buf, value, 10)
+	w.buf = append(w.buf, '\n')
+}
+
+func (w *prometheusWriter) writeHeader(suffix string, kind string, help string) {
+	w.writeString("# HELP ")
+	w.writeName(suffix)
+	w.writeString(" ")
+	w.writeString(help)
+	w.writeString("\n# TYPE ")
+	w.writeName(suffix)
+	w.writeString(" ")
+	w.writeString(kind)
+	w.writeString("\n")
+	w.writeName(suffix)
+	w.writeString(" ")
+}
+
+func (w *prometheusWriter) writeName(suffix string) {
+	w.writeString(w.prefix)
+	w.buf = append(w.buf, '_')
+	w.writeString(suffix)
+}
+
+func (w *prometheusWriter) writeString(value string) {
+	w.buf = append(w.buf, value...)
 }
 
 func sanitizeMetricName(name string) string {

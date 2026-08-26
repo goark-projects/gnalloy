@@ -164,6 +164,46 @@ func TestConnectionRuntimeAppliesACKToCongestion(t *testing.T) {
 	}
 }
 
+func BenchmarkQUICRuntimeApplyACK(b *testing.B) {
+	conn := &Connection{Remote: udp.Address{IP: net.IPv4(127, 0, 0, 1), Port: 4433}}
+	runtime, err := NewRuntime(conn, RuntimeConfig{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		number := uint64(i + 1)
+		if err := runtime.Congestion.OnPacketSent(1); err != nil {
+			b.Fatal(err)
+		}
+		runtime.Loss.OnPacketSent(SentPacket{
+			Space:        PacketNumberSpaceApplication,
+			Number:       number,
+			Bytes:        1,
+			AckEliciting: true,
+		})
+		if err := runtime.ApplyFrame(PacketNumberSpaceApplication, ACKFrame{LargestAcked: number, FirstAckRange: 0}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkQUICRuntimeReceiveStream(b *testing.B) {
+	runtime := &Runtime{Streams: NewStreamManager(65535, ^uint64(0))}
+	data := quicTestBuf("abcd")
+	defer data.Release()
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		frame := StreamFrame{StreamID: 1, Offset: uint64(i * 4), Data: data.Retain()}
+		if err := runtime.ApplyFrame(PacketNumberSpaceApplication, frame); err != nil {
+			frame.Release()
+			b.Fatal(err)
+		}
+		frame.Release()
+	}
+}
+
 func rangesEqual(a []PacketNumberRange, b []PacketNumberRange) bool {
 	if len(a) != len(b) {
 		return false

@@ -101,6 +101,16 @@ func TestPrometheusExporterWritesTextFormat(t *testing.T) {
 	}
 }
 
+func TestPrometheusExporterPropagatesWriterError(t *testing.T) {
+	want := errors.New("write failed")
+	exporter := NewPrometheusExporter(PrometheusConfig{})
+	recorder := NewAtomicChannelRecorder()
+
+	if err := ExportSnapshot(errorWriter{err: want}, recorder, exporter); !errors.Is(err, want) {
+		t.Fatalf("err=%v, want %v", err, want)
+	}
+}
+
 func TestAtomicChannelRecorderConcurrentUpdates(t *testing.T) {
 	recorder := NewAtomicChannelRecorder()
 	const workers = 8
@@ -141,4 +151,28 @@ func BenchmarkAtomicChannelRecorderRead(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		recorder.RecordChannelRead(1, 64)
 	}
+}
+
+func BenchmarkPrometheusExporter(b *testing.B) {
+	recorder := NewAtomicChannelRecorder()
+	recorder.RecordChannelActive(1)
+	recorder.RecordChannelRead(1, 64)
+	exporter := NewPrometheusExporter(PrometheusConfig{})
+	var out bytes.Buffer
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		out.Reset()
+		if err := ExportSnapshot(&out, recorder, exporter); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+type errorWriter struct {
+	err error
+}
+
+func (w errorWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }

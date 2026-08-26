@@ -21,11 +21,12 @@ Local development:
 replace goark.dev/gnalloy => G:/opensource/goark/gnalloy
 ```
 
-The first implementation slice provides stable contracts and hot-path building
+The current implementation provides stable contracts and hot-path building
 blocks:
 
 - `buffer`: reference-counted `ByteBuf`, zero-copy slices, readable slice views,
-  composite buffers, heap allocator, and Linux mmap slab allocator.
+  composite buffers, heap allocator, cross-platform size-class pooled
+  allocator, stat allocator, and Linux mmap slab allocator.
 - `codec`: Netty-style codec foundations including `ByteToMessageDecoder`,
   composite/merge cumulators, `MessageToByteEncoder`, message-to-message
   codecs, combined duplex handler, length-field, delimiter, line,
@@ -40,22 +41,32 @@ blocks:
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`, and
   `FileRegion` fallback encoding; the `Unsafe` bridge normalizes
   readiness/completion events before they enter business handlers.
-- `channel/pool`: small Channel reuse pool with explicit factory, health check,
-  return, discard, and close semantics.
+- `channel/pool`: `SimplePool`, `FixedPool`, and `Map` Channel reuse
+  primitives with explicit factory, health check, lifecycle callback, return,
+  discard, timeout, and close semantics.
 - `handler/timeout`: time-wheel based `IdleStateHandler`,
   `ReadTimeoutHandler`, and `WriteTimeoutHandler` without per-connection
   `time.Timer` allocation.
 - `handler/tls`: Go-native TLS handler backed by `crypto/tls`, exposing
   plaintext `ByteBuf` to business handlers while preserving SNI and ALPN
-  negotiation events.
+  negotiation events; StartTLS and SNI-driven config selection are handled as
+  explicit pipeline controls.
+- `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
+  messages, and custom remote-address providers.
+- `handler/pcap`: pipeline-level libpcap capture for inbound and outbound
+  payloads without taking message ownership.
 - `handler/proxy`: HTTP CONNECT client handler plus SOCKS5 and HAProxy v1/v2
   wire helpers for proxy negotiation and source-address metadata.
 - `handler/metrics` and `observability`: vendor-neutral Channel metrics
   contracts, an atomic low-overhead recorder, and a Pipeline handler for
-  lifecycle, read/write byte, flush, close, and exception counters.
+  lifecycle, read/write byte, flush, close, and exception counters; the
+  observability package also includes a dependency-free Prometheus text
+  exporter.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `resolver/dns`: Go-native DNS resolver with system fallback, explicit
-  exchanger hooks, UDP query support, and A/AAAA lookup helpers.
+  exchanger hooks, UDP query support, TCP fallback, hosts override,
+  search-domain/ndots expansion, bounded CNAME follow, cache clearing, and
+  A/AAAA lookup helpers.
 - `timer`: local hashed wheel timer for idle and heartbeat checks.
 - `transport`: EventLoop, Channel identity contracts, and a thin factory over
   split poller packages.
@@ -75,10 +86,12 @@ blocks:
 - `transport/poller/kqueue`: macOS/BSD kqueue readiness backend.
 - `transport/poller/iocp`: Windows IOCP completion backend with
   AcceptEx/WSARecv/WSASend close completion support.
-- `transport/quic`: minimal QUIC packet engine over UDP, including packet
-  encode/decode, connection-ID routing, and frame dispatch boundaries. It does
-  not yet implement the full TLS 1.3, ACK, loss recovery, congestion control,
-  migration, flow-control, or stream-multiplexing state machines.
+- `transport/quic`: QUIC packet/runtime engine over UDP, including packet
+  encode/decode, connection-ID routing, frame dispatch, ACK range tracking,
+  packet-threshold loss detection, Reno-style congestion window, stream
+  flow-control state, and path validation/migration state. It does not yet
+  implement the full TLS 1.3 packet protection, handshake, retransmission
+  timer, 0-RTT, HTTP/3 integration, or RFC 9000 interop stack.
 
 Examples:
 
@@ -94,6 +107,7 @@ Netty parity:
 - Netty 对标总览见 `docs/netty-parity.md`。
 - Netty codec 对齐清单见 `docs/netty-codec-parity.md`。
 - Transport completion 支持矩阵见 `docs/transport-completion-matrix.md`。
+- Benchmark parity 口径见 `docs/benchmark-parity.md`。
 
 Verification:
 

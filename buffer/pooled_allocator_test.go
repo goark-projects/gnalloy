@@ -104,6 +104,22 @@ func TestPooledAllocatorCloseRejectsAcquireAndDropsRelease(t *testing.T) {
 	}
 }
 
+func TestPooledAllocatorIgnoresForeignBufferRelease(t *testing.T) {
+	alloc, err := NewPooledAllocator(PooledAllocatorConfig{SizeClasses: []int{64}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := NewHeapBuffer(64)
+	defer foreign.Release()
+
+	alloc.Release(foreign)
+
+	stats := alloc.PooledStats()
+	if stats.Classes[0].InUse != 0 || stats.Classes[0].Cached != 0 || stats.Oversized != 0 {
+		t.Fatalf("stats=%+v, want unchanged for foreign buffer", stats)
+	}
+}
+
 func TestPooledAllocatorValidatesSizeClasses(t *testing.T) {
 	if _, err := NewPooledAllocator(PooledAllocatorConfig{SizeClasses: []int{128, 64}}); !errors.Is(err, ErrInvalidSize) {
 		t.Fatalf("err=%v, want %v", err, ErrInvalidSize)

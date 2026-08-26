@@ -122,6 +122,9 @@ func (a *PooledAllocator) Release(buf *DirectByteBuf) {
 	if a == nil || buf == nil {
 		return
 	}
+	if buf.owner != a {
+		return
+	}
 	idx := buf.ownerIndex
 	if idx == pooledOversizedClass || int(idx) >= len(a.classes) {
 		a.oversized.Add(-1)

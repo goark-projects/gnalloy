@@ -3,6 +3,7 @@ package pcap
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
 	"testing"
 	"time"
 
@@ -91,6 +92,29 @@ func TestHandlerCapturesWriteAndPreservesOwnership(t *testing.T) {
 	}
 }
 
+func BenchmarkPCAPCaptureByteBuf(b *testing.B) {
+	handler, err := NewHandler(Config{Writer: io.Discard})
+	if err != nil {
+		b.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), &pcapSink{})
+	recorder := &pcapRecorder{}
+	if err := ch.Pipeline().AddLast("pcap", handler); err != nil {
+		b.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("recorder", recorder); err != nil {
+		b.Fatal(err)
+	}
+	payload := pcapBuf(b, "abcdef")
+	defer payload.Release()
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ch.Pipeline().FireChannelRead(payload.Retain())
+		recorder.release()
+	}
+}
+
 type pcapRecorder struct {
 	messages []any
 }
@@ -105,7 +129,7 @@ func (r *pcapRecorder) release() {
 			releasable.Release()
 		}
 	}
-	r.messages = nil
+	r.messages = r.messages[:0]
 }
 
 type pcapSink struct {
@@ -126,10 +150,10 @@ func (s *pcapSink) release() {
 			releasable.Release()
 		}
 	}
-	s.messages = nil
+	s.messages = s.messages[:0]
 }
 
-func pcapBuf(t *testing.T, data string) buffer.ByteBuf {
+func pcapBuf(t testing.TB, data string) buffer.ByteBuf {
 	t.Helper()
 	buf := buffer.NewHeapBuffer(len(data))
 	if _, err := buf.WriteBytes([]byte(data)); err != nil {

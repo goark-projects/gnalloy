@@ -139,7 +139,8 @@ func (h *Handler) writeHeader() error {
 }
 
 func (h *Handler) capture(msg any) error {
-	slices := payloadSlices(nil, msg)
+	var scratch [4][]byte
+	slices := payloadSlices(scratch[:0], msg)
 	if len(slices) == 0 {
 		return nil
 	}
