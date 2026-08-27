@@ -51,6 +51,32 @@ func TestParseConfigResolvesAutoWorkers(t *testing.T) {
 	}
 }
 
+func TestParseConfigResolvesAutoReadBufferSize(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-payload", "16384",
+		"-read-buffer-size", "0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReadBufferSize != 16384 {
+		t.Fatalf("readBufferSize=%d, want 16384", cfg.ReadBufferSize)
+	}
+}
+
+func TestParseConfigKeepsMinimumAutoReadBufferSize(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-payload", "64",
+		"-read-buffer-size", "0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReadBufferSize != 4096 {
+		t.Fatalf("readBufferSize=%d, want 4096", cfg.ReadBufferSize)
+	}
+}
+
 func TestDefaultWorkerCountCapsWindowsIOCP(t *testing.T) {
 	got := defaultWorkerCount(workerSizingInput{
 		GOOS:       "windows",
@@ -93,6 +119,13 @@ func TestParseConfigRejectsUnsupportedProtocol(t *testing.T) {
 
 func TestParseConfigRejectsNegativeWorkers(t *testing.T) {
 	_, err := parseConfig([]string{"-workers", "-1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
+func TestParseConfigRejectsNegativeReadBufferSize(t *testing.T) {
+	_, err := parseConfig([]string{"-read-buffer-size", "-1"})
 	if !errors.Is(err, errInvalidConfig) {
 		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
 	}

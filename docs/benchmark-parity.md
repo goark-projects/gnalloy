@@ -102,6 +102,11 @@ benchmarks/external/bin/gnet-bench -protocol tcp-echo -payload 1024 -connections
 benchmarks/external/bin/netpoll-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
 ```
 
+`gnalloy-bench` 的 `-workers 0` 表示按后端自动选择 worker 数；Windows IOCP 会把
+自动值限制在 8，避免过多 EventLoop 在完成端口上竞争导致吞吐退化。
+`-read-buffer-size 0` 表示按 `max(payload, 4096)` 自动设置单次读缓冲区，避免
+大包 TCP echo 被默认 4KiB 缓冲拆成多次 read completion。
+
 harness 输出 `framework=... total=... errors=... throughput=... ops/s` 汇总行和
 Go benchmark 兼容的 `Benchmark* ns/op` 行，分别用于报告吞吐/错误数和固定连接数、
 固定消息数下的端到端 TCP echo RTT 均值。外部进程无法使用 Go `benchmem` 的内存口径

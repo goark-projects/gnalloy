@@ -38,7 +38,7 @@ func parseConfig(args []string) (config, error) {
 		BackendName:    "default",
 		Boss:           1,
 		Workers:        0,
-		ReadBufferSize: 4096,
+		ReadBufferSize: 0,
 	}
 	fs := flag.NewFlagSet("gnalloy-bench", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -51,7 +51,7 @@ func parseConfig(args []string) (config, error) {
 	fs.StringVar(&cfg.BackendName, "backend", cfg.BackendName, "poller backend: default, std, epoll, iouring, kqueue, iocp, memory")
 	fs.IntVar(&cfg.Boss, "boss", cfg.Boss, "boss event-loop count")
 	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker event-loop count; 0 selects a backend-aware default")
-	fs.IntVar(&cfg.ReadBufferSize, "read-buffer-size", cfg.ReadBufferSize, "per-read ByteBuf size")
+	fs.IntVar(&cfg.ReadBufferSize, "read-buffer-size", cfg.ReadBufferSize, "per-read ByteBuf size; 0 selects max(payload, 4096)")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -73,6 +73,9 @@ func (c *config) resolve() error {
 			Backend:    c.Backend,
 			GOMAXPROCS: runtime.GOMAXPROCS(0),
 		})
+	}
+	if c.ReadBufferSize == 0 {
+		c.ReadBufferSize = defaultReadBufferSize(c.Payload)
 	}
 	return c.validate()
 }
