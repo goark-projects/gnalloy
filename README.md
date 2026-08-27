@@ -94,9 +94,9 @@ blocks:
   defaults, and explicit elevated-permission runtime boundaries.
 - `transport/l2`: data-link transport abstraction with the same
   `ServerBootstrap`/`Dialer` experience as TCP/UDP/raw/QUIC. Linux uses
-  native AF_PACKET; macOS/BSD and Windows expose BPF/Npcap driver boundaries
-  through injectable `Driver`/`Endpoint` contracts without hard cgo or dynamic
-  library dependencies in core.
+  native AF_PACKET; `transport/l2/bpf` and `transport/l2/npcap` expose
+  injectable macOS/BSD BPF and Windows Npcap driver boundaries without hard
+  cgo or dynamic library dependencies in core.
 - `transport/poller`: backend-neutral Poller API, including a cross-platform
   `std` readiness fallback.
 - `transport/poller/epoll`: Linux epoll ET readiness backend.
