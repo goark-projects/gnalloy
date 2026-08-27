@@ -107,6 +107,45 @@ func TestPendingRequestFreelistResetsState(t *testing.T) {
 	}
 }
 
+func TestFillCompletionEventRecyclesPendingState(t *testing.T) {
+	buf := buffer.NewHeapBuffer(8)
+	defer buf.Release()
+	p := &Poller{}
+	pending := p.acquirePending(poller.IORequest{
+		Op:        poller.OpRead,
+		FD:        poller.FDRef{FD: 10},
+		ChannelID: 7,
+		OpID:      9,
+		Buf:       buf,
+	})
+
+	var ev poller.Event
+	if !p.fillCompletionEvent(&ev, &pending.ov, uintptr(pending.req.ChannelID), 4, nil) {
+		t.Fatal("completion event was not filled")
+	}
+	if ev.Op != poller.OpRead || ev.ChannelID != 7 || ev.OpID != 9 || ev.N != 4 {
+		t.Fatalf("event=%+v, want read completion for channel 7 op 9", ev)
+	}
+	if ev.Buf != buf || ev.Buf.ReadableBytes() != 4 {
+		t.Fatalf("event buffer readable=%d, want 4", ev.Buf.ReadableBytes())
+	}
+	if p.active != nil || p.free != pending {
+		t.Fatal("completed pending state was not moved to freelist")
+	}
+}
+
+func TestCompletionBatchHelpers(t *testing.T) {
+	if completionTimeout(-1) != windows.INFINITE {
+		t.Fatal("negative timeout must map to INFINITE")
+	}
+	if completionTimeout(25) != 25 {
+		t.Fatal("positive timeout must pass through milliseconds")
+	}
+	if !unsupportedCompletionBatch(windows.ERROR_PROC_NOT_FOUND) {
+		t.Fatal("missing completion batch proc should be treated as unsupported")
+	}
+}
+
 func ensureWSAStartup() error {
 	var data windows.WSAData
 	return windows.WSAStartup(0x202, &data)

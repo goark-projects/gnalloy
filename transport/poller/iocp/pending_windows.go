@@ -11,6 +11,7 @@ import (
 
 type pendingRequest struct {
 	ov      windows.Overlapped
+	owner   *Poller
 	req     poller.IORequest
 	accept  *acceptContext
 	wsabufs []windows.WSABuf
@@ -35,6 +36,7 @@ func (p *Poller) acquirePending(req poller.IORequest) *pendingRequest {
 		p.free = pending.next
 	}
 	pending.reset(req)
+	pending.owner = p
 	p.linkPending(pending)
 	return pending
 }
@@ -75,6 +77,7 @@ func (p *Poller) unlinkPending(pending *pendingRequest) {
 
 func (pending *pendingRequest) reset(req poller.IORequest) {
 	pending.ov = windows.Overlapped{}
+	pending.owner = nil
 	pending.req = req
 	pending.accept = nil
 	pending.wsabufs = pending.wsabufs[:0]

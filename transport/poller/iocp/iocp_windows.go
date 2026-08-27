@@ -21,6 +21,10 @@ type Poller struct {
 	entries map[poller.FDRef]poller.ChannelID
 	active  *pendingRequest
 	free    *pendingRequest
+
+	completions          []completionEntry
+	completionBatchAddr  uintptr
+	singleCompletionPoll bool
 }
 
 func New() (poller.Poller, error) {
@@ -28,9 +32,13 @@ func New() (poller.Poller, error) {
 	if err != nil {
 		return nil, err
 	}
+	batchAddr, batchErr := completionBatchAddress()
 	return &Poller{
-		port:    port,
-		entries: make(map[poller.FDRef]poller.ChannelID, 1024),
+		port:                 port,
+		entries:              make(map[poller.FDRef]poller.ChannelID, 1024),
+		completions:          make([]completionEntry, defaultCompletionBatch),
+		completionBatchAddr:  batchAddr,
+		singleCompletionPoll: batchErr != nil,
 	}, nil
 }
 
@@ -159,13 +167,47 @@ func (p *Poller) Submit(req poller.IORequest) error {
 }
 
 func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
+	if p.closed.Load() {
+		return 0, poller.ErrClosedPoller
+	}
 	if len(dst) == 0 {
 		return 0, nil
 	}
-	timeout := uint32(timeoutMillis)
-	if timeoutMillis < 0 {
-		timeout = windows.INFINITE
+	if p.singleCompletionPoll {
+		return p.pollSingle(dst, timeoutMillis)
 	}
+	return p.pollBatch(dst, timeoutMillis)
+}
+
+func (p *Poller) pollBatch(dst []poller.Event, timeoutMillis int) (int, error) {
+	entries := p.completionEntries(len(dst))
+	n, err := getQueuedCompletionStatusEx(p.completionBatchAddr, p.port, entries, completionTimeout(timeoutMillis))
+	if err == windows.Errno(windows.WAIT_TIMEOUT) {
+		return 0, nil
+	}
+	if err != nil {
+		if unsupportedCompletionBatch(err) {
+			p.singleCompletionPoll = true
+			return p.pollSingle(dst, timeoutMillis)
+		}
+		if p.closed.Load() {
+			return 0, poller.ErrClosedPoller
+		}
+		return 0, err
+	}
+	out := 0
+	for i := 0; i < n && out < len(dst); i++ {
+		entry := entries[i]
+		if p.fillCompletionEvent(&dst[out], entry.overlapped, entry.key, entry.transferred, nil) {
+			out++
+		}
+	}
+	clear(entries[:n])
+	return out, nil
+}
+
+func (p *Poller) pollSingle(dst []poller.Event, timeoutMillis int) (int, error) {
+	timeout := completionTimeout(timeoutMillis)
 	out := 0
 	for out < len(dst) {
 		var transferred uint32
@@ -180,43 +222,62 @@ func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
 			if err != nil {
 				return out, err
 			}
-			dst[out] = poller.Event{Model: poller.Completion, Op: poller.OpWakeup}
-			out++
-			continue
-		}
-		pending := pendingFromOverlapped(ov)
-		if pending == nil {
-			continue
-		}
-		p.unlinkPending(pending)
-		req := pending.req
-		if req.Buf != nil && req.Op == poller.OpRead && transferred > 0 {
-			if advErr := req.Buf.AdvanceWriter(int(transferred)); advErr != nil && err == nil {
-				err = advErr
+			if p.fillCompletionEvent(&dst[out], ov, key, transferred, nil) {
+				out++
 			}
+			continue
 		}
-		addr := req.Addr
-		if req.Op == poller.OpRead && req.Datagram && err == nil {
-			addr = socketAddressFromRaw(&pending.from, pending.fromLen)
+		if p.fillCompletionEvent(&dst[out], ov, key, transferred, err) {
+			out++
 		}
-		dst[out] = poller.Event{
-			Model:      poller.Completion,
-			Op:         req.Op,
-			Ready:      poller.CompletionReady(req.Op),
-			FD:         req.FD,
-			AcceptedFD: req.AcceptedFD,
-			ChannelID:  req.ChannelID,
-			OpID:       req.OpID,
-			Buf:        req.Buf,
-			Bufs:       req.Bufs,
-			Addr:       addr,
-			N:          int(transferred),
-			Err:        err,
-		}
-		p.releasePending(pending)
-		out++
 	}
 	return out, nil
+}
+
+func (p *Poller) fillCompletionEvent(dst *poller.Event, ov *windows.Overlapped, key uintptr, transferred uint32, err error) bool {
+	if ov == nil && key == 0 {
+		*dst = poller.Event{Model: poller.Completion, Op: poller.OpWakeup}
+		return true
+	}
+	pending := pendingFromOverlapped(ov)
+	if pending == nil || pending.owner != p {
+		return false
+	}
+	p.unlinkPending(pending)
+	req := pending.req
+	err = completionEventError(req, &pending.ov, &transferred, err)
+	if req.Buf != nil && req.Op == poller.OpRead && transferred > 0 {
+		if advErr := req.Buf.AdvanceWriter(int(transferred)); advErr != nil && err == nil {
+			err = advErr
+		}
+	}
+	addr := req.Addr
+	if req.Op == poller.OpRead && req.Datagram && err == nil {
+		addr = socketAddressFromRaw(&pending.from, pending.fromLen)
+	}
+	*dst = poller.Event{
+		Model:      poller.Completion,
+		Op:         req.Op,
+		Ready:      poller.CompletionReady(req.Op),
+		FD:         req.FD,
+		AcceptedFD: req.AcceptedFD,
+		ChannelID:  req.ChannelID,
+		OpID:       req.OpID,
+		Buf:        req.Buf,
+		Bufs:       req.Bufs,
+		Addr:       addr,
+		N:          int(transferred),
+		Err:        err,
+	}
+	p.releasePending(pending)
+	return true
+}
+
+func (p *Poller) completionEntries(n int) []completionEntry {
+	if cap(p.completions) < n {
+		p.completions = make([]completionEntry, n)
+	}
+	return p.completions[:n]
 }
 
 func (p *Poller) Wakeup() error {
