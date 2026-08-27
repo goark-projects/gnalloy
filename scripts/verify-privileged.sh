@@ -57,8 +57,8 @@ if [ "${OS_NAME}" = "Linux" ]; then
         fi
 
         if [ "${RUN_IOURING}" = "1" ]; then
-            run_gate "iouring-sqpoll" ./scripts/verify-iouring-sqpoll.sh
-            run_gate "iouring-fixed" ./scripts/verify-iouring-fixed.sh
+            run_gate "iouring-sqpoll" sh ./scripts/verify-iouring-sqpoll.sh
+            run_gate "iouring-fixed" sh ./scripts/verify-iouring-fixed.sh
         else
             echo "== iouring-runtime skipped: set RUN_IOURING=1"
         fi
@@ -104,7 +104,7 @@ else
 fi
 
 if [ -n "${DOQ_ADDR}" ]; then
-    run_gate "external-doq" ./scripts/verify-protocol.sh
+    run_gate "external-doq" sh ./scripts/verify-protocol.sh
 else
     echo "== external-doq skipped: set GNALLOY_DOQ_ADDR"
 fi

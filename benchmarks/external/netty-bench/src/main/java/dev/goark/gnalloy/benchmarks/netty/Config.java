@@ -1,0 +1,73 @@
+package dev.goark.gnalloy.benchmarks.netty;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.Objects;
+
+record Config(
+        String protocol,
+        BackendKind backend,
+        String host,
+        int port,
+        int payload,
+        int connections,
+        int messages,
+        Duration timeout,
+        int eventLoops) {
+
+    static Config parse(String[] args) {
+        Map<String, String> values = Args.parse(args);
+        HostPort hostPort = HostPort.parse(values.getOrDefault("addr", "127.0.0.1:0"));
+        return new Config(
+                values.getOrDefault("protocol", "tcp-echo"),
+                BackendKind.parse(values.get("backend")),
+                hostPort.host(),
+                hostPort.port(),
+                Args.intValue(values, "payload", 1024),
+                Args.intValue(values, "connections", 256),
+                Args.intValue(values, "messages", 100000),
+                durationValue(values, "timeout", Duration.ofMinutes(5)),
+                Args.intValue(values, "event-loops", Runtime.getRuntime().availableProcessors()));
+    }
+
+    void validate() {
+        if (!Objects.equals(protocol, "tcp-echo")) {
+            throw new IllegalArgumentException("netty-bench: unsupported protocol " + protocol);
+        }
+        if (backend == null) {
+            throw new IllegalArgumentException("netty-bench: missing backend");
+        }
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("netty-bench: empty host");
+        }
+        if (port < 0 || port > 65535) {
+            throw new IllegalArgumentException("netty-bench: invalid port " + port);
+        }
+        if (payload <= 0 || connections <= 0 || messages <= 0) {
+            throw new IllegalArgumentException("netty-bench: payload, connections and messages must be positive");
+        }
+        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("netty-bench: timeout must be positive");
+        }
+        if (eventLoops <= 0) {
+            throw new IllegalArgumentException("netty-bench: event-loops must be positive");
+        }
+    }
+
+    private static Duration durationValue(Map<String, String> values, String key, Duration fallback) {
+        String value = values.get(key);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        if (value.endsWith("ms")) {
+            return Duration.ofMillis(Long.parseLong(value.substring(0, value.length() - 2)));
+        }
+        if (value.endsWith("s")) {
+            return Duration.ofSeconds(Long.parseLong(value.substring(0, value.length() - 1)));
+        }
+        if (value.endsWith("m")) {
+            return Duration.ofMinutes(Long.parseLong(value.substring(0, value.length() - 1)));
+        }
+        return Duration.ofMillis(Long.parseLong(value));
+    }
+}
