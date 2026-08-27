@@ -41,6 +41,17 @@ netpoll 外部 harness 场景以 `skip=true` 提交。安装对应 harness 后�
 改为 `skip=false`，并保留生成报告中的机器信息、命令、原始输出和解析出的
 `ns/op`、`B/op`、`allocs/op`。
 
+严格外部对标 gate:
+
+```bash
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/baseline.json
+```
+
+`-strict-external` 用于正式声称同机对标前的合同检查：Netty、gnet、netpoll
+以及带 `external` tag 的场景不能保持 `skip=true`，且展开变量后的命令入口必须
+在本机可解析。默认 baseline 会在该模式下失败，这是有意设计，表示外部 harness
+尚未安装或尚未打开。
+
 ## 对外对比口径
 
 - Netty 必须固定 JVM 版本、GC、`EventLoopGroup`、allocator、native transport 和 handler pipeline。

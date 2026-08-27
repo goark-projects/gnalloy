@@ -60,6 +60,74 @@ func TestBaselineSpecLoads(t *testing.T) {
 	}
 }
 
+func TestValidateExternalHarnessesRejectsSkippedScenario(t *testing.T) {
+	spec := Spec{
+		Name: "strict",
+		Scenarios: []Scenario{{
+			Name:       "netty tcp echo",
+			Framework:  "netty",
+			Protocol:   "tcp-echo",
+			Skip:       true,
+			SkipReason: "external harness missing",
+		}},
+	}
+	err := ValidateExternalHarnesses(spec, ExternalHarnessOptions{})
+	if !errors.Is(err, ErrExternalHarness) {
+		t.Fatalf("err=%v, want ErrExternalHarness", err)
+	}
+}
+
+func TestInspectExternalHarnessesChecksExpandedCommand(t *testing.T) {
+	spec := Spec{
+		Name:      "strict",
+		Variables: map[string]string{"GNET_BENCH": "./external/gnet-bench"},
+		Scenarios: []Scenario{{
+			Name:      "gnet tcp echo",
+			Framework: "gnet",
+			Protocol:  "tcp-echo",
+			Command:   []string{"${GNET_BENCH}"},
+			Tags:      []string{"external"},
+		}},
+	}
+	report, err := InspectExternalHarnesses(spec, ExternalHarnessOptions{
+		Stat: func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ExternalScenarios != 1 || report.Missing != 1 || len(report.Issues) != 1 {
+		t.Fatalf("report=%+v", report)
+	}
+	if !strings.Contains(report.Issues[0].Reason, "./external/gnet-bench") {
+		t.Fatalf("issue=%+v", report.Issues[0])
+	}
+}
+
+func TestValidateExternalHarnessesAcceptsReadyCommand(t *testing.T) {
+	spec := Spec{
+		Name: "strict",
+		Scenarios: []Scenario{{
+			Name:      "netpoll tcp echo",
+			Framework: "netpoll",
+			Protocol:  "tcp-echo",
+			Command:   []string{"netpoll-bench"},
+		}},
+	}
+	err := ValidateExternalHarnesses(spec, ExternalHarnessOptions{
+		LookPath: func(file string) (string, error) {
+			if file != "netpoll-bench" {
+				t.Fatalf("file=%q", file)
+			}
+			return "/usr/local/bin/netpoll-bench", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRunnerDryRunProducesSkippedResults(t *testing.T) {
 	spec := Spec{
 		Name: "dry-run",

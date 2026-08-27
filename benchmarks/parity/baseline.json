@@ -2,7 +2,7 @@
   "name": "gnalloy external parity baseline",
   "notes": "同机外部对标基线。Netty、gnet、netpoll 场景默认 skip，安装对应 harness 后再设为 false。",
   "variables": {
-    "REPO_ROOT": "../..",
+    "REPO_ROOT": ".",
     "GO": "go",
     "PAYLOAD": "1024",
     "CONNECTIONS": "256",
