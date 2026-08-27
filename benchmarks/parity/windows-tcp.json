@@ -1,0 +1,101 @@
+{
+  "name": "gnalloy windows tcp parity matrix",
+  "notes": "Windows TCP echo 对标矩阵。覆盖 gnalloy IOCP、Netty NIO 和 gnet；CloudWeGo netpoll v0.7.5 在 Windows 上游实现为空，不纳入 Windows 性能结论。",
+  "variables": {
+    "REPO_ROOT": ".",
+    "CONNECTIONS": "128",
+    "MESSAGES": "10000",
+    "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
+    "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
+    "GNET_BENCH": "./benchmarks/external/bin/gnet-bench"
+  },
+  "scenarios": [
+    {
+      "name": "gnalloy iocp tcp echo 64B",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "iocp",
+      "payload": "64B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "64", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iocp"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "tcp", "echo", "payload-64"]
+    },
+    {
+      "name": "gnalloy iocp tcp echo 1KiB",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "iocp",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iocp"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "tcp", "echo", "payload-1024"]
+    },
+    {
+      "name": "gnalloy iocp tcp echo 16KiB",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "iocp",
+      "payload": "16384B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "16384", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iocp"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "tcp", "echo", "payload-16384"]
+    },
+    {
+      "name": "netty nio tcp echo 64B",
+      "framework": "netty",
+      "protocol": "tcp-echo",
+      "backend": "nio",
+      "payload": "64B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--backend", "nio", "--protocol", "tcp-echo", "--payload", "64", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "tcp", "echo", "payload-64"]
+    },
+    {
+      "name": "netty nio tcp echo 1KiB",
+      "framework": "netty",
+      "protocol": "tcp-echo",
+      "backend": "nio",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--backend", "nio", "--protocol", "tcp-echo", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "tcp", "echo", "payload-1024"]
+    },
+    {
+      "name": "netty nio tcp echo 16KiB",
+      "framework": "netty",
+      "protocol": "tcp-echo",
+      "backend": "nio",
+      "payload": "16384B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--backend", "nio", "--protocol", "tcp-echo", "--payload", "16384", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "tcp", "echo", "payload-16384"]
+    },
+    {
+      "name": "gnet tcp echo 1KiB",
+      "framework": "gnet",
+      "protocol": "tcp-echo",
+      "backend": "poller",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["${GNET_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "gnet", "tcp", "echo", "payload-1024"]
+    }
+  ]
+}

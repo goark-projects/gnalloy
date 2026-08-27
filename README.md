@@ -174,6 +174,7 @@ go test ./...
 .\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/tcp-matrix.json
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/windows-tcp.json
 .\scripts\verify-bench.ps1 -Groups codec,queue,timer
 ```
 

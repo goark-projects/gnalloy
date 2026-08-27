@@ -103,6 +103,36 @@ func TestTCPMatrixSpecLoads(t *testing.T) {
 	}
 }
 
+func TestWindowsTCPMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("windows-tcp.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 7 {
+		t.Fatalf("scenarios=%d, want windows tcp matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		if scenario.Warmup != 1 || scenario.Repeat != 3 {
+			t.Fatalf("scenario %q warmup=%d repeat=%d, want 1/3", scenario.Name, scenario.Warmup, scenario.Repeat)
+		}
+		if scenario.Framework == "netpoll" {
+			t.Fatalf("windows matrix must not include netpoll scenario: %+v", scenario)
+		}
+		if scenario.Framework == "netty" && scenario.Backend != "nio" {
+			t.Fatalf("windows netty backend=%q, want nio", scenario.Backend)
+		}
+		if scenario.Framework == "gnalloy" && scenario.Backend != "iocp" {
+			t.Fatalf("windows gnalloy backend=%q, want iocp", scenario.Backend)
+		}
+	}
+}
+
 func TestBaselineNettyTCPEchoUsesNativeEpoll(t *testing.T) {
 	file, err := os.Open("baseline.json")
 	if err != nil {
@@ -295,6 +325,42 @@ func TestBaselineExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *testing.
 				"benchmarks/external/bin/gnet-bench.exe",
 				"benchmarks/external/bin/netpoll-bench",
 				"benchmarks/external/bin/netpoll-bench.exe":
+				return fakeFileInfo{name: filepath.Base(name)}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWindowsTCPMatrixExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *testing.T) {
+	file, err := os.Open("windows-tcp.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateExternalHarnesses(spec, ExternalHarnessOptions{
+		LookPath: func(file string) (string, error) {
+			if file == "java" {
+				return "/usr/bin/java", nil
+			}
+			return "", os.ErrNotExist
+		},
+		Stat: func(name string) (os.FileInfo, error) {
+			switch filepath.ToSlash(filepath.Clean(name)) {
+			case "benchmarks/external/bin/netty-bench.jar",
+				"benchmarks/external/bin/gnalloy-bench",
+				"benchmarks/external/bin/gnalloy-bench.exe",
+				"benchmarks/external/bin/gnet-bench",
+				"benchmarks/external/bin/gnet-bench.exe":
 				return fakeFileInfo{name: filepath.Base(name)}, nil
 			default:
 				return nil, os.ErrNotExist

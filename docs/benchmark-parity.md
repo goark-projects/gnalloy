@@ -64,6 +64,18 @@ epoll/io_uring、Netty epoll、gnet、netpoll，并为每个正式场景设置�
 median ns/op 和总错误数。runner 同时兼容 Go duration 和 Java `Duration` 文本，
 例如 Netty 输出中的 `PT2M22.38974812S`。
 
+Windows TCP echo 对标矩阵:
+
+```powershell
+.\scripts\build-external-bench.ps1
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/windows-tcp.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/windows-tcp.json -out windows-tcp-report.md
+```
+
+`benchmarks/parity/windows-tcp.json` 覆盖 gnalloy IOCP、Netty NIO 和 gnet。
+CloudWeGo netpoll v0.7.5 在 Windows 上游实现为空，不能用于 Windows 性能结论；
+Linux/macOS/BSD 才把 netpoll 纳入真实对标。
+
 harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；
 该目录是本机构建产物，不提交到仓库。Netty 使用独立 Maven 工程，
 gnalloy/gnet/netpoll 使用独立 Go module，避免把对标依赖引入 gnalloy 根 `go.mod`。
