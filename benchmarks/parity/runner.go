@@ -49,6 +49,7 @@ type ScenarioResult struct {
 	Duration time.Duration     `json:"duration"`
 	ExitCode int               `json:"exitCode"`
 	Skipped  bool              `json:"skipped"`
+	Stats    []ScenarioStats   `json:"stats,omitempty"`
 	Metrics  []BenchmarkMetric `json:"metrics,omitempty"`
 	Output   string            `json:"output,omitempty"`
 	Error    string            `json:"error,omitempty"`
@@ -114,6 +115,7 @@ func (r Runner) runScenario(ctx context.Context, scenario Scenario) ScenarioResu
 	cmd.Stderr = &out
 	err := cmd.Run()
 	result.Output = out.String()
+	result.Stats = ParseScenarioStats(result.Output)
 	result.Metrics = ParseBenchmarkMetrics(result.Output)
 	result.Finished = r.now()
 	result.Duration = result.Finished.Sub(started)

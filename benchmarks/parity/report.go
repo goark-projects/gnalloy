@@ -75,10 +75,30 @@ func writeMarkdown(w io.Writer, report Report) error {
 }
 
 func writeSummary(b *strings.Builder, report Report) {
-	if !hasMetrics(report) {
+	if !hasStats(report) && !hasMetrics(report) {
 		return
 	}
 	b.WriteString("\n## Summary\n\n")
+	if hasStats(report) {
+		writeStatsSummary(b, report)
+	}
+	if hasMetrics(report) {
+		writeBenchmarkSummary(b, report)
+	}
+}
+
+func writeStatsSummary(b *strings.Builder, report Report) {
+	b.WriteString("| Scenario | Framework | Protocol | Backend | Total | Errors | Throughput ops/s | Elapsed |\n")
+	b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n")
+	for _, result := range report.Scenarios {
+		for _, stat := range result.Stats {
+			writeStatsRow(b, result.Scenario, stat)
+		}
+	}
+	b.WriteString("\n")
+}
+
+func writeBenchmarkSummary(b *strings.Builder, report Report) {
 	b.WriteString("| Scenario | Framework | Protocol | Benchmark | ns/op | B/op | allocs/op |\n")
 	b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: |\n")
 	for _, result := range report.Scenarios {
@@ -86,6 +106,7 @@ func writeSummary(b *strings.Builder, report Report) {
 			writeMetricRow(b, result.Scenario, metric)
 		}
 	}
+	b.WriteString("\n")
 }
 
 func writeScenario(b *strings.Builder, result ScenarioResult) {
@@ -111,6 +132,35 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 		b.WriteString("Output:\n\n```text\n")
 		b.WriteString(escapeFence(result.Output))
 		b.WriteString("\n```\n\n")
+	}
+	if len(result.Stats) > 0 {
+		b.WriteString("Stats:\n\n")
+		b.WriteString("| Framework | Protocol | Backend | Payload | Connections | Messages | Total | Errors | Throughput ops/s | Elapsed |\n")
+		b.WriteString("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		for _, stat := range result.Stats {
+			b.WriteString("| ")
+			b.WriteString(escapeCell(stat.Framework))
+			b.WriteString(" | ")
+			b.WriteString(escapeCell(stat.Protocol))
+			b.WriteString(" | ")
+			b.WriteString(escapeCell(stat.Backend))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.PayloadBytes, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.Connections, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.Messages, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.TotalRequests, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.Errors, 10))
+			b.WriteString(" | ")
+			b.WriteString(formatFloat(stat.ThroughputOpsPerSec))
+			b.WriteString(" | ")
+			b.WriteString(stat.Elapsed.String())
+			b.WriteString(" |\n")
+		}
+		b.WriteString("\n")
 	}
 	if len(result.Metrics) > 0 {
 		b.WriteString("Metrics:\n\n")
@@ -161,6 +211,35 @@ func hasMetrics(report Report) bool {
 		}
 	}
 	return false
+}
+
+func hasStats(report Report) bool {
+	for _, result := range report.Scenarios {
+		if len(result.Stats) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func writeStatsRow(b *strings.Builder, scenario Scenario, stat ScenarioStats) {
+	b.WriteString("| ")
+	b.WriteString(escapeCell(scenario.Name))
+	b.WriteString(" | ")
+	b.WriteString(escapeCell(stat.Framework))
+	b.WriteString(" | ")
+	b.WriteString(escapeCell(stat.Protocol))
+	b.WriteString(" | ")
+	b.WriteString(escapeCell(stat.Backend))
+	b.WriteString(" | ")
+	b.WriteString(strconv.FormatInt(stat.TotalRequests, 10))
+	b.WriteString(" | ")
+	b.WriteString(strconv.FormatInt(stat.Errors, 10))
+	b.WriteString(" | ")
+	b.WriteString(formatFloat(stat.ThroughputOpsPerSec))
+	b.WriteString(" | ")
+	b.WriteString(stat.Elapsed.String())
+	b.WriteString(" |\n")
 }
 
 func writeMetricRow(b *strings.Builder, scenario Scenario, metric BenchmarkMetric) {

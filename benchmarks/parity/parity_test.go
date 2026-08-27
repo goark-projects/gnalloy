@@ -309,7 +309,7 @@ func TestRunnerSkipsScenarioMarkedSkip(t *testing.T) {
 
 func TestRunnerCapturesCommandOutput(t *testing.T) {
 	if os.Getenv("GNALLOY_PARITY_HELPER") == "1" {
-		os.Stdout.WriteString("helper-output\nBenchmarkEcho-16 1000 123 ns/op 64 B/op 2 allocs/op\n")
+		os.Stdout.WriteString("helper-output\nframework=gnalloy protocol=tcp-echo backend=iocp payload=1024 connections=2 messages=3 total=6 errors=0 elapsed=2ms throughput=3000.50 ops/s\nBenchmarkEcho-16 1000 123 ns/op 64 B/op 2 allocs/op\n")
 		return
 	}
 	spec := Spec{
@@ -333,6 +333,9 @@ func TestRunnerCapturesCommandOutput(t *testing.T) {
 	}
 	if len(result.Metrics) != 1 || result.Metrics[0].Name != "BenchmarkEcho-16" || result.Metrics[0].NsPerOp != 123 {
 		t.Fatalf("metrics=%+v", result.Metrics)
+	}
+	if len(result.Stats) != 1 || result.Stats[0].TotalRequests != 6 || result.Stats[0].ThroughputOpsPerSec != 3000.50 {
+		t.Fatalf("stats=%+v", result.Stats)
 	}
 }
 
@@ -374,6 +377,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		Scenarios: []ScenarioResult{{
 			Scenario: Scenario{Name: "netty", Framework: "netty", Protocol: "tcp", Command: []string{"java", "-jar", "bench.jar"}},
 			Output:   "ok\n",
+			Stats:    []ScenarioStats{{Framework: "netty", Protocol: "tcp", Backend: "nio", TotalRequests: 100, Errors: 0, ThroughputOpsPerSec: 1000}},
 			Metrics:  []BenchmarkMetric{{Name: "BenchmarkEcho-16", Iterations: 1000, NsPerOp: 123, BytesPerOp: 64, AllocsPerOp: 2}},
 		}},
 	}
@@ -382,20 +386,43 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
+	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "Throughput ops/s", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}
 	}
 }
 
+func TestParseScenarioStats(t *testing.T) {
+	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
+	if len(stats) != 1 {
+		t.Fatalf("stats=%+v, want one", stats)
+	}
+	stat := stats[0]
+	if stat.Framework != "gnalloy" || stat.Protocol != "tcp-echo" || stat.Backend != "iocp" {
+		t.Fatalf("stat=%+v", stat)
+	}
+	if stat.PayloadBytes != 1024 || stat.Connections != 256 || stat.Messages != 100000 || stat.TotalRequests != 25600000 || stat.Errors != 0 {
+		t.Fatalf("stat=%+v", stat)
+	}
+	if stat.Elapsed != 3200*time.Millisecond || stat.ThroughputOpsPerSec != 8000000.25 {
+		t.Fatalf("stat=%+v", stat)
+	}
+}
+
 func TestWriteJSONReport(t *testing.T) {
-	report := Report{Name: "json", Scenarios: []ScenarioResult{{Scenario: Scenario{Name: "s", Framework: "f", Protocol: "p", Command: []string{"cmd"}}}}}
+	report := Report{Name: "json", Scenarios: []ScenarioResult{{
+		Scenario: Scenario{Name: "s", Framework: "f", Protocol: "p", Command: []string{"cmd"}},
+		Stats:    []ScenarioStats{{Framework: "f", Protocol: "p", TotalRequests: 1, Errors: 0}},
+	}}}
 	var out bytes.Buffer
 	if err := WriteReport(&out, report, FormatJSON); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), `"name": "json"`) {
+		t.Fatalf("json=%s", out.String())
+	}
+	if !strings.Contains(out.String(), `"errors": 0`) {
 		t.Fatalf("json=%s", out.String())
 	}
 }

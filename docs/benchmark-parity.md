@@ -74,9 +74,10 @@ benchmarks/external/bin/gnet-bench -protocol tcp-echo -payload 1024 -connections
 benchmarks/external/bin/netpoll-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
 ```
 
-外部 harness 输出 Go benchmark 兼容的 `Benchmark* ns/op` 行，表示固定连接数和
-固定消息数下的端到端 TCP echo RTT 均值。外部进程无法使用 Go `benchmem` 的
-内存口径准确统计框架内部分配，因此不伪造 `B/op` 和 `allocs/op`。
+harness 输出 `framework=... total=... errors=... throughput=... ops/s` 汇总行和
+Go benchmark 兼容的 `Benchmark* ns/op` 行，分别用于报告吞吐/错误数和固定连接数、
+固定消息数下的端到端 TCP echo RTT 均值。外部进程无法使用 Go `benchmem` 的内存口径
+准确统计框架内部分配，因此不伪造 `B/op` 和 `allocs/op`。
 
 平台边界：CloudWeGo netpoll v0.7.5 的 Windows 上游实现为空，Windows 下
 `netpoll-bench` 可构建并在运行时明确返回 unsupported；Linux/macOS/BSD 才能执行
