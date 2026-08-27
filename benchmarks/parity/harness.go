@@ -16,7 +16,7 @@ type ExternalHarnessOptions struct {
 	Stat       func(string) (os.FileInfo, error)
 }
 
-// ExternalHarnessReport 汇总外部对标 harness 的就绪状态。
+// ExternalHarnessReport 汇总正式对标 harness 的就绪状态。
 type ExternalHarnessReport struct {
 	ExternalScenarios int                    `json:"externalScenarios"`
 	Ready             int                    `json:"ready"`
@@ -48,7 +48,7 @@ func (e ExternalHarnessError) Unwrap() error {
 	return ErrExternalHarness
 }
 
-// InspectExternalHarnesses 检查 Netty/gnet/netpoll 等外部 harness 是否可执行。
+// InspectExternalHarnesses 检查 gnalloy、Netty、gnet、netpoll 等正式对标 harness 是否可执行。
 func InspectExternalHarnesses(spec Spec, options ExternalHarnessOptions) (ExternalHarnessReport, error) {
 	if err := spec.Validate(); err != nil {
 		return ExternalHarnessReport{}, err
@@ -57,7 +57,7 @@ func InspectExternalHarnesses(spec Spec, options ExternalHarnessOptions) (Extern
 	report := ExternalHarnessReport{}
 	for _, original := range spec.Scenarios {
 		scenario := expandScenario(original, spec.Variables)
-		if !isExternalScenario(scenario, frameworks) {
+		if !isExternalScenario(scenario, frameworks) && !hasScenarioTag(scenario, "parity-harness") {
 			continue
 		}
 		report.ExternalScenarios++
@@ -116,6 +116,15 @@ func isExternalScenario(scenario Scenario, frameworks map[string]struct{}) bool 
 	}
 	for _, tag := range scenario.Tags {
 		if strings.EqualFold(strings.TrimSpace(tag), "external") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasScenarioTag(scenario Scenario, want string) bool {
+	for _, tag := range scenario.Tags {
+		if strings.EqualFold(strings.TrimSpace(tag), want) {
 			return true
 		}
 	}

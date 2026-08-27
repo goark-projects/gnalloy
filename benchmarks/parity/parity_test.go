@@ -99,6 +99,9 @@ func TestBaselineGnalloyTCPEchoUsesSameLoadModel(t *testing.T) {
 	if strings.Contains(command, "go test") || strings.Contains(command, "BenchmarkNativeTCPEchoRoundTrip") {
 		t.Fatalf("gnalloy tcp echo must not use single-connection go benchmark: %q", command)
 	}
+	if !hasScenarioTag(scenario, "parity-harness") {
+		t.Fatalf("gnalloy tcp echo tags=%v, want parity-harness", scenario.Tags)
+	}
 }
 
 func TestValidateExternalHarnessesRejectsSkippedScenario(t *testing.T) {
@@ -216,6 +219,8 @@ func TestBaselineExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *testing.
 		Stat: func(name string) (os.FileInfo, error) {
 			switch filepath.ToSlash(filepath.Clean(name)) {
 			case "benchmarks/external/bin/netty-bench.jar",
+				"benchmarks/external/bin/gnalloy-bench",
+				"benchmarks/external/bin/gnalloy-bench.exe",
 				"benchmarks/external/bin/gnet-bench",
 				"benchmarks/external/bin/gnet-bench.exe",
 				"benchmarks/external/bin/netpoll-bench",
@@ -228,6 +233,28 @@ func TestBaselineExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *testing.
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestValidateExternalHarnessesChecksGnalloyParityHarness(t *testing.T) {
+	spec := Spec{
+		Name:      "strict",
+		Variables: map[string]string{"GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench"},
+		Scenarios: []Scenario{{
+			Name:      "gnalloy tcp echo",
+			Framework: "gnalloy",
+			Protocol:  "tcp-echo",
+			Command:   []string{"${GNALLOY_BENCH}", "-protocol", "tcp-echo"},
+			Tags:      []string{"local", "parity-harness"},
+		}},
+	}
+	err := ValidateExternalHarnesses(spec, ExternalHarnessOptions{
+		Stat: func(string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	})
+	if !errors.Is(err, ErrExternalHarness) {
+		t.Fatalf("err=%v, want ErrExternalHarness", err)
 	}
 }
 

@@ -45,11 +45,12 @@ go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -config benchmarks/parity/baseline.json -out parity-report.md
 ```
 
-`benchmarks/parity/baseline.json` 默认直接保留 gnalloy 本地场景，并启用 Netty、
-gnet、netpoll 外部 harness 场景。外部 harness 源码位于 `benchmarks/external`，
-构建产物输出到 `benchmarks/external/bin`；该目录是本机构建产物，不提交到仓库。
-Netty 使用独立 Maven 工程，gnet/netpoll 使用独立 Go module，避免把对标依赖引入
-gnalloy 根 `go.mod`。
+`benchmarks/parity/baseline.json` 默认使用 `gnalloy-bench` 执行同模型 TCP echo
+场景，并保留 gnalloy 其他本地 microbench 场景；Netty、gnet、netpoll 作为外部
+harness 场景启用。harness 源码位于 `benchmarks/external`，构建产物输出到
+`benchmarks/external/bin`；该目录是本机构建产物，不提交到仓库。Netty 使用独立
+Maven 工程，gnalloy/gnet/netpoll 使用独立 Go module，避免把对标依赖引入 gnalloy
+根 `go.mod`。
 
 严格外部对标 gate:
 
@@ -58,15 +59,16 @@ gnalloy 根 `go.mod`。
 go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/baseline.json
 ```
 
-`-strict-external` 用于正式声称同机对标前的合同检查：Netty、gnet、netpoll
-以及带 `external` tag 的场景不能保持 `skip=true`，展开变量后的命令入口必须
-在本机可解析；`java -jar` 场景还会检查 jar 文件本身是否存在。Windows 下 Go
-harness 构建为 `.exe`，baseline 仍使用无扩展名路径，由 strict gate 和 runner
-按平台解析。
+`-strict-external` 用于正式声称同机对标前的合同检查：`parity-harness` tag
+标记的 gnalloy 场景、Netty、gnet、netpoll 以及带 `external` tag 的场景不能保持
+`skip=true`，展开变量后的命令入口必须在本机可解析；`java -jar` 场景还会检查
+jar 文件本身是否存在。Windows 下 Go harness 构建为 `.exe`，baseline 仍使用无扩展名
+路径，由 strict gate 和 runner 按平台解析。
 
 外部 harness 支持的最小命令合同:
 
 ```bash
+benchmarks/external/bin/gnalloy-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000 -backend default
 java -jar benchmarks/external/bin/netty-bench.jar --protocol tcp-echo --payload 1024 --connections 256 --messages 100000
 benchmarks/external/bin/gnet-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
 benchmarks/external/bin/netpoll-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000

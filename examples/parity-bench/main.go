@@ -15,7 +15,7 @@ func main() {
 	outPath := flag.String("out", "", "report output path, empty writes stdout")
 	format := flag.String("format", "markdown", "report format: markdown or json")
 	dryRun := flag.Bool("dry-run", false, "validate spec and render report without executing commands")
-	strictExternal := flag.Bool("strict-external", false, "fail unless external Netty/gnet/netpoll harness commands are enabled and available")
+	strictExternal := flag.Bool("strict-external", false, "fail unless gnalloy and external Netty/gnet/netpoll harness commands are enabled and available")
 	timeout := flag.Duration("timeout", 0, "overall timeout")
 	flag.Parse()
 

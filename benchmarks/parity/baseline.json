@@ -34,7 +34,7 @@
         "default"
       ],
       "timeout": "5m",
-      "tags": ["local", "tcp", "echo"]
+      "tags": ["local", "parity-harness", "tcp", "echo"]
     },
     {
       "name": "gnalloy quic runtime",
