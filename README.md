@@ -143,6 +143,7 @@ Netty parity:
 
 - Netty 对标总览见 `docs/netty-parity.md`。
 - Netty codec 对齐清单见 `docs/netty-codec-parity.md`。
+- 常见 Pipeline 装配配方见 `recipes` 子包，覆盖 ByteBuf echo、length-field、HTTP/1、HTTP/2、WebSocket、MQTT 和 HTTP/3 stream 初始化器。
 - Transport completion 支持矩阵见 `docs/transport-completion-matrix.md`。
 - Benchmark parity 口径见 `docs/benchmark-parity.md`。
 - Production runbook 见 `docs/production-runbook.md`。

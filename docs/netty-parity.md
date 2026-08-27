@@ -45,6 +45,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | `TrafficShapingHandler` | `handler/traffic` | done | 支持本地/共享读写限速和指标快照。 |
 | `LoggingHandler` | `handler/logging` | done | 基于标准库 `slog`，记录生命周期、读写、flush、close 和异常事件，不接管消息所有权。 |
 | `FlushConsolidationHandler` | `handler/flush` | done | 读循环内合并 flush，支持阈值强制下发、无读循环延迟合并和 Future 完成传播。 |
+| Netty 风格 pipeline initializer | `recipes` | done | 使用 per-channel handler factory 装配 ByteBuf echo、length-field、HTTP/1、HTTP/2、WebSocket、MQTT 和 HTTP/3 stream pipeline，避免复用有状态 codec。 |
 | `RuleBasedIpFilter` | `handler/ipfilter` | done | 支持有序 allow/deny 规则、CIDR、单 IP、UDP/raw typed message 和业务 RemoteIPProvider。 |
 | `PcapWriteHandler` | `handler/pcap` | done | 支持 Pipeline 级 libpcap 捕获，默认 LINKTYPE_USER0，不接管消息所有权。 |
 
