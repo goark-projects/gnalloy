@@ -4,7 +4,7 @@ package iocp
 
 import (
 	"errors"
-	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"goark.dev/gnalloy/buffer"
@@ -14,28 +14,13 @@ import (
 
 const acceptAddressLength = 128
 
-type pendingRequest struct {
-	req     poller.IORequest
-	accept  *acceptContext
-	wsabufs []windows.WSABuf
-	wsabuf  [1]windows.WSABuf
-	from    windows.RawSockaddrAny
-	fromLen int32
-	to      windows.RawSockaddrAny
-	toLen   int32
-}
-
-type acceptContext struct {
-	buf [acceptAddressLength * 2]byte
-}
-
 type Poller struct {
 	port windows.Handle
 
-	mu      sync.Mutex
-	closed  bool
+	closed  atomic.Bool
 	entries map[poller.FDRef]poller.ChannelID
-	pending map[*windows.Overlapped]*pendingRequest
+	active  *pendingRequest
+	free    *pendingRequest
 }
 
 func New() (poller.Poller, error) {
@@ -46,7 +31,6 @@ func New() (poller.Poller, error) {
 	return &Poller{
 		port:    port,
 		entries: make(map[poller.FDRef]poller.ChannelID, 1024),
-		pending: make(map[*windows.Overlapped]*pendingRequest, 1024),
 	}, nil
 }
 
@@ -62,9 +46,7 @@ func (p *Poller) Register(fd poller.FDRef, ch poller.ChannelID, _ poller.ReadyMa
 	if !fd.Valid() {
 		return poller.ErrInvalidFD
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
 	_, err := windows.CreateIoCompletionPort(windows.Handle(uintptr(fd.FD)), p.port, uintptr(ch), 0)
@@ -79,17 +61,13 @@ func (p *Poller) Modify(fd poller.FDRef, _ poller.ReadyMask) error {
 	if !fd.Valid() {
 		return poller.ErrInvalidFD
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
 	return nil
 }
 
 func (p *Poller) Deregister(fd poller.FDRef) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	delete(p.entries, fd)
 	return nil
 }
@@ -101,19 +79,16 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	if !validRequest(req) {
 		return poller.ErrInvalidIORequest
 	}
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
-	ov := &windows.Overlapped{}
 	if req.Buf != nil {
 		req.Buf.Retain()
 	}
 	for _, buf := range req.Bufs {
 		buf.Retain()
 	}
-	pending := &pendingRequest{req: req}
+	pending := p.acquirePending(req)
 	if req.Op == poller.OpAccept {
 		pending.accept = &acceptContext{}
 	}
@@ -129,7 +104,8 @@ func (p *Poller) Submit(req poller.IORequest) error {
 			for _, buf := range req.Bufs {
 				buf.Release()
 			}
-			p.mu.Unlock()
+			p.unlinkPending(pending)
+			p.releasePending(pending)
 			return err
 		}
 		pending.wsabufs = wsabufs
@@ -142,26 +118,25 @@ func (p *Poller) Submit(req poller.IORequest) error {
 				for _, buf := range req.Bufs {
 					buf.Release()
 				}
-				p.mu.Unlock()
+				p.unlinkPending(pending)
+				p.releasePending(pending)
 				return err
 			}
 			pending.to = to
 			pending.toLen = toLen
 		}
 	}
-	p.pending[ov] = pending
-	p.mu.Unlock()
 
 	var err error
 	switch req.Op {
 	case poller.OpAccept:
-		err = p.submitAccept(req, ov, pending.accept)
+		err = p.submitAccept(req, &pending.ov, pending.accept)
 	case poller.OpRead:
-		err = p.submitRead(req, ov, pending)
+		err = p.submitRead(req, &pending.ov, pending)
 	case poller.OpWrite:
-		err = p.submitWrite(req, ov, pending.wsabufs, pending)
+		err = p.submitWrite(req, &pending.ov, pending.wsabufs, pending)
 	case poller.OpClose:
-		err = p.submitClose(req, ov)
+		err = p.submitClose(req, &pending.ov)
 	default:
 		err = poller.ErrInvalidIORequest
 	}
@@ -169,9 +144,8 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		return nil
 	}
 
-	p.mu.Lock()
-	delete(p.pending, ov)
-	p.mu.Unlock()
+	p.unlinkPending(pending)
+	p.releasePending(pending)
 	if req.Buf != nil {
 		req.Buf.Release()
 	}
@@ -210,10 +184,11 @@ func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
 			out++
 			continue
 		}
-		pending := p.takePending(ov)
+		pending := pendingFromOverlapped(ov)
 		if pending == nil {
 			continue
 		}
+		p.unlinkPending(pending)
 		req := pending.req
 		if req.Buf != nil && req.Op == poller.OpRead && transferred > 0 {
 			if advErr := req.Buf.AdvanceWriter(int(transferred)); advErr != nil && err == nil {
@@ -238,26 +213,27 @@ func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
 			N:          int(transferred),
 			Err:        err,
 		}
+		p.releasePending(pending)
 		out++
 	}
 	return out, nil
 }
 
 func (p *Poller) Wakeup() error {
+	if p.closed.Load() {
+		return poller.ErrClosedPoller
+	}
 	return windows.PostQueuedCompletionStatus(p.port, 0, 0, nil)
 }
 
 func (p *Poller) Close() error {
-	p.mu.Lock()
-	if p.closed {
-		p.mu.Unlock()
+	if p.closed.Swap(true) {
 		return nil
 	}
-	p.closed = true
-	for ov, pending := range p.pending {
-		delete(p.pending, ov)
+	for pending := p.active; pending != nil; {
+		next := pending.next
 		req := pending.req
-		cancelPending(req, ov)
+		cancelPending(req, &pending.ov)
 		if req.Buf != nil {
 			req.Buf.Release()
 		}
@@ -267,8 +243,12 @@ func (p *Poller) Close() error {
 		if req.Op == poller.OpAccept && req.AcceptedFD.Valid() {
 			_ = windows.Closesocket(windows.Handle(uintptr(req.AcceptedFD.FD)))
 		}
+		pending.prev = nil
+		pending.next = nil
+		pending = next
 	}
-	p.mu.Unlock()
+	p.active = nil
+	p.free = nil
 	return windows.CloseHandle(p.port)
 }
 
@@ -359,14 +339,6 @@ func (p *Poller) submitClose(req poller.IORequest, ov *windows.Overlapped) error
 		return err
 	}
 	return windows.PostQueuedCompletionStatus(p.port, 0, uintptr(req.ChannelID), ov)
-}
-
-func (p *Poller) takePending(ov *windows.Overlapped) *pendingRequest {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	req := p.pending[ov]
-	delete(p.pending, ov)
-	return req
 }
 
 func validRequest(req poller.IORequest) bool {
