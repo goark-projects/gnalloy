@@ -145,6 +145,7 @@ Netty parity:
 - Netty codec 对齐清单见 `docs/netty-codec-parity.md`。
 - Transport completion 支持矩阵见 `docs/transport-completion-matrix.md`。
 - Benchmark parity 口径见 `docs/benchmark-parity.md`。
+- Production runbook 见 `docs/production-runbook.md`。
 
 Verification:
 
