@@ -12,6 +12,10 @@ type ScenarioStats struct {
 	Framework           string        `json:"framework,omitempty"`
 	Protocol            string        `json:"protocol,omitempty"`
 	Backend             string        `json:"backend,omitempty"`
+	Boss                int64         `json:"boss,omitempty"`
+	Workers             int64         `json:"workers,omitempty"`
+	EventLoops          int64         `json:"eventLoops,omitempty"`
+	ReadBufferBytes     int64         `json:"readBufferBytes,omitempty"`
 	PayloadBytes        int64         `json:"payloadBytes"`
 	Connections         int64         `json:"connections"`
 	Messages            int64         `json:"messages"`
@@ -57,6 +61,14 @@ func parseScenarioStatsLine(line string) (ScenarioStats, bool) {
 			seenProtocol = true
 		case "backend":
 			stat.Backend = value
+		case "boss":
+			stat.Boss = parseIntMetric(value)
+		case "workers":
+			stat.Workers = parseIntMetric(value)
+		case "eventLoops":
+			stat.EventLoops = parseIntMetric(value)
+		case "readBufferSize":
+			stat.ReadBufferBytes = parseIntMetric(value)
 		case "payload":
 			stat.PayloadBytes = parseIntMetric(value)
 		case "connections":

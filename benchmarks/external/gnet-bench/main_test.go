@@ -36,14 +36,14 @@ func TestParseConfigRejectsUnsupportedProtocol(t *testing.T) {
 
 func TestWriteBenchmarkResult(t *testing.T) {
 	var out bytes.Buffer
-	writeBenchmarkResult(&out, config{Protocol: "tcp-echo", Payload: 8, Connections: 1, Messages: 2}, benchResult{
+	writeBenchmarkResult(&out, config{Protocol: "tcp-echo", Payload: 8, Connections: 1, Messages: 2, EventLoops: 4}, benchResult{
 		TotalRequests: 2,
 		Elapsed:       4 * time.Microsecond,
 		Throughput:    500000,
 		NsPerOp:       2000,
 	})
 	text := out.String()
-	for _, want := range []string{"framework=gnet", "backend=poller", "total=2", "BenchmarkGnetTCPEcho-", "2 2000 ns/op"} {
+	for _, want := range []string{"framework=gnet", "backend=poller", "eventLoops=4", "total=2", "BenchmarkGnetTCPEcho-", "2 2000 ns/op"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

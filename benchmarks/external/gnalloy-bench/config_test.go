@@ -2,8 +2,11 @@ package main
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 	"time"
+
+	"goark.dev/gnalloy/transport"
 )
 
 func TestParseConfig(t *testing.T) {
@@ -30,10 +33,68 @@ func TestParseConfig(t *testing.T) {
 	}
 }
 
+func TestParseConfigResolvesAutoWorkers(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-backend", "iocp",
+		"-workers", "0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := defaultWorkerCount(workerSizingInput{
+		GOOS:       runtime.GOOS,
+		Backend:    transport.BackendIOCP,
+		GOMAXPROCS: runtime.GOMAXPROCS(0),
+	})
+	if cfg.Workers != want {
+		t.Fatalf("workers=%d, want %d", cfg.Workers, want)
+	}
+}
+
+func TestDefaultWorkerCountCapsWindowsIOCP(t *testing.T) {
+	got := defaultWorkerCount(workerSizingInput{
+		GOOS:       "windows",
+		Backend:    transport.BackendIOCP,
+		GOMAXPROCS: 16,
+	})
+	if got != 8 {
+		t.Fatalf("workers=%d, want 8", got)
+	}
+}
+
+func TestDefaultWorkerCountKeepsNonIOCPParallelism(t *testing.T) {
+	got := defaultWorkerCount(workerSizingInput{
+		GOOS:       "linux",
+		Backend:    transport.BackendEpoll,
+		GOMAXPROCS: 16,
+	})
+	if got != 16 {
+		t.Fatalf("workers=%d, want 16", got)
+	}
+}
+
+func TestDefaultWorkerCountNormalizesInvalidCPUCount(t *testing.T) {
+	got := defaultWorkerCount(workerSizingInput{
+		GOOS:       "windows",
+		Backend:    transport.BackendIOCP,
+		GOMAXPROCS: 0,
+	})
+	if got != 1 {
+		t.Fatalf("workers=%d, want 1", got)
+	}
+}
+
 func TestParseConfigRejectsUnsupportedProtocol(t *testing.T) {
 	_, err := parseConfig([]string{"-protocol", "udp-echo"})
 	if !errors.Is(err, errUnsupportedProtocol) {
 		t.Fatalf("err=%v, want %v", err, errUnsupportedProtocol)
+	}
+}
+
+func TestParseConfigRejectsNegativeWorkers(t *testing.T) {
+	_, err := parseConfig([]string{"-workers", "-1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
 	}
 }
 

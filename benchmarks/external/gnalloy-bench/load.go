@@ -20,7 +20,7 @@ type benchResult struct {
 }
 
 func runBenchmark(parent context.Context, cfg config) (benchResult, error) {
-	if err := cfg.validate(); err != nil {
+	if err := (&cfg).resolve(); err != nil {
 		return benchResult{}, err
 	}
 	if parent == nil {

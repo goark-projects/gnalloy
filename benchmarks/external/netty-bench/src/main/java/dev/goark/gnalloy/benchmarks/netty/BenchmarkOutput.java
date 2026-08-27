@@ -8,9 +8,10 @@ final class BenchmarkOutput {
 
     static void write(Config config, BenchmarkResult result) {
         System.out.printf(
-                "framework=netty protocol=%s backend=%s payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s%n",
+                "framework=netty protocol=%s backend=%s eventLoops=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s%n",
                 config.protocol(),
                 config.backend().wireName(),
+                config.eventLoops(),
                 config.payload(),
                 config.connections(),
                 config.messages(),

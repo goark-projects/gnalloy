@@ -89,8 +89,8 @@ func writeSummary(b *strings.Builder, report Report) {
 }
 
 func writeStatsSummary(b *strings.Builder, report Report) {
-	b.WriteString("| Scenario | Framework | Protocol | Backend | Total | Errors | Throughput ops/s | Elapsed |\n")
-	b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Total | Errors | Throughput ops/s | Elapsed |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n")
 	for _, result := range report.Scenarios {
 		for _, stat := range result.Stats {
 			writeStatsRow(b, result.Scenario, stat)
@@ -115,8 +115,8 @@ func writeStatsAggregateSummary(b *strings.Builder, report Report) {
 	if len(summaries) == 0 {
 		return
 	}
-	b.WriteString("| Scenario | Framework | Protocol | Backend | Samples | Throughput min | Throughput median | Throughput max | Throughput mean | Median ns/op | Errors |\n")
-	b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Samples | Throughput min | Throughput median | Throughput max | Throughput mean | Median ns/op | Errors |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, summary := range summaries {
 		b.WriteString("| ")
 		b.WriteString(escapeCell(summary.Scenario))
@@ -126,6 +126,8 @@ func writeStatsAggregateSummary(b *strings.Builder, report Report) {
 		b.WriteString(escapeCell(summary.Protocol))
 		b.WriteString(" | ")
 		b.WriteString(escapeCell(summary.Backend))
+		b.WriteString(" | ")
+		b.WriteString(escapeCell(summary.LoopSummary))
 		b.WriteString(" | ")
 		b.WriteString(strconv.Itoa(summary.Samples))
 		b.WriteString(" | ")
@@ -198,8 +200,8 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 	}
 	if len(result.Stats) > 0 {
 		b.WriteString("Stats:\n\n")
-		b.WriteString("| Framework | Protocol | Backend | Payload | Connections | Messages | Total | Errors | Throughput ops/s | Elapsed |\n")
-		b.WriteString("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		b.WriteString("| Framework | Protocol | Backend | Loops | Payload | Connections | Messages | Total | Errors | Throughput ops/s | Elapsed |\n")
+		b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 		for _, stat := range result.Stats {
 			b.WriteString("| ")
 			b.WriteString(escapeCell(stat.Framework))
@@ -207,6 +209,8 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 			b.WriteString(escapeCell(stat.Protocol))
 			b.WriteString(" | ")
 			b.WriteString(escapeCell(stat.Backend))
+			b.WriteString(" | ")
+			b.WriteString(escapeCell(loopSummary(stat)))
 			b.WriteString(" | ")
 			b.WriteString(strconv.FormatInt(stat.PayloadBytes, 10))
 			b.WriteString(" | ")
@@ -295,6 +299,8 @@ func writeStatsRow(b *strings.Builder, scenario Scenario, stat ScenarioStats) {
 	b.WriteString(" | ")
 	b.WriteString(escapeCell(stat.Backend))
 	b.WriteString(" | ")
+	b.WriteString(escapeCell(loopSummary(stat)))
+	b.WriteString(" | ")
 	b.WriteString(strconv.FormatInt(stat.TotalRequests, 10))
 	b.WriteString(" | ")
 	b.WriteString(strconv.FormatInt(stat.Errors, 10))
@@ -303,6 +309,27 @@ func writeStatsRow(b *strings.Builder, scenario Scenario, stat ScenarioStats) {
 	b.WriteString(" | ")
 	b.WriteString(stat.Elapsed.String())
 	b.WriteString(" |\n")
+}
+
+func loopSummary(stat ScenarioStats) string {
+	switch {
+	case stat.Boss > 0 || stat.Workers > 0:
+		parts := make([]string, 0, 3)
+		if stat.Boss > 0 {
+			parts = append(parts, "boss="+strconv.FormatInt(stat.Boss, 10))
+		}
+		if stat.Workers > 0 {
+			parts = append(parts, "workers="+strconv.FormatInt(stat.Workers, 10))
+		}
+		if stat.ReadBufferBytes > 0 {
+			parts = append(parts, "readBuffer="+strconv.FormatInt(stat.ReadBufferBytes, 10))
+		}
+		return strings.Join(parts, " ")
+	case stat.EventLoops > 0:
+		return "eventLoops=" + strconv.FormatInt(stat.EventLoops, 10)
+	default:
+		return "-"
+	}
 }
 
 func writeMetricRow(b *strings.Builder, scenario Scenario, metric BenchmarkMetric) {

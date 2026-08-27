@@ -548,8 +548,8 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 			Scenario: Scenario{Name: "netty", Framework: "netty", Protocol: "tcp", Repeat: 2, Command: []string{"java", "-jar", "bench.jar"}},
 			Output:   "ok\n",
 			Stats: []ScenarioStats{
-				{Framework: "netty", Protocol: "tcp", Backend: "epoll", TotalRequests: 100, Errors: 0, Elapsed: 100 * time.Millisecond, ThroughputOpsPerSec: 1000},
-				{Framework: "netty", Protocol: "tcp", Backend: "epoll", TotalRequests: 100, Errors: 0, Elapsed: 80 * time.Millisecond, ThroughputOpsPerSec: 1250},
+				{Framework: "netty", Protocol: "tcp", Backend: "epoll", EventLoops: 8, TotalRequests: 100, Errors: 0, Elapsed: 100 * time.Millisecond, ThroughputOpsPerSec: 1000},
+				{Framework: "netty", Protocol: "tcp", Backend: "epoll", EventLoops: 8, TotalRequests: 100, Errors: 0, Elapsed: 80 * time.Millisecond, ThroughputOpsPerSec: 1250},
 			},
 			Metrics: []BenchmarkMetric{{Name: "BenchmarkEcho-16", Iterations: 1000, NsPerOp: 123, BytesPerOp: 64, AllocsPerOp: 2}},
 		}},
@@ -559,7 +559,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "Throughput median", "1125", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
+	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "Throughput median", "eventLoops=8", "1125", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}
@@ -567,7 +567,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 }
 
 func TestParseScenarioStats(t *testing.T) {
-	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
+	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp boss=1 workers=8 readBufferSize=4096 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
 	if len(stats) != 1 {
 		t.Fatalf("stats=%+v, want one", stats)
 	}
@@ -576,6 +576,9 @@ func TestParseScenarioStats(t *testing.T) {
 		t.Fatalf("stat=%+v", stat)
 	}
 	if stat.PayloadBytes != 1024 || stat.Connections != 256 || stat.Messages != 100000 || stat.TotalRequests != 25600000 || stat.Errors != 0 {
+		t.Fatalf("stat=%+v", stat)
+	}
+	if stat.Boss != 1 || stat.Workers != 8 || stat.ReadBufferBytes != 4096 {
 		t.Fatalf("stat=%+v", stat)
 	}
 	if stat.Elapsed != 3200*time.Millisecond || stat.ThroughputOpsPerSec != 8000000.25 {
