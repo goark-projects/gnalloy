@@ -67,7 +67,8 @@ blocks:
   export and an OpenTelemetry adapter.
 - `protocol`: transport-neutral application protocol assembly API for
   request-response flows over stream, datagram, raw packet, and L2 frame
-  channels. It uses `bootstrap.Dialer` and explicit adapters instead of
+  channels. Client-side `ChannelExchanger` and server-side `Server` use
+  `bootstrap.Dialer`/`ServerBootstrap` with explicit adapters instead of
   bypassing the Pipeline.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `resolver/dns`: Go-native DNS resolver with system fallback, explicit

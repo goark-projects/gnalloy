@@ -78,7 +78,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 
 | Netty 能力 | gnalloy 对应 | 状态 | 说明 |
 | --- | --- | --- | --- |
-| transport-neutral request/response pipeline | `protocol.ChannelExchanger` | done | 基于 `bootstrap.Dialer` 和 Adapter，把 stream、datagram、raw packet、L2 frame 都统一成上层 request-response 体验，同时保留各 transport 的消息类型。 |
+| transport-neutral request/response pipeline | `protocol.ChannelExchanger`、`protocol.Server` | done | 基于 `bootstrap.Dialer`/`ServerBootstrap` 和 Adapter，把 stream、datagram、raw packet、L2 frame 都统一成上层 request-response 体验，同时保留各 transport 的消息类型和服务端响应元数据。 |
 
 ## Transport 与 EventLoop
 
