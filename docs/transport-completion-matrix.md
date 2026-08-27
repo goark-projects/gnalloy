@@ -32,7 +32,7 @@
 - Do not claim a transport is production-complete from cross compilation alone.
 - UDP completion support is validated through `transport/udp` integration tests because it exercises real socket bind, datagram read, write, and pipeline echo.
 - raw integration is not a default gate because it requires elevated privileges on common platforms.
-- L2 core integration is validated with an injected fake driver, Linux AF_PACKET cross compilation, and platform matrix metadata. Runtime AF_PACKET/BPF/Npcap validation must run on privileged native hosts with the corresponding driver installed.
+- L2 core integration is validated with an injected fake driver, Linux AF_PACKET cross compilation, and platform matrix metadata. `scripts/verify-privileged.*` opens Linux raw sockets and AF_PACKET endpoints on privileged hosts; BPF/Npcap validation must run on native hosts with the corresponding driver installed.
 - QUIC packet/runtime validation covers packet parsing/routing, frame decoder, runtime handler, ACK/loss/congestion, stream state, and path state unit tests.
 - DNS-over-QUIC validation uses `resolver/dns/quic` unit tests for ALPN/default-port behavior and QUIC application length-prefixed framing. External DoQ server tests are an opt-in runtime gate.
 - `scripts/verify-protocol.*` validates protocol assembly packages, dry-runs DoQ and stream/datagram/raw/L2 unified examples, validates the parity benchmark spec, and optionally runs an external DoQ query through `GNALLOY_DOQ_ADDR`.
