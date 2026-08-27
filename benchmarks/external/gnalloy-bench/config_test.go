@@ -88,10 +88,32 @@ func TestDefaultWorkerCountCapsWindowsIOCP(t *testing.T) {
 	}
 }
 
-func TestDefaultWorkerCountKeepsNonIOCPParallelism(t *testing.T) {
+func TestDefaultWorkerCountCapsLinuxEpoll(t *testing.T) {
 	got := defaultWorkerCount(workerSizingInput{
 		GOOS:       "linux",
 		Backend:    transport.BackendEpoll,
+		GOMAXPROCS: 8,
+	})
+	if got != 4 {
+		t.Fatalf("workers=%d, want 4", got)
+	}
+}
+
+func TestDefaultWorkerCountCapsLinuxIOUring(t *testing.T) {
+	got := defaultWorkerCount(workerSizingInput{
+		GOOS:       "linux",
+		Backend:    transport.BackendIOUring,
+		GOMAXPROCS: 8,
+	})
+	if got != 4 {
+		t.Fatalf("workers=%d, want 4", got)
+	}
+}
+
+func TestDefaultWorkerCountKeepsNonIOCPParallelism(t *testing.T) {
+	got := defaultWorkerCount(workerSizingInput{
+		GOOS:       "linux",
+		Backend:    transport.BackendStd,
 		GOMAXPROCS: 16,
 	})
 	if got != 16 {

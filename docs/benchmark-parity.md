@@ -102,8 +102,9 @@ benchmarks/external/bin/gnet-bench -protocol tcp-echo -payload 1024 -connections
 benchmarks/external/bin/netpoll-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
 ```
 
-`gnalloy-bench` 的 `-workers 0` 表示按后端自动选择 worker 数；Windows IOCP 会把
-自动值限制在 8，避免过多 EventLoop 在完成端口上竞争导致吞吐退化。
+`gnalloy-bench` 的 `-workers 0` 表示按后端自动选择 worker 数；Linux epoll/io_uring
+会把自动值限制在 4，Windows IOCP 会把自动值限制在 8，避免过多 EventLoop 在
+native poller/完成端口上竞争导致吞吐退化。
 `-read-buffer-size 0` 表示按 `max(payload, 4096)` 自动设置单次读缓冲区，避免
 大包 TCP echo 被默认 4KiB 缓冲拆成多次 read completion。
 
