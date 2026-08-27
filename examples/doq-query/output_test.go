@@ -64,3 +64,21 @@ func TestPrintMessageFormatsAnswers(t *testing.T) {
 		t.Fatalf("output=%q, want %q", out.String(), want)
 	}
 }
+
+func TestRunDryRunDoesNotDial(t *testing.T) {
+	var out bytes.Buffer
+	err := run([]string{
+		"-dry-run",
+		"-server", "dns.example:853",
+		"-server-name", "dns.example",
+		"-name", "example.com",
+		"-type", "AAAA",
+	}, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dry-run=true server=dns.example:853 server-name=dns.example type=AAAA timeout=5s insecure=false\n"
+	if out.String() != want {
+		t.Fatalf("output=%q, want %q", out.String(), want)
+	}
+}

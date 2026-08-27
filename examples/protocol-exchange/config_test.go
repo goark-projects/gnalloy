@@ -93,3 +93,20 @@ func TestProtocolConfigResolveValidatesRawAndL2(t *testing.T) {
 		t.Fatalf("etherType=%#x, want 0x88b5", l2Cfg.l2EtherTyp)
 	}
 }
+
+func TestRunDryRunDoesNotOpenTransport(t *testing.T) {
+	var out bytes.Buffer
+	err := run([]string{
+		"-dry-run",
+		"-transport", "l2",
+		"-addr", "eth-test",
+		"-payload-hex", "00112233445566778899aabb88b570696e67",
+	}, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dry-run=true transport=l2 addr=eth-test payload-bytes=18 timeout=3s\n"
+	if out.String() != want {
+		t.Fatalf("output=%q, want %q", out.String(), want)
+	}
+}

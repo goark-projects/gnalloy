@@ -149,6 +149,7 @@ Verification:
 ```bash
 go test ./...
 ./scripts/verify-regression.sh
+./scripts/verify-protocol.sh
 ./scripts/verify-bench.sh
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 GROUPS=codec,queue,timer ./scripts/verify-bench.sh
@@ -159,6 +160,7 @@ PowerShell:
 ```powershell
 go test ./...
 .\scripts\verify-regression.ps1
+.\scripts\verify-protocol.ps1 -ReportPath protocol-report.json
 .\scripts\verify-bench.ps1
 .\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
@@ -222,6 +224,7 @@ Platform helper scripts:
 ```powershell
 .\scripts\verify-platform.ps1
 .\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
+.\scripts\verify-protocol.ps1 -SkipExternal -ReportPath protocol-report.json
 .\scripts\verify-smoke.ps1 -Backend default -Workers 2
 .\scripts\verify-stress.ps1 -Backend iocp -Workers 2
 .\scripts\verify-iocp.ps1
@@ -230,6 +233,7 @@ Platform helper scripts:
 ```bash
 ./scripts/verify-smoke.sh
 ./scripts/verify-stress.sh
+./scripts/verify-protocol.sh
 ./scripts/verify-iouring-sqpoll.sh
 ./scripts/verify-iouring-fixed.sh
 BACKEND=epoll WORKERS=4 REUSEPORT=1 ./scripts/verify-smoke.sh

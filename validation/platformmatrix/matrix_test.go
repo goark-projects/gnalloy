@@ -35,6 +35,16 @@ func TestLoadDefaultMatrix(t *testing.T) {
 	if !contains(windows.L2Drivers, "npcap-boundary") {
 		t.Fatalf("windows l2Drivers=%v, want npcap-boundary", windows.L2Drivers)
 	}
+	if !hasGate(windows.Gates, "protocol-gate") {
+		t.Fatalf("windows gates=%v, want protocol-gate", windows.Gates)
+	}
+	darwin, _ := matrix.Target("darwin", "arm64")
+	if !contains(darwin.L2Drivers, "bpf-boundary") {
+		t.Fatalf("darwin l2Drivers=%v, want bpf-boundary", darwin.L2Drivers)
+	}
+	if !hasGate(darwin.Gates, "protocol-gate") {
+		t.Fatalf("darwin gates=%v, want protocol-gate", darwin.Gates)
+	}
 }
 
 func TestMatrixRejectsDuplicateTargets(t *testing.T) {
@@ -65,6 +75,15 @@ func TestMatrixRejectsEmptyGateCommand(t *testing.T) {
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasGate(gates []Gate, want string) bool {
+	for _, gate := range gates {
+		if gate.Name == want {
 			return true
 		}
 	}

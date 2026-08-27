@@ -61,6 +61,85 @@
       "tags": ["local", "quic", "runtime"]
     },
     {
+      "name": "gnalloy udp endpoint backpressure",
+      "framework": "gnalloy",
+      "protocol": "udp-endpoint",
+      "backend": "default",
+      "payload": "${PAYLOAD}B",
+      "workDir": "${REPO_ROOT}",
+      "command": [
+        "${GO}",
+        "test",
+        "-run",
+        "^$",
+        "-bench",
+        "BenchmarkEndpointBackpressureQueue$",
+        "-benchmem",
+        "./transport/udp"
+      ],
+      "env": {
+        "GOWORK": "off"
+      },
+      "timeout": "2m",
+      "tags": ["local", "udp", "endpoint"]
+    },
+    {
+      "name": "gnalloy raw endpoint backpressure",
+      "framework": "gnalloy",
+      "protocol": "raw-endpoint",
+      "backend": "default",
+      "payload": "${PAYLOAD}B",
+      "workDir": "${REPO_ROOT}",
+      "command": [
+        "${GO}",
+        "test",
+        "-run",
+        "^$",
+        "-bench",
+        "BenchmarkEndpointBackpressureQueue$",
+        "-benchmem",
+        "./transport/raw"
+      ],
+      "env": {
+        "GOWORK": "off"
+      },
+      "timeout": "2m",
+      "tags": ["local", "raw", "endpoint"]
+    },
+    {
+      "name": "gnalloy quic frame codec",
+      "framework": "gnalloy",
+      "protocol": "quic-frame",
+      "backend": "pure-go",
+      "payload": "${PAYLOAD}B",
+      "workDir": "${REPO_ROOT}",
+      "command": [
+        "${GO}",
+        "test",
+        "-run",
+        "^$",
+        "-bench",
+        "Benchmark(FrameScanner|EncodeFrames)$",
+        "-benchmem",
+        "./transport/quic"
+      ],
+      "env": {
+        "GOWORK": "off"
+      },
+      "timeout": "2m",
+      "tags": ["local", "quic", "codec"]
+    },
+    {
+      "name": "gnalloy l2 driver runtime",
+      "framework": "gnalloy",
+      "protocol": "l2-frame",
+      "backend": "driver",
+      "payload": "${PAYLOAD}B",
+      "skip": true,
+      "skipReason": "L2 runtime benchmark requires a privileged native host and an AF_PACKET/BPF/Npcap driver target",
+      "tags": ["local", "l2", "privileged"]
+    },
+    {
       "name": "netty tcp echo",
       "framework": "netty",
       "protocol": "tcp-echo",

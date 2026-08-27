@@ -27,6 +27,7 @@ func run(args []string, stdout io.Writer) error {
 	message := fs.String("message", "ping", "request payload text")
 	payloadHex := fs.String("payload-hex", "", "request payload as hex, overrides -message")
 	timeout := fs.Duration("timeout", 3*time.Second, "exchange timeout")
+	dryRun := fs.Bool("dry-run", false, "validate configuration without opening the transport")
 	rawProtocol := fs.Int("raw-protocol", 253, "raw IP protocol number")
 	rawFamily := fs.String("raw-family", "ipv4", "raw IP family: ipv4 or ipv6")
 	rawHeaderIncluded := fs.Bool("raw-header-included", false, "raw socket writes include an IP header")
@@ -56,6 +57,11 @@ func run(args []string, stdout io.Writer) error {
 	}.resolve()
 	if err != nil {
 		return err
+	}
+	if *dryRun {
+		fmt.Fprintf(stdout, "dry-run=true transport=%s addr=%s payload-bytes=%d timeout=%s\n",
+			kind, opts.Addr, len(payload), timeout.String())
+		return nil
 	}
 
 	group, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{

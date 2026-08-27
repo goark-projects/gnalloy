@@ -33,6 +33,7 @@ func run(args []string, stdout io.Writer) error {
 	timeout := fs.Duration("timeout", 5*time.Second, "query timeout")
 	serverName := fs.String("server-name", "", "TLS server name, empty means host from -server")
 	insecure := fs.Bool("insecure", false, "skip TLS certificate verification for lab endpoints")
+	dryRun := fs.Bool("dry-run", false, "validate configuration without opening a QUIC connection")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -52,6 +53,11 @@ func run(args []string, stdout io.Writer) error {
 	if *insecure {
 		// 仅在显式命令行开关开启时跳过证书校验，便于本地 DoQ 实验环境验证。
 		tlsConfig.InsecureSkipVerify = true
+	}
+	if *dryRun {
+		fmt.Fprintf(stdout, "dry-run=true server=%s server-name=%s type=%s timeout=%s insecure=%v\n",
+			*server, tlsServerName, typeName(qtype), timeout.String(), *insecure)
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)

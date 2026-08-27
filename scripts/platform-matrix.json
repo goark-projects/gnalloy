@@ -20,6 +20,11 @@
         {
           "name": "cross-compile",
           "command": ["go", "test", "-c", "./..."]
+        },
+        {
+          "name": "protocol-gate",
+          "command": ["pwsh", "./scripts/verify-protocol.ps1", "-SkipExternal"],
+          "nativeOnly": true
         }
       ],
       "unsupported": ["epoll", "kqueue", "iouring", "unix-socket"]
@@ -37,6 +42,11 @@
         {
           "name": "cross-compile",
           "command": ["go", "test", "-c", "./..."]
+        },
+        {
+          "name": "protocol-gate",
+          "command": ["./scripts/verify-protocol.sh"],
+          "nativeOnly": true
         }
       ],
       "unsupported": ["kqueue", "iocp"]
@@ -54,6 +64,11 @@
         {
           "name": "cross-compile",
           "command": ["go", "test", "-c", "./..."]
+        },
+        {
+          "name": "protocol-gate",
+          "command": ["./scripts/verify-protocol.sh"],
+          "nativeOnly": true
         }
       ],
       "unsupported": ["kqueue", "iocp"]
@@ -71,6 +86,11 @@
         {
           "name": "cross-compile",
           "command": ["go", "test", "-c", "./..."]
+        },
+        {
+          "name": "protocol-gate",
+          "command": ["./scripts/verify-protocol.sh"],
+          "nativeOnly": true
         }
       ],
       "unsupported": ["epoll", "iouring", "iocp"]
