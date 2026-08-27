@@ -33,7 +33,13 @@ harness，并运行：
 
 ```sh
 go run ./examples/parity-bench -strict-external -config benchmarks/parity/baseline.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/tcp-matrix.json -out tcp-matrix-report.md
 ```
+
+`baseline.json` 适合作为日常合同和单点 smoke；`tcp-matrix.json` 是正式 TCP echo
+对外性能声明的最低矩阵。对外报告必须附带 OS、CPU、Go/JVM 版本、GOMAXPROCS、
+JVM GC、Netty `EventLoopGroup`、Netty allocator、native transport、payload、
+连接数、消息数、warmup/repeat、错误率和延迟分位。
 
 ## Platform Matrix
 
@@ -90,6 +96,9 @@ QUIC/HTTP3/WebTransport:
   `GNALLOY_SOAK_DURATION_SECONDS` 或 `-DurationSeconds`，并保存 report。
 - 压测结果必须记录 OS、CPU、Go 版本、GOMAXPROCS、后端、worker 数、payload、
   连接数、场景、错误率和 P99/P999 延迟。
+- 和 Netty 对比时必须额外记录 Java 版本、GC、heap 参数、`EventLoopGroup`、
+  allocator、native transport 依赖版本和 handler pipeline；缺少这些字段时只能
+  作为本地探索结果，不能作为发布声明。
 - `io_uring` fixed buffers 必须和 mmap allocator 一起启用；memlock 限制不足时
   应调整系统限制或关闭 fixed buffers，不允许静默降级后仍声称 fixed-buffer
   结果。

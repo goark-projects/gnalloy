@@ -158,6 +158,7 @@ ALLOW_SKIP=1 ./scripts/verify-privileged.sh
 ./scripts/verify-soak.sh
 ./scripts/verify-bench.sh
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/tcp-matrix.json
 GROUPS=codec,queue,timer ./scripts/verify-bench.sh
 ```
 
@@ -172,6 +173,7 @@ go test ./...
 .\scripts\verify-bench.ps1
 .\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/tcp-matrix.json
 .\scripts\verify-bench.ps1 -Groups codec,queue,timer
 ```
 

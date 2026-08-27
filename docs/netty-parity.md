@@ -11,6 +11,24 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 - `planned`: 已确认需要，但应在后续独立切片实现。
 - `defer`: 不适合当前核心包直接绑定，后续扩展包或业务层承接。
 
+## 证据等级与验证边界
+
+Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。下表是本文档使用的
+证据分级，避免把“有实现”误读成“生产环境已胜出”。
+
+| 等级 | 含义 | 可用于什么结论 |
+| --- | --- | --- |
+| API/test support | 已有 Go-native API、单元测试、fuzz smoke 或 dry-run 合同。 | 可以声明能力存在、接口稳定、行为有回归保护。 |
+| Runtime validated | 已在目标 OS/权限/驱动环境执行 native smoke、privileged gate 或协议互通。 | 可以声明该平台运行边界已验证。 |
+| External parity proven | 已在同一台机器、同协议、同 payload、同连接模型下完成 Netty/gnet/netpoll 采样，并保留原始命令和机器信息。 | 只能声明对应场景的对标结果，不能泛化到所有协议或平台。 |
+| Extension/deferred | 不属于核心包，或需要外部算法、平台、厂商库承接。 | 只能声明边界清楚，不能声明核心已覆盖。 |
+
+当前 TCP echo 外部对标已经把 Netty baseline 调整为 Linux epoll/native transport，
+`benchmarks/parity/baseline.json` 作为日常低成本合同和单点基线，
+`benchmarks/parity/tcp-matrix.json` 作为正式多 payload、warmup、repeat 矩阵。
+任何“超过 Netty”的表述都必须引用矩阵报告中的具体平台、后端、payload、连接数、
+延迟分位和错误率。
+
 ## P0-P3 完成面
 
 | 优先级 | 范围 | 当前状态 | 验证入口 |
@@ -117,5 +135,12 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 
 | 范围 | 状态 | 原因 |
 | --- | --- | --- |
+| HTTP multipart/cookie/cors 高级工具 | planned | HTTP/1 基础 codec 已在核心；业务策略、跨域和表单大对象生命周期更适合独立 handler/codec 切片。 |
+| WebSocket extension compression | planned | 基础 WebSocket frame 已覆盖；扩展协商和压缩状态机需要独立语义测试与内存预算。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
+| OCSP、OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
+| true sendfile/splice 零拷贝文件传输 | planned | `FileRegion` 已有 fallback 语义；内核级零拷贝需要按 OS 后端拆分实现和退化路径。 |
+| `handler/flow` 类显式流控工具 | planned | Channel 水位线和 HTTP/2/QUIC flow-control 已存在；通用 handler 需避免和业务 backpressure 语义冲突。 |
+| SCTP、UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
+| in-VM local transport | defer | Go 里可用 memory backend 与嵌入式测试替代；无需复制 Netty 的 JVM 内本地传输模型。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |

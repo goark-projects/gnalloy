@@ -45,12 +45,28 @@ go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -config benchmarks/parity/baseline.json -out parity-report.md
 ```
 
-`benchmarks/parity/baseline.json` 默认使用 `gnalloy-bench` 执行同模型 TCP echo
-场景，并保留 gnalloy 其他本地 microbench 场景；Netty、gnet、netpoll 作为外部
-harness 场景启用。harness 源码位于 `benchmarks/external`，构建产物输出到
-`benchmarks/external/bin`；该目录是本机构建产物，不提交到仓库。Netty 使用独立
-Maven 工程，gnalloy/gnet/netpoll 使用独立 Go module，避免把对标依赖引入 gnalloy
-根 `go.mod`。
+`benchmarks/parity/baseline.json` 是日常低成本对标入口：默认使用
+`gnalloy-bench` 执行同模型 TCP echo 场景，同时保留 gnalloy 本地 microbench 场景；
+Netty、gnet、netpoll 作为外部 harness 场景启用。Netty baseline 使用 epoll native
+transport，避免拿 NIO 结果冒充 Linux native 对标。
+
+正式 TCP echo 对标矩阵:
+
+```bash
+./scripts/build-external-bench.sh
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/tcp-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/tcp-matrix.json -out tcp-matrix-report.md
+```
+
+`benchmarks/parity/tcp-matrix.json` 覆盖 64B、1KiB、16KiB payload，包含 gnalloy
+epoll/io_uring、Netty epoll、gnet、netpoll，并为每个正式场景设置一次 warmup 和
+三次 repeat。报告会保留每次采样，同时汇总 throughput 的 min/median/max/mean、
+median ns/op 和总错误数。runner 同时兼容 Go duration 和 Java `Duration` 文本，
+例如 Netty 输出中的 `PT2M22.38974812S`。
+
+harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；
+该目录是本机构建产物，不提交到仓库。Netty 使用独立 Maven 工程，
+gnalloy/gnet/netpoll 使用独立 Go module，避免把对标依赖引入 gnalloy 根 `go.mod`。
 
 严格外部对标 gate:
 
