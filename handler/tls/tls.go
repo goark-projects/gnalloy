@@ -13,6 +13,9 @@ import (
 	"goark.dev/gnalloy/channel"
 )
 
+// drainWaitTimeout 限制同步 drain 等待后台 TLS 协程产物的最长时间。
+const drainWaitTimeout = 100 * time.Millisecond
+
 type Mode uint8
 
 const (
@@ -56,6 +59,7 @@ type Handler struct {
 	app       chan byteChunk
 	events    chan HandshakeEvent
 	errs      chan error
+	notify    chan struct{}
 	bytePool  BytePool
 
 	handshake bool
@@ -81,6 +85,7 @@ func newHandler(mode Mode, cfg Config) *Handler {
 		app:      make(chan byteChunk, 32),
 		events:   make(chan HandshakeEvent, 4),
 		errs:     make(chan error, 8),
+		notify:   make(chan struct{}, 1),
 		bytePool: normalizeBytePool(cfg.BytePool),
 	}
 }
@@ -188,7 +193,7 @@ func (h *Handler) Close(ctx *channel.HandlerContext) error {
 
 func (h *Handler) ensureStarted() {
 	h.startOnce.Do(func() {
-		h.raw = newMemoryConn(h.bytePool)
+		h.raw = newMemoryConn(h.bytePool, h.notifyDrain)
 		cfg := &cryptotls.Config{}
 		if h.cfg.TLS != nil {
 			cfg = h.cfg.TLS.Clone()
@@ -224,6 +229,7 @@ func (h *Handler) runHandshake() {
 		Version:            state.Version,
 	}
 	close(h.ready)
+	h.notifyDrain()
 	h.runReader()
 }
 
@@ -242,6 +248,7 @@ func (h *Handler) runReader() {
 			chunk := newByteChunk(copyBytes(scratch[:n], h.bytePool), h.bytePool)
 			select {
 			case h.plain <- chunk:
+				h.notifyDrain()
 			case <-h.closed:
 				chunk.releaseOwned()
 				return
@@ -286,7 +293,7 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 		}
 		return
 	}
-	deadline := time.Now().Add(20 * time.Millisecond)
+	deadline := time.Now().Add(drainWaitTimeout)
 	for {
 		drained := false
 		select {
@@ -334,7 +341,12 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 		if !wait || time.Now().After(deadline) {
 			break
 		}
-		time.Sleep(time.Millisecond)
+		select {
+		case <-h.notify:
+		case <-time.After(time.Until(deadline)):
+		case <-h.closed:
+			return
+		}
 	}
 	if flush {
 		_ = ctx.Flush()
@@ -374,7 +386,16 @@ func (h *Handler) firePlain(ctx *channel.HandlerContext, data []byte) error {
 func (h *Handler) sendErr(err error) {
 	select {
 	case h.errs <- err:
+		h.notifyDrain()
 	case <-h.closed:
+	}
+}
+
+func (h *Handler) notifyDrain() {
+	// 单槽通知只表达“有新产物可 drain”，不按产物数量计数，避免后台 TLS 协程阻塞。
+	select {
+	case h.notify <- struct{}{}:
+	default:
 	}
 }
 

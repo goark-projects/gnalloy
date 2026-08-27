@@ -13,15 +13,17 @@ type memoryConn struct {
 	closed  chan struct{}
 	once    sync.Once
 	pool    BytePool
+	notify  func()
 	pending byteChunk
 }
 
-func newMemoryConn(pool BytePool) *memoryConn {
+func newMemoryConn(pool BytePool, notify func()) *memoryConn {
 	return &memoryConn{
 		in:     make(chan []byte, 32),
 		out:    make(chan byteChunk, 32),
 		closed: make(chan struct{}),
 		pool:   normalizeBytePool(pool),
+		notify: notify,
 	}
 }
 
@@ -70,6 +72,7 @@ func (c *memoryConn) Write(src []byte) (int, error) {
 	chunk := newByteChunk(copyBytes(src, c.pool), c.pool)
 	select {
 	case c.out <- chunk:
+		c.notifyDrain()
 		return len(src), nil
 	case <-c.closed:
 		chunk.releaseOwned()
@@ -102,6 +105,12 @@ func (c *memoryConn) RemoteAddr() net.Addr             { return memoryAddr("remo
 func (c *memoryConn) SetDeadline(time.Time) error      { return nil }
 func (c *memoryConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *memoryConn) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *memoryConn) notifyDrain() {
+	if c.notify != nil {
+		c.notify()
+	}
+}
 
 type memoryAddr string
 

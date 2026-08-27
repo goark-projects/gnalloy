@@ -44,7 +44,7 @@ func TestCopyReadableBytesUsesConfiguredPool(t *testing.T) {
 
 func TestMemoryConnReleasesInputAfterRead(t *testing.T) {
 	pool := &trackingBytePool{}
-	conn := newMemoryConn(pool)
+	conn := newMemoryConn(pool, nil)
 	data := copyBytes([]byte("abcd"), pool)
 	if err := conn.feedOwned(data); err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func TestMemoryConnReleasesInputAfterRead(t *testing.T) {
 
 func TestMemoryConnCloseReleasesQueuedInput(t *testing.T) {
 	pool := &trackingBytePool{}
-	conn := newMemoryConn(pool)
+	conn := newMemoryConn(pool, nil)
 	data := copyBytes([]byte("cipher"), pool)
 	if err := conn.feedOwned(data); err != nil {
 		t.Fatal(err)
@@ -80,6 +80,24 @@ func TestMemoryConnCloseReleasesQueuedInput(t *testing.T) {
 	}
 	if pool.released != 1 {
 		t.Fatalf("released=%d, want queued input released", pool.released)
+	}
+}
+
+func TestMemoryConnNotifiesWhenCiphertextIsReady(t *testing.T) {
+	notified := make(chan struct{}, 1)
+	conn := newMemoryConn(nil, func() {
+		select {
+		case notified <- struct{}{}:
+		default:
+		}
+	})
+	if _, err := conn.Write([]byte("cipher")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-notified:
+	default:
+		t.Fatal("ciphertext write did not notify drain")
 	}
 }
 
