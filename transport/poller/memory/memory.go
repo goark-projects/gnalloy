@@ -68,9 +68,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	if p.closed {
 		return poller.ErrClosedPoller
 	}
-	if req.Buf != nil {
-		req.Buf.Retain()
-	}
+	req.RetainBuffers()
 	p.events = append(p.events, poller.Event{
 		Model:      poller.Completion,
 		Op:         req.Op,
@@ -80,6 +78,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		ChannelID:  req.ChannelID,
 		OpID:       req.OpID,
 		Buf:        req.Buf,
+		Bufs:       req.Bufs,
 		Addr:       req.Addr,
 	})
 	p.cond.Signal()
@@ -137,6 +136,9 @@ func (p *Poller) Close() error {
 	for _, ev := range p.events {
 		if ev.Buf != nil {
 			ev.Buf.Release()
+		}
+		for _, buf := range ev.Bufs {
+			buf.Release()
 		}
 	}
 	p.events = nil

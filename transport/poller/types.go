@@ -112,9 +112,12 @@ type IORequest struct {
 	OpID       OpID
 	Buf        buffer.ByteBuf
 	Bufs       []buffer.ByteBuf
-	Ready      ReadyMask
-	Addr       SocketAddress
-	Datagram   bool
+	// TransferBufferOwnership 表示 Submit 成功后 Poller 接管 Buf/Bufs 当前引用。
+	// 默认 false 会保持额外 Retain，兼容调用方继续持有原引用的路径。
+	TransferBufferOwnership bool
+	Ready                   ReadyMask
+	Addr                    SocketAddress
+	Datagram                bool
 
 	// UseFixedBuffer 仅对支持 registered buffers 的 completion 后端生效。
 	UseFixedBuffer   bool

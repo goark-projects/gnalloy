@@ -77,12 +77,7 @@ func (p *fakeCompletionPoller) Deregister(transport.FDRef) error {
 }
 
 func (p *fakeCompletionPoller) Submit(req transport.IORequest) error {
-	if req.Buf != nil {
-		req.Buf.Retain()
-	}
-	for _, buf := range req.Bufs {
-		buf.Retain()
-	}
+	req.RetainBuffers()
 	p.submitted = append(p.submitted, req)
 	return nil
 }
@@ -546,6 +541,9 @@ func TestUnsafeCompletionReadKeepsPendingBufferAliveUntilEvent(t *testing.T) {
 	if len(poller.submitted) != 1 {
 		t.Fatalf("submitted=%d, want 1", len(poller.submitted))
 	}
+	if !poller.submitted[0].TransferBufferOwnership {
+		t.Fatal("completion read should transfer buffer ownership to poller")
+	}
 	buf := poller.submitted[0].Buf
 	if buf.RefCnt() != 1 {
 		t.Fatalf("pending read ref=%d, want 1", buf.RefCnt())
@@ -595,6 +593,9 @@ func TestUnsafeCompletionAutoReadFalseRequiresManualRead(t *testing.T) {
 	}
 	if len(poller.submitted) != 1 {
 		t.Fatalf("submitted=%d, want 1 after manual read", len(poller.submitted))
+	}
+	if !poller.submitted[0].TransferBufferOwnership {
+		t.Fatal("manual completion read should transfer buffer ownership to poller")
 	}
 	buf := poller.submitted[0].Buf
 	if _, err := buf.WriteBytes([]byte("ping")); err != nil {

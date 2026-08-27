@@ -90,12 +90,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
-	if req.Buf != nil {
-		req.Buf.Retain()
-	}
-	for _, buf := range req.Bufs {
-		buf.Retain()
-	}
+	retainedBuffers := req.RetainBuffers()
 	pending := p.acquirePending(req)
 	if req.Op == poller.OpAccept {
 		pending.accept = &acceptContext{}
@@ -106,11 +101,8 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	if req.Op == poller.OpWrite {
 		wsabufs, err := makeWriteBuffers(req, pending.wsabuf[:0])
 		if err != nil {
-			if req.Buf != nil {
-				req.Buf.Release()
-			}
-			for _, buf := range req.Bufs {
-				buf.Release()
+			if retainedBuffers {
+				req.ReleaseBuffers()
 			}
 			p.unlinkPending(pending)
 			p.releasePending(pending)
@@ -120,11 +112,8 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		if req.Datagram {
 			to, toLen, err := makeRawSockaddr(req.Addr)
 			if err != nil {
-				if req.Buf != nil {
-					req.Buf.Release()
-				}
-				for _, buf := range req.Bufs {
-					buf.Release()
+				if retainedBuffers {
+					req.ReleaseBuffers()
 				}
 				p.unlinkPending(pending)
 				p.releasePending(pending)
@@ -154,11 +143,8 @@ func (p *Poller) Submit(req poller.IORequest) error {
 
 	p.unlinkPending(pending)
 	p.releasePending(pending)
-	if req.Buf != nil {
-		req.Buf.Release()
-	}
-	for _, buf := range req.Bufs {
-		buf.Release()
+	if retainedBuffers {
+		req.ReleaseBuffers()
 	}
 	if req.Op == poller.OpAccept && req.AcceptedFD.Valid() {
 		_ = windows.Closesocket(windows.Handle(uintptr(req.AcceptedFD.FD)))
@@ -295,12 +281,7 @@ func (p *Poller) Close() error {
 		next := pending.next
 		req := pending.req
 		cancelPending(req, &pending.ov)
-		if req.Buf != nil {
-			req.Buf.Release()
-		}
-		for _, buf := range req.Bufs {
-			buf.Release()
-		}
+		req.ReleaseBuffers()
 		if req.Op == poller.OpAccept && req.AcceptedFD.Valid() {
 			_ = windows.Closesocket(windows.Handle(uintptr(req.AcceptedFD.FD)))
 		}

@@ -336,21 +336,13 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		id = poller.OpID(p.nextUserData())
 		req.OpID = id
 	}
-	if req.Buf != nil {
-		req.Buf.Retain()
-	}
-	for _, buf := range req.Bufs {
-		buf.Retain()
-	}
+	retainedBuffers := req.RetainBuffers()
 	nextTail, err := p.prepare(uint64(id), req)
 	if err != nil {
 		delete(p.writev, uint64(id))
 		delete(p.msgctx, uint64(id))
-		if req.Buf != nil {
-			req.Buf.Release()
-		}
-		for _, buf := range req.Bufs {
-			buf.Release()
+		if retainedBuffers {
+			req.ReleaseBuffers()
 		}
 		return err
 	}
@@ -360,11 +352,8 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		delete(p.pending, uint64(id))
 		delete(p.writev, uint64(id))
 		delete(p.msgctx, uint64(id))
-		if req.Buf != nil {
-			req.Buf.Release()
-		}
-		for _, buf := range req.Bufs {
-			buf.Release()
+		if retainedBuffers {
+			req.ReleaseBuffers()
 		}
 		return err
 	}
@@ -430,12 +419,7 @@ func (p *Poller) Close() error {
 		p.registeredBuffers = false
 	}
 	for _, req := range p.pending {
-		if req.Buf != nil {
-			req.Buf.Release()
-		}
-		for _, buf := range req.Bufs {
-			buf.Release()
-		}
+		req.ReleaseBuffers()
 	}
 	clear(p.writev)
 	clear(p.msgctx)

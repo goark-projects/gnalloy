@@ -90,16 +90,17 @@ func (u *Unsafe) submitRead() error {
 		return err
 	}
 	req := u.prepareIORequest(transport.IORequest{
-		Op:        transport.OpRead,
-		FD:        u.fd,
-		ChannelID: u.ID(),
-		Buf:       buf,
+		Op:                      transport.OpRead,
+		FD:                      u.fd,
+		ChannelID:               u.ID(),
+		Buf:                     buf,
+		TransferBufferOwnership: true,
 	})
 	u.readPending = true
 	err = u.poller.Submit(req)
-	buf.Release()
 	if err != nil {
 		u.readPending = false
+		buf.Release()
 	}
 	return err
 }
