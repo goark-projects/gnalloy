@@ -1,0 +1,29 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+)
+
+const benchmarkName = "BenchmarkGnalloyTCPEcho"
+
+func main() {
+	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func runCLI(args []string, stdout io.Writer) error {
+	cfg, err := parseConfig(args)
+	if err != nil {
+		return err
+	}
+	result, err := runBenchmark(context.Background(), cfg)
+	if result.TotalRequests > 0 {
+		writeBenchmarkResult(stdout, cfg, result)
+	}
+	return err
+}

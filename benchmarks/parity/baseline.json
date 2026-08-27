@@ -1,12 +1,13 @@
 {
   "name": "gnalloy external parity baseline",
-  "notes": "同机外部对标基线。运行前先构建 benchmarks/external/bin 下的 Netty、gnet、netpoll harness。",
+  "notes": "同机外部对标基线。运行前先构建 benchmarks/external/bin 下的 gnalloy、Netty、gnet、netpoll harness。",
   "variables": {
     "REPO_ROOT": ".",
     "GO": "go",
     "PAYLOAD": "1024",
     "CONNECTIONS": "256",
     "MESSAGES": "100000",
+    "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
     "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
     "GNET_BENCH": "./benchmarks/external/bin/gnet-bench",
     "NETPOLL_BENCH": "./benchmarks/external/bin/netpoll-bench"
@@ -20,21 +21,19 @@
       "payload": "${PAYLOAD}B",
       "workDir": "${REPO_ROOT}",
       "command": [
-        "${GO}",
-        "test",
-        "-run",
-        "^$",
-        "-bench",
-        "BenchmarkNativeTCPEchoRoundTrip$",
-        "-benchmem",
-        "./transport/tcp"
+        "${GNALLOY_BENCH}",
+        "-protocol",
+        "tcp-echo",
+        "-payload",
+        "${PAYLOAD}",
+        "-connections",
+        "${CONNECTIONS}",
+        "-messages",
+        "${MESSAGES}",
+        "-backend",
+        "default"
       ],
-      "env": {
-        "GOWORK": "off",
-        "GNALLOY_BENCH_BACKEND": "default",
-        "GNALLOY_BENCH_PAYLOAD": "${PAYLOAD}"
-      },
-      "timeout": "2m",
+      "timeout": "5m",
       "tags": ["local", "tcp", "echo"]
     },
     {

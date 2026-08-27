@@ -10,8 +10,10 @@ $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $External = Join-Path $Root "benchmarks\external"
 $Bin = Join-Path $External "bin"
+$GnalloyDir = Join-Path $External "gnalloy-bench"
 $GnetDir = Join-Path $External "gnet-bench"
 $NetpollDir = Join-Path $External "netpoll-bench"
+$GnalloyOut = Join-Path $Bin "gnalloy-bench.exe"
 $GnetOut = Join-Path $Bin "gnet-bench.exe"
 $NetpollOut = Join-Path $Bin "netpoll-bench.exe"
 $NettyPom = Join-Path $External "netty-bench\pom.xml"
@@ -32,6 +34,17 @@ function Assert-LastExitCode {
     if ($LASTEXITCODE -ne 0) {
         throw "$File exited with code $LASTEXITCODE"
     }
+}
+
+Push-Location -LiteralPath $GnalloyDir
+try {
+    & $Go "mod" "download"
+    Assert-LastExitCode $Go
+    & $Go "build" "-trimpath" "-o" $GnalloyOut
+    Assert-LastExitCode $Go
+}
+finally {
+    Pop-Location
 }
 
 Push-Location -LiteralPath $GnetDir

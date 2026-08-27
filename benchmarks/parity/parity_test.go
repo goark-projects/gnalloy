@@ -67,6 +67,40 @@ func TestBaselineSpecLoads(t *testing.T) {
 	}
 }
 
+func TestBaselineGnalloyTCPEchoUsesSameLoadModel(t *testing.T) {
+	file, err := os.Open("baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scenario Scenario
+	found := false
+	for _, candidate := range spec.Scenarios {
+		if candidate.Name == "gnalloy tcp echo" {
+			scenario = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("gnalloy tcp echo scenario missing")
+	}
+	command := strings.Join(scenario.Command, " ")
+	for _, want := range []string{"${GNALLOY_BENCH}", "-connections ${CONNECTIONS}", "-messages ${MESSAGES}"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("missing %q in command %q", want, command)
+		}
+	}
+	if strings.Contains(command, "go test") || strings.Contains(command, "BenchmarkNativeTCPEchoRoundTrip") {
+		t.Fatalf("gnalloy tcp echo must not use single-connection go benchmark: %q", command)
+	}
+}
+
 func TestValidateExternalHarnessesRejectsSkippedScenario(t *testing.T) {
 	spec := Spec{
 		Name: "strict",

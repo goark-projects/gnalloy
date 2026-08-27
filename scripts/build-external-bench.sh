@@ -13,6 +13,7 @@ mkdir -p "$BIN"
 export GOWORK=off
 export GOTOOLCHAIN=local
 
+(cd "$EXTERNAL/gnalloy-bench" && "$GO_BIN" mod download && "$GO_BIN" build -trimpath -o "$BIN/gnalloy-bench" .)
 (cd "$EXTERNAL/gnet-bench" && "$GO_BIN" mod download && "$GO_BIN" build -trimpath -o "$BIN/gnet-bench" .)
 (cd "$EXTERNAL/netpoll-bench" && "$GO_BIN" mod download && "$GO_BIN" build -trimpath -o "$BIN/netpoll-bench" .)
 
