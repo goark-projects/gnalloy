@@ -130,6 +130,11 @@ go run ./examples/echo -addr :9000 -backend default -workers 4
 go run ./examples/length-field -addr :9001 -backend default -workers 4
 go run ./examples/line-frame -addr :9003 -backend default -workers 4
 go run ./examples/fixed-length -addr :9004 -backend default -workers 4 -frame-length 4
+go run ./examples/doq-query -server dns.google:853 -name example.com -type A
+go run ./examples/protocol-exchange -transport tcp -addr 127.0.0.1:9000 -message ping
+go run ./examples/protocol-exchange -transport udp -addr 127.0.0.1:9002 -message ping
+go run ./examples/protocol-exchange -transport raw -addr 127.0.0.1 -raw-protocol 253 -message ping
+go run ./examples/protocol-exchange -transport l2 -addr eth0 -payload-hex 00112233445566778899aabb88b570696e67
 ```
 
 Netty parity:
