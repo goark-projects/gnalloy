@@ -37,6 +37,7 @@
 - DNS-over-QUIC validation uses `resolver/dns/quic` unit tests for ALPN/default-port behavior and QUIC application length-prefixed framing. External DoQ server tests are an opt-in runtime gate.
 - `scripts/verify-protocol.*` validates protocol assembly packages, dry-runs DoQ and stream/datagram/raw/L2 unified examples, validates the parity benchmark spec, and optionally runs an external DoQ query through `GNALLOY_DOQ_ADDR`.
 - `protocol.Server` provides the server-side counterpart to `protocol.ChannelExchanger`, preserving UDP source addresses, raw IP protocol metadata, and L2 frame metadata through explicit adapters.
+- `scripts/verify-soak.*` repeats `examples/stress-check` as a stability gate; the default is one short cycle, while `GNALLOY_SOAK_DURATION_SECONDS` or `-DurationSeconds` turns it into a long-running soak.
 - QUIC RFC9000 validation covers localhost encrypted TLS 1.3 interop by default. External stack interop is available through `GNALLOY_QUIC_INTEROP_ADDR`, `GNALLOY_QUIC_INTEROP_ALPN`, `GNALLOY_QUIC_INTEROP_SERVER_NAME`, `GNALLOY_QUIC_INTEROP_INSECURE`, `GNALLOY_QUIC_INTEROP_PAYLOAD`, and `GNALLOY_QUIC_INTEROP_EXPECT`.
 - `scripts/platform-matrix.json` is the machine-readable platform gate source; `validation/platformmatrix` validates its schema and duplicate target boundaries.
 - `scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json` records native tests, cross compilation, skipped benchmarks, and source scan as `passed`/`skipped`/`failed`.

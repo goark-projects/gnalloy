@@ -153,6 +153,7 @@ go test ./...
 ./scripts/verify-regression.sh
 ./scripts/verify-protocol.sh
 ALLOW_SKIP=1 ./scripts/verify-privileged.sh
+./scripts/verify-soak.sh
 ./scripts/verify-bench.sh
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 GROUPS=codec,queue,timer ./scripts/verify-bench.sh
@@ -165,6 +166,7 @@ go test ./...
 .\scripts\verify-regression.ps1
 .\scripts\verify-protocol.ps1 -ReportPath protocol-report.json
 .\scripts\verify-privileged.ps1 -AllowSkip -ReportPath privileged-report.json
+.\scripts\verify-soak.ps1 -ReportPath soak-report.json
 .\scripts\verify-bench.ps1
 .\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
@@ -222,6 +224,9 @@ Stress scenarios:
 - `half-frame`: split writes to expose TCP half-packet handling.
 - `slow`: byte-by-byte writes to simulate slow clients.
 - `mixed`: runs all scenarios above.
+- `scripts/verify-soak.*`: repeats `examples/stress-check` for at least one cycle
+  by default; set `GNALLOY_SOAK_DURATION_SECONDS` or `-DurationSeconds` for an
+  explicit long-running stability gate.
 
 Platform helper scripts:
 
@@ -230,6 +235,7 @@ Platform helper scripts:
 .\scripts\verify-platform.ps1 -SkipBench -ReportPath platform-report.json
 .\scripts\verify-protocol.ps1 -SkipExternal -ReportPath protocol-report.json
 .\scripts\verify-privileged.ps1 -AllowSkip -ReportPath privileged-report.json
+.\scripts\verify-soak.ps1 -DurationSeconds 300 -ReportPath soak-report.json
 .\scripts\verify-smoke.ps1 -Backend default -Workers 2
 .\scripts\verify-stress.ps1 -Backend iocp -Workers 2
 .\scripts\verify-iocp.ps1
@@ -240,6 +246,7 @@ Platform helper scripts:
 ./scripts/verify-stress.sh
 ./scripts/verify-protocol.sh
 ALLOW_SKIP=1 ./scripts/verify-privileged.sh
+GNALLOY_SOAK_DURATION_SECONDS=300 ./scripts/verify-soak.sh
 ./scripts/verify-iouring-sqpoll.sh
 ./scripts/verify-iouring-fixed.sh
 BACKEND=epoll WORKERS=4 REUSEPORT=1 ./scripts/verify-smoke.sh
