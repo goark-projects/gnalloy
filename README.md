@@ -70,6 +70,8 @@ blocks:
   exchanger hooks, UDP query support, TCP fallback, hosts override,
   search-domain/ndots expansion, bounded CNAME follow, cache clearing, and
   A/AAAA lookup helpers.
+- `resolver/dns/quic`: DNS-over-QUIC exchanger using RFC 9250 ALPN `doq`,
+  default port `853`, and length-prefixed DNS messages over QUIC streams.
 - `timer`: local hashed wheel timer for idle and heartbeat checks.
 - `transport`: EventLoop, Channel identity contracts, and a thin factory over
   split poller packages.
@@ -80,6 +82,17 @@ blocks:
   and Windows `WSASocket/bind/listen` with IOCP `AcceptEx` request support.
   Linux/macOS/BSD can enable `SO_REUSEPORT` to create one listen socket per
   Boss `EventLoop`.
+- `transport/udp`: native datagram transport with server endpoints, connected
+  client `Dialer` endpoints, typed `Datagram` messages, default remote address
+  handling, platform sockets, and completion backend integration.
+- `transport/raw`: custom IP protocol transport with server endpoints,
+  connected client `Dialer` endpoints, typed `Packet` messages, protocol
+  defaults, and explicit elevated-permission runtime boundaries.
+- `transport/l2`: data-link transport abstraction with the same
+  `ServerBootstrap`/`Dialer` experience as TCP/UDP/raw/QUIC. Linux uses
+  native AF_PACKET; macOS/BSD and Windows expose BPF/Npcap driver boundaries
+  through injectable `Driver`/`Endpoint` contracts without hard cgo or dynamic
+  library dependencies in core.
 - `transport/poller`: backend-neutral Poller API, including a cross-platform
   `std` readiness fallback.
 - `transport/poller/epoll`: Linux epoll ET readiness backend.
@@ -97,6 +110,9 @@ blocks:
   mature TLS 1.3 packet-protection stack, exposing bidirectional streams,
   unidirectional streams for HTTP/3 control/QPACK integration, datagrams,
   connection state, localhost interop tests, and opt-in external interop tests.
+- `transport/quic/application`: reusable QUIC stream/datagram application
+  exchangers, including length-prefixed stream request/response framing and
+  datagram response matching for protocols such as DNS-over-QUIC.
 - `transport/http3`: HTTP/3 transport binding that maps RFC9000 QUIC request,
   control, and QPACK streams into gnalloy `Channel` pipelines.
 - `transport/webtransport`: WebTransport over HTTP/3 session binding with
@@ -257,6 +273,11 @@ Current validation boundary:
 - Linux and macOS runtime behavior must be validated on the corresponding
   machines with `scripts/verify-smoke.sh`, because cross compilation only proves
   compile-time compatibility.
+- Raw IP and L2 runtime tests are intentionally permission-sensitive. Raw
+  sockets usually require administrator privileges or `CAP_NET_RAW`; Linux L2
+  AF_PACKET requires the same class of privilege, while BPF/Npcap drivers are
+  represented as injectable platform boundaries unless the optional driver is
+  installed.
 - `mmap` allocator refuses to close while buffers are still in use. This is
   intentional: unmapping memory that an active `ByteBuf` still references is
   unsafe.
@@ -289,6 +310,8 @@ Design rules:
 - Native system calls go through `golang.org/x/sys/unix` or
   `golang.org/x/sys/windows`; the platform gate only allows the documented
   legacy stdlib `syscall` shim in Windows TCP socket setup.
+- L2 platform integrations must enter through `transport/l2.Driver`; the core
+  package must not hard-bind BPF/Npcap cgo or vendor dynamic-library loading.
 - Outbound writes are queued per Channel; partial writes remain in the outbound
   buffer until a write-ready/completion event drains them.
 - Outbound buffers are gathered across queued `ByteBuf` instances. Readiness

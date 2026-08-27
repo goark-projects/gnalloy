@@ -9,7 +9,7 @@
 | --- | --- |
 | 平台 | Linux、macOS、Windows 分开记录，不允许跨平台混写结论。 |
 | 后端 | `epoll`、`kqueue`、`io_uring`、`iocp`、`std` 分别记录。 |
-| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、UDP、QUIC packet/runtime。 |
+| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、UDP、raw IP、L2 frame、QUIC packet/runtime、QUIC stream/datagram、DNS-over-QUIC。 |
 | 负载 | 小包、MTU 附近包、大包、长连接、短连接、连接 churn。 |
 | 指标 | throughput、P50/P95/P99/P999 latency、allocs/op、B/op、RSS、CPU、错误率。 |
 | 回压 | 高/低水位线、慢消费者、写队列增长、flush 合并策略。 |
@@ -57,5 +57,7 @@ netpoll 外部 harness 场景以 `skip=true` 提交。安装对应 harness 后�
 - `transport/http3` 已提供 HTTP/3 request/control/QPACK stream 到 gnalloy `Channel` pipeline 的 transport binding。
 - `transport/webtransport` 已提供 WebTransport session、stream prefix、HTTP Datagram Quarter Stream ID 映射和 capability 校验。
 - `transport/quic.Runtime` 提供 ACK、loss、congestion、stream、path 状态和默认 runtime pipeline；`transport/quic/rfc9000` 提供 RFC9000/TLS1.3 互通连接栈。
+- `transport/quic/application` 提供 QUIC stream/datagram 应用协议装配；`resolver/dns/quic` 以 DNS-over-QUIC 覆盖真实应用协议用例。
+- `transport/l2` 已提供可注入 Driver 的二层帧 transport 抽象；Linux AF_PACKET 可做原生验证，BPF/Npcap 需要安装对应平台驱动后再运行外部 gate。
 - `scripts/platform-matrix.json` 是跨平台验证事实源；`scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json` 会输出 passed/skipped/failed gate 结果。
 - `observability.PrometheusExporter` 是无依赖文本导出器；OpenTelemetry 已作为 `observability/otel` adapter 接入。

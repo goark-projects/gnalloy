@@ -27,6 +27,14 @@ func TestLoadDefaultMatrix(t *testing.T) {
 	if _, ok := matrix.Target("windows", "amd64"); !ok {
 		t.Fatal("missing windows/amd64 target")
 	}
+	linux, _ := matrix.Target("linux", "amd64")
+	if !contains(linux.L2Drivers, "af_packet") {
+		t.Fatalf("linux l2Drivers=%v, want af_packet", linux.L2Drivers)
+	}
+	windows, _ := matrix.Target("windows", "amd64")
+	if !contains(windows.L2Drivers, "npcap-boundary") {
+		t.Fatalf("windows l2Drivers=%v, want npcap-boundary", windows.L2Drivers)
+	}
 }
 
 func TestMatrixRejectsDuplicateTargets(t *testing.T) {
@@ -52,4 +60,13 @@ func TestMatrixRejectsEmptyGateCommand(t *testing.T) {
 	if !errors.Is(err, ErrInvalidMatrix) {
 		t.Fatalf("err=%v, want ErrInvalidMatrix", err)
 	}
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

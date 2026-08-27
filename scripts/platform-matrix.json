@@ -10,6 +10,7 @@
         "readiness": ["std"],
         "completion": ["iocp", "memory"]
       },
+      "l2Drivers": ["npcap-boundary"],
       "gates": [
         {
           "name": "native-tests",
@@ -31,6 +32,7 @@
         "readiness": ["epoll", "std"],
         "completion": ["iouring", "memory"]
       },
+      "l2Drivers": ["af_packet"],
       "gates": [
         {
           "name": "cross-compile",
@@ -47,6 +49,7 @@
         "readiness": ["epoll", "std"],
         "completion": ["iouring", "memory"]
       },
+      "l2Drivers": ["af_packet"],
       "gates": [
         {
           "name": "cross-compile",
@@ -63,6 +66,7 @@
         "readiness": ["kqueue", "std"],
         "completion": ["memory"]
       },
+      "l2Drivers": ["bpf-boundary"],
       "gates": [
         {
           "name": "cross-compile",

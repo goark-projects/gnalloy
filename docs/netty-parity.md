@@ -18,7 +18,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | P0 | Bootstrap/Channel option、TCP socket option、connect timeout、Future listener EventLoop 归属、读循环公平性和平台 completion 行为 | done | `go test ./bootstrap ./channel ./transport/tcp`、`go test ./channel ./transport` |
 | P1 | 业务 handler executor group、流量整形、DNS resolver cache/TCP fallback/search/hosts/CNAME、Simple/Fixed/Map ChannelPool、IP filter、pcap、轻量观测延迟指标和 Prometheus 文本导出 | done | `go test ./handler/executor ./handler/traffic ./resolver/dns ./channel/pool ./handler/ipfilter ./handler/pcap ./observability ./handler/metrics` |
 | P2 | LoggingHandler、FlushConsolidationHandler、协议 fuzz smoke、Netty parity 文档、性能预算 benchmark 和回归脚本 | done | `go test ./handler/logging ./handler/flush ./codec/dns ./codec/redis ./codec/http2 ./codec/http3`、`scripts/verify-regression.*` |
-| P3 | RFC9000 QUIC v1 适配、TLS 1.3 packet protection、0-RTT/session resumption、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、HTTP/3 transport binding、WebTransport session binding、同机/外部 benchmark baseline、TLS copy reduction/native TLS 评估、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter、跨平台验证矩阵 | done | `go test ./transport/quic/rfc9000 ./transport/http3 ./transport/webtransport ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/unix ./observability/otel ./benchmarks/parity ./validation/platformmatrix`、`scripts/verify-platform.ps1 -SkipBench`、`go test ./...` |
+| P3 | RFC9000 QUIC v1 适配、TLS 1.3 packet protection、0-RTT/session resumption、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、HTTP/3 transport binding、WebTransport session binding、QUIC application exchanger、DNS-over-QUIC exchanger、L2 transport 抽象、同机/外部 benchmark baseline、TLS copy reduction/native TLS 评估、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter、跨平台验证矩阵 | done | `go test ./transport/quic/rfc9000 ./transport/quic/application ./resolver/dns/quic ./transport/http3 ./transport/webtransport ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/l2 ./transport/unix ./observability/otel ./benchmarks/parity ./validation/platformmatrix`、`scripts/verify-platform.ps1 -SkipBench`、`go test ./...` |
 
 ## Bootstrap 与 Channel
 
@@ -69,6 +69,7 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | hosts/search/ndots | `resolver/dns.StaticHosts`, `Config.SearchDomains`, `Config.Ndots` | done | 静态 hosts 优先，支持相对域名搜索顺序和去重。 |
 | CNAME follow | `resolver/dns` | done | A/AAAA 查询支持受限深度 CNAME 递归，避免别名链无限循环。 |
 | DNS TCP fallback | `resolver/dns.TCPExchanger` | done | UDP 响应截断时可回退 TCP 查询，避免大响应被静默截断。 |
+| DNS-over-QUIC | `resolver/dns/quic.Exchanger` | done | 默认 ALPN `doq` 和端口 `853`，复用 QUIC stream length-prefixed application exchanger。 |
 | `SimpleChannelPool` | `channel/pool.SimplePool` | done | 无总连接数限制、保留 idle 上限和生命周期回调。 |
 | `FixedChannelPool` | `channel/pool.FixedPool` | done | 支持最大连接数、最大等待队列、获取超时、健康检查、生命周期回调和统计快照。 |
 | `ChannelPoolMap` | `channel/pool.Map` | done | 按 endpoint/tenant 等 key 懒加载并复用子池。 |
@@ -82,8 +83,10 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | native epoll/kqueue | `transport/poller/epoll`, `transport/poller/kqueue` | done | 平台原生 readiness backend。 |
 | io_uring/IOCP completion | `transport/poller/iouring`, `transport/poller/iocp` | done | accept/read/write/close 与 datagram completion 路径。 |
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
+| L2 frame transport | `transport/l2` | done | 和 TCP/UDP/raw/QUIC 一致接入 `ServerBootstrap`/`Dialer`；Linux AF_PACKET native，macOS/BSD BPF 与 Windows Npcap 通过 Driver 边界扩展。 |
 | QUIC packet/runtime | `transport/quic` | done | 提供 UDP 上的 QUIC packet/header/frame、连接 ID 路由、ACK tracking、packet-threshold loss recovery、Reno 风格 congestion、stream flow-control 和 path validation/migration 基础。 |
 | QUIC RFC9000 connection stack | `transport/quic/rfc9000` | done | 通过生产级 QUIC 实现承接 RFC 9000 QUIC v1、TLS 1.3 packet protection、ALPN、双向 stream、单向 stream、datagram、localhost 互通和显式启用的外部互通测试。 |
+| QUIC application assembly | `transport/quic/application` | done | 提供 stream request/response 和 datagram request/response 装配，当前覆盖 length-prefixed stream codec 和 datagram matcher。 |
 | HTTP/3 transport binding | `transport/http3` | done | 把 RFC9000 QUIC request、control、QPACK stream 绑定为 gnalloy `Channel` pipeline，复用 `codec/http3` 的 frame/header/control/QPACK 初始化器。 |
 | WebTransport over HTTP/3 | `transport/webtransport` + `codec/http3` | done | 提供 SETTINGS/extended CONNECT helper、CONNECT stream session ID、WT_STREAM/单向 stream 前缀、HTTP Datagram Quarter Stream ID 映射和 QUIC datagram/reset capability 校验。 |
 

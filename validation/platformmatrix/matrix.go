@@ -20,6 +20,7 @@ type Target struct {
 	GOARCH      string   `json:"goarch"`
 	Native      bool     `json:"native,omitempty"`
 	Backends    Backends `json:"backends"`
+	L2Drivers   []string `json:"l2Drivers,omitempty"`
 	Gates       []Gate   `json:"gates"`
 	Unsupported []string `json:"unsupported,omitempty"`
 }

@@ -20,8 +20,10 @@
 | TCP | `epoll`, `kqueue`, `std` | `iouring`, `iocp`, `memory` | Completion path covers accept, connected read/write, close, and existing write-buffer backpressure. |
 | UDP | `epoll`, `kqueue`, `std` | `iouring`, `iocp`, `memory` | Completion path uses datagram `IORequest` and is covered by the UDP echo integration test on the platform default backend. |
 | raw | `epoll`, `kqueue`, `std` where OS raw socket is available | `iouring`, `iocp`, `memory` where raw socket and datagram completion are available | Runtime success still depends on administrator or `CAP_NET_RAW` permission and OS raw-socket policy. |
+| L2 frame transport | Linux AF_PACKET native driver; macOS/BSD BPF driver boundary; Windows Npcap driver boundary | driver-provided | `transport/l2` exposes `ServerBootstrap`/`Dialer` over injectable `Driver`/`Endpoint` contracts. Linux AF_PACKET is native; BPF/Npcap remain optional platform driver boundaries in core. |
 | QUIC packet/runtime | inherits UDP | inherits UDP | `transport/quic` implements packet/header/frame parsing, DCID routing, frame decoder, default runtime handler, ACK range tracking, packet-threshold loss detection, Reno-style congestion window, stream flow-control state, and path validation/migration state. |
 | QUIC RFC9000 connection | system UDP socket | system UDP socket | `transport/quic/rfc9000` exposes a complete RFC 9000 QUIC v1 connection adapter backed by TLS 1.3 packet protection, ALPN, 0-RTT opt-in path, bidirectional streams, unidirectional streams, datagrams, WebTransport prerequisites, and connection state. |
+| QUIC application assembly | RFC9000 stream/datagram API | RFC9000 stream/datagram API | `transport/quic/application` provides reusable stream request/response and datagram request/response exchangers for protocols such as DNS-over-QUIC. |
 | HTTP/3 transport binding | RFC9000 stream API | RFC9000 stream API | `transport/http3` maps request, local/remote control, and QPACK streams into gnalloy `Channel` pipelines using `codec/http3` initializers. |
 | WebTransport session binding | RFC9000 stream/datagram API | RFC9000 stream/datagram API | `transport/webtransport` binds an established HTTP/3 CONNECT stream to WebTransport stream channels and HTTP Datagram payload routing. |
 
@@ -30,7 +32,9 @@
 - Do not claim a transport is production-complete from cross compilation alone.
 - UDP completion support is validated through `transport/udp` integration tests because it exercises real socket bind, datagram read, write, and pipeline echo.
 - raw integration is not a default gate because it requires elevated privileges on common platforms.
+- L2 core integration is validated with an injected fake driver, Linux AF_PACKET cross compilation, and platform matrix metadata. Runtime AF_PACKET/BPF/Npcap validation must run on privileged native hosts with the corresponding driver installed.
 - QUIC packet/runtime validation covers packet parsing/routing, frame decoder, runtime handler, ACK/loss/congestion, stream state, and path state unit tests.
+- DNS-over-QUIC validation uses `resolver/dns/quic` unit tests for ALPN/default-port behavior and QUIC application length-prefixed framing. External DoQ server tests are an opt-in runtime gate.
 - QUIC RFC9000 validation covers localhost encrypted TLS 1.3 interop by default. External stack interop is available through `GNALLOY_QUIC_INTEROP_ADDR`, `GNALLOY_QUIC_INTEROP_ALPN`, `GNALLOY_QUIC_INTEROP_SERVER_NAME`, `GNALLOY_QUIC_INTEROP_INSECURE`, `GNALLOY_QUIC_INTEROP_PAYLOAD`, and `GNALLOY_QUIC_INTEROP_EXPECT`.
 - `scripts/platform-matrix.json` is the machine-readable platform gate source; `validation/platformmatrix` validates its schema and duplicate target boundaries.
 - `scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json` records native tests, cross compilation, skipped benchmarks, and source scan as `passed`/`skipped`/`failed`.
