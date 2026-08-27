@@ -170,10 +170,21 @@ func (u *Unsafe) HandleEvent(ev transport.PollEvent) {
 }
 
 func (u *Unsafe) Write(msg any) error {
-	future := u.WriteFuture(msg)
-	if future.IsDone() {
-		return future.Err()
+	if u.closed.Load() {
+		if buf, ok := msg.(buffer.ByteBuf); ok {
+			buf.Release()
+		}
+		return ErrPromiseFailed
 	}
+	buf, ok := msg.(buffer.ByteBuf)
+	if !ok {
+		return ErrInvalidMessage
+	}
+	if buf.ReadableBytes() == 0 {
+		buf.Release()
+		return nil
+	}
+	u.enqueueOutbound(buf, nil)
 	return nil
 }
 
@@ -199,9 +210,13 @@ func (u *Unsafe) WriteFuture(msg any) Future {
 }
 
 func (u *Unsafe) Flush() error {
-	future := u.FlushFuture()
-	if future.IsDone() {
-		return future.Err()
+	if u.outHead == nil {
+		u.ch.Pipeline().FireFlushComplete()
+		return nil
+	}
+	if err := u.flushOutbound(); err != nil {
+		u.completeFlushWaiters(err)
+		return err
 	}
 	return nil
 }

@@ -66,7 +66,7 @@ func (echoHandler) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		ctx.FireChannelRead(msg)
 		return
 	}
-	if err := ctx.Channel().WriteAndFlush(buf); err != nil {
+	if err := ctx.WriteAndFlush(buf); err != nil {
 		ctx.FireExceptionCaught(err)
 	}
 }

@@ -18,6 +18,7 @@ type pendingRequest struct {
 	req     poller.IORequest
 	accept  *acceptContext
 	wsabufs []windows.WSABuf
+	wsabuf  [1]windows.WSABuf
 	from    windows.RawSockaddrAny
 	fromLen int32
 	to      windows.RawSockaddrAny
@@ -120,7 +121,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		pending.fromLen = int32(unsafe.Sizeof(pending.from))
 	}
 	if req.Op == poller.OpWrite {
-		wsabufs, err := makeWriteBuffers(req)
+		wsabufs, err := makeWriteBuffers(req, pending.wsabuf[:0])
 		if err != nil {
 			if req.Buf != nil {
 				req.Buf.Release()
@@ -329,28 +330,27 @@ func (p *Poller) submitWrite(req poller.IORequest, ov *windows.Overlapped, wsabu
 	return windows.WSASend(windows.Handle(uintptr(req.FD.FD)), &wsabufs[0], uint32(len(wsabufs)), &sent, 0, ov, nil)
 }
 
-func makeWriteBuffers(req poller.IORequest) ([]windows.WSABuf, error) {
+func makeWriteBuffers(req poller.IORequest, dst []windows.WSABuf) ([]windows.WSABuf, error) {
 	if req.Buf != nil {
 		data := req.Buf.Bytes()
 		if len(data) == 0 {
 			return nil, poller.ErrInvalidIORequest
 		}
-		return []windows.WSABuf{{Len: uint32(len(data)), Buf: &data[0]}}, nil
+		return append(dst, windows.WSABuf{Len: uint32(len(data)), Buf: &data[0]}), nil
 	}
-	wsabufs := make([]windows.WSABuf, 0, len(req.Bufs))
 	for _, buf := range req.Bufs {
 		slices := buf.ReadableSlices(nil)
 		for _, data := range slices {
 			if len(data) == 0 {
 				continue
 			}
-			wsabufs = append(wsabufs, windows.WSABuf{Len: uint32(len(data)), Buf: &data[0]})
+			dst = append(dst, windows.WSABuf{Len: uint32(len(data)), Buf: &data[0]})
 		}
 	}
-	if len(wsabufs) == 0 {
+	if len(dst) == 0 {
 		return nil, poller.ErrInvalidIORequest
 	}
-	return wsabufs, nil
+	return dst, nil
 }
 
 func (p *Poller) submitClose(req poller.IORequest, ov *windows.Overlapped) error {

@@ -209,6 +209,14 @@ func (r *inactiveRecorder) ChannelInactive(*HandlerContext) {
 	r.count++
 }
 
+type flushCompleteRecorder struct {
+	count int
+}
+
+func (r *flushCompleteRecorder) FlushComplete(*HandlerContext) {
+	r.count++
+}
+
 type releaseReadHandler struct {
 	reads      int
 	closeAfter bool
@@ -289,6 +297,63 @@ func TestUnsafeOutboundPartialWrite(t *testing.T) {
 	}
 	if recorder.changes != 2 {
 		t.Fatalf("writability changes=%d, want 2", recorder.changes)
+	}
+}
+
+func TestUnsafeWriteAndFlushUseNoPromiseFastPath(t *testing.T) {
+	poller := &fakeReadyPoller{}
+	rw := &partialWriteRW{steps: []writeStep{{n: 1, again: true}, {n: 1}}}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     poller,
+		ReadWriter: rw,
+	})
+
+	buf := buffer.NewHeapBuffer(2)
+	if _, err := buf.WriteBytes([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Write(buf); err != nil {
+		t.Fatal(err)
+	}
+	if unsafeCh.outHead == nil || unsafeCh.outHead.promise != nil {
+		t.Fatalf("outbound promise=%v, want nil fast path", unsafeCh.outHead)
+	}
+	if err := ch.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if len(unsafeCh.flushWaiters) != 0 {
+		t.Fatalf("flush waiters=%d, want none on non-future flush", len(unsafeCh.flushWaiters))
+	}
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
+	if buf.RefCnt() != 0 || ch.PendingOutboundBytes() != 0 {
+		t.Fatalf("ref=%d pending=%d, want drained", buf.RefCnt(), ch.PendingOutboundBytes())
+	}
+}
+
+func TestUnsafeFlushFastPathFiresCompleteWithoutWaiter(t *testing.T) {
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     &fakeReadyPoller{},
+		ReadWriter: &partialWriteRW{},
+	})
+	recorder := &flushCompleteRecorder{}
+	if err := ch.Pipeline().AddLast("flush", recorder); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ch.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.count != 1 {
+		t.Fatalf("flush complete count=%d, want 1", recorder.count)
+	}
+	if len(unsafeCh.flushWaiters) != 0 {
+		t.Fatalf("flush waiters=%d, want none", len(unsafeCh.flushWaiters))
 	}
 }
 

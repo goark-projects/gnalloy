@@ -101,6 +101,9 @@ func (c *LocalChannel) Options() *ChannelOptions {
 }
 
 func (c *LocalChannel) Write(msg any) error {
+	if c.ownerExecutor() == nil {
+		return c.pipeline.Write(msg)
+	}
 	future := c.WriteFuture(msg)
 	if future.IsDone() {
 		return future.Err()
@@ -118,6 +121,9 @@ func (c *LocalChannel) WriteFuture(msg any) Future {
 }
 
 func (c *LocalChannel) Flush() error {
+	if c.ownerExecutor() == nil {
+		return c.pipeline.Flush()
+	}
 	future := c.FlushFuture()
 	if future.IsDone() {
 		return future.Err()

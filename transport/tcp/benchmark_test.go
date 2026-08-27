@@ -217,7 +217,7 @@ func (benchmarkEchoHandler) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		ctx.FireChannelRead(msg)
 		return
 	}
-	if err := ctx.Channel().WriteAndFlush(buf); err != nil {
+	if err := ctx.WriteAndFlush(buf); err != nil {
 		ctx.FireExceptionCaught(err)
 	}
 }
@@ -253,7 +253,7 @@ func (benchmarkLengthFieldEchoHandler) ChannelRead(ctx *channel.HandlerContext, 
 		ctx.FireExceptionCaught(err)
 		return
 	}
-	if err := ctx.Channel().WriteAndFlush(out); err != nil {
+	if err := ctx.WriteAndFlush(out); err != nil {
 		ctx.FireExceptionCaught(err)
 	}
 }

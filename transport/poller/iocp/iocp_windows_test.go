@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/transport/poller"
 	"golang.org/x/sys/windows"
 )
@@ -35,6 +36,25 @@ func TestSubmitAcceptClosesAcceptedSocketOnImmediateFailure(t *testing.T) {
 	}
 	if closeErr := windows.Closesocket(accepted); !errors.Is(closeErr, windows.WSAENOTSOCK) {
 		t.Fatalf("accepted socket was not closed, close err=%v", closeErr)
+	}
+}
+
+func TestMakeWriteBuffersUsesInlineStorageForSingleBuffer(t *testing.T) {
+	buf := buffer.NewHeapBuffer(8)
+	defer buf.Release()
+	if _, err := buf.WriteBytes([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	var inline [1]windows.WSABuf
+	wsabufs, err := makeWriteBuffers(poller.IORequest{Buf: buf}, inline[:0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wsabufs) != 1 || wsabufs[0].Len != 4 {
+		t.Fatalf("wsabufs=%+v, want one 4-byte buffer", wsabufs)
+	}
+	if &wsabufs[0] != &inline[0] {
+		t.Fatal("single-buffer write should reuse inline WSABuf storage")
 	}
 }
 

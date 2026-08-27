@@ -146,6 +146,13 @@ func (c *HandlerContext) Flush() error {
 	return c.pipeline.sink.Flush()
 }
 
+func (c *HandlerContext) WriteAndFlush(msg any) error {
+	if err := c.Write(msg); err != nil {
+		return err
+	}
+	return c.Flush()
+}
+
 func (c *HandlerContext) CloseFuture() Future {
 	return closeFutureFrom(c)
 }
