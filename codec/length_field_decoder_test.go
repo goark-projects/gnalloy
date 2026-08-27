@@ -51,6 +51,35 @@ func TestLengthFieldDecoderSplitFrame(t *testing.T) {
 	collector.release()
 }
 
+func TestLengthFieldDecoderMergesFragmentedDefaultCumulation(t *testing.T) {
+	decoder, err := NewLengthFieldBasedFrameDecoder(1024, 0, 4, 0, 4, buffer.BigEndian)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("decoder", decoder); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("collector", collector); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, b := range []byte{0, 0, 0, 5, 'h', 'e', 'l', 'l', 'o'} {
+		ch.Pipeline().FireChannelRead(testBuf([]byte{b}))
+	}
+	if len(collector.frames) != 1 {
+		t.Fatalf("frames=%d", len(collector.frames))
+	}
+	if got := string(collector.frames[0].Bytes()); got != "hello" {
+		t.Fatalf("frame=%q", got)
+	}
+	if slices := collector.frames[0].ReadableSlices(nil); len(slices) != 1 {
+		t.Fatalf("slice count=%d, want 1", len(slices))
+	}
+	collector.release()
+}
+
 func TestLengthFieldDecoderStickyFrames(t *testing.T) {
 	decoder, err := NewLengthFieldBasedFrameDecoder(1024, 0, 4, 0, 4, buffer.BigEndian)
 	if err != nil {

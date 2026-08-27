@@ -149,7 +149,8 @@ type msgContext struct {
 }
 
 type Poller struct {
-	fd int
+	fd     int
+	wakefd int
 
 	params params
 	sq     sq
@@ -160,7 +161,7 @@ type Poller struct {
 	writev  map[uint64][]iovec
 	msgctx  map[uint64]*msgContext
 	nextID  uint64
-	closed  bool
+	closed  atomic.Bool
 
 	multishotAccept   bool
 	registeredBuffers bool
@@ -205,6 +206,7 @@ func NewWithConfig(cfg Config) (poller.Poller, error) {
 		entries = defaultEntries
 	}
 	p := &Poller{
+		wakefd:          -1,
 		entries:         make(map[poller.FDRef]poller.ChannelID, entries),
 		pending:         make(map[uint64]poller.IORequest, entries),
 		writev:          make(map[uint64][]iovec, entries),
@@ -226,7 +228,7 @@ func (p *Poller) Backend() poller.BackendKind {
 }
 
 func (p *Poller) RegisterBuffers(buffers [][]byte) error {
-	if p.closed {
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
 	if len(buffers) == 0 {
@@ -250,7 +252,7 @@ func (p *Poller) RegisterBuffers(buffers [][]byte) error {
 }
 
 func (p *Poller) UnregisterBuffers() error {
-	if p.closed {
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
 	if !p.registeredBuffers {
@@ -294,7 +296,7 @@ func (p *Poller) Register(fd poller.FDRef, ch poller.ChannelID, _ poller.ReadyMa
 	if !fd.Valid() {
 		return poller.ErrInvalidFD
 	}
-	if p.closed {
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
 	p.entries[fd] = ch
@@ -305,7 +307,7 @@ func (p *Poller) Modify(fd poller.FDRef, _ poller.ReadyMask) error {
 	if !fd.Valid() {
 		return poller.ErrInvalidFD
 	}
-	if p.closed {
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
 	return nil
@@ -317,7 +319,10 @@ func (p *Poller) Deregister(fd poller.FDRef) error {
 }
 
 func (p *Poller) Submit(req poller.IORequest) error {
-	if p.closed {
+	if req.Op == poller.OpWakeup {
+		return p.Wakeup()
+	}
+	if p.closed.Load() {
 		return poller.ErrClosedPoller
 	}
 	if !validRequest(req) {
@@ -334,7 +339,8 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	for _, buf := range req.Bufs {
 		buf.Retain()
 	}
-	if err := p.prepare(uint64(id), req); err != nil {
+	nextTail, err := p.prepare(uint64(id), req)
+	if err != nil {
 		delete(p.writev, uint64(id))
 		delete(p.msgctx, uint64(id))
 		if req.Buf != nil {
@@ -346,6 +352,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 		return err
 	}
 	p.pending[uint64(id)] = req
+	atomic.StoreUint32(p.sq.tail, nextTail)
 	if err := p.enter(1, 0, 0); err != nil {
 		delete(p.pending, uint64(id))
 		delete(p.writev, uint64(id))
@@ -362,7 +369,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 }
 
 func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
-	if p.closed {
+	if p.closed.Load() {
 		return 0, poller.ErrClosedPoller
 	}
 	if len(dst) == 0 {
@@ -375,40 +382,46 @@ func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
 	if p.completionOverflowed() {
 		return 0, poller.ErrCompletionQueueOverflow
 	}
-	if timeoutMillis > 0 {
-		pollfd := []unix.PollFd{{Fd: int32(p.fd), Events: unix.POLLIN}}
-		ready, err := unix.Poll(pollfd, timeoutMillis)
-		if err != nil {
-			if errors.Is(err, unix.EINTR) {
-				return 0, nil
-			}
-			return 0, err
-		}
-		if ready == 0 {
-			return 0, nil
-		}
-	} else if err := p.enter(0, 1, enterGetEvents); err != nil {
-		if errors.Is(err, unix.EINTR) {
-			return 0, nil
-		}
+	woken, err := p.waitReadable(timeoutMillis)
+	if err != nil {
 		return 0, err
+	}
+	if woken {
+		p.drainWakeup()
 	}
 	n = p.reap(dst)
 	if n == 0 && p.completionOverflowed() {
 		return 0, poller.ErrCompletionQueueOverflow
 	}
+	if n == 0 && woken {
+		dst[0] = poller.Event{
+			Model: poller.Completion,
+			Op:    poller.OpWakeup,
+			FD:    poller.FDRef{FD: p.wakefd},
+			Ready: poller.ReadyRead,
+		}
+		return 1, nil
+	}
 	return n, nil
 }
 
 func (p *Poller) Wakeup() error {
-	return p.Submit(poller.IORequest{Op: poller.OpWakeup})
+	if p.closed.Load() {
+		return poller.ErrClosedPoller
+	}
+	if err := p.signalWakeup(); err != nil {
+		if errors.Is(err, unix.EBADF) && p.closed.Load() {
+			return poller.ErrClosedPoller
+		}
+		return err
+	}
+	return nil
 }
 
 func (p *Poller) Close() error {
-	if p.closed {
+	if p.closed.Swap(true) {
 		return nil
 	}
-	p.closed = true
 	if p.registeredBuffers {
 		_ = p.register(unregisterBuffers, nil, 0)
 		p.registeredBuffers = false
@@ -432,7 +445,8 @@ func (p *Poller) Close() error {
 	}
 	err2 := unmapIfPresent(p.cq.ring)
 	err3 := unmapIfPresent(p.sq.ring)
-	err4 := unix.Close(p.fd)
+	err4 := p.closeWakeup()
+	err5 := unix.Close(p.fd)
 	if err1 != nil {
 		return err1
 	}
@@ -442,10 +456,24 @@ func (p *Poller) Close() error {
 	if err3 != nil {
 		return err3
 	}
-	return err4
+	if err4 != nil {
+		return err4
+	}
+	return err5
 }
 
 func (p *Poller) setup(entries uint32, cfg Config) error {
+	wakefd, err := unix.Eventfd(0, unix.EFD_NONBLOCK|unix.EFD_CLOEXEC)
+	if err != nil {
+		return err
+	}
+	p.wakefd = wakefd
+	ok := false
+	defer func() {
+		if !ok {
+			_ = p.closeWakeup()
+		}
+	}()
 	if cfg.SQPoll {
 		p.params.flags |= setupSQPoll
 		idle := cfg.SQPollIdleMillis
@@ -514,14 +542,15 @@ func (p *Poller) setup(entries uint32, cfg Config) error {
 		overflow: uint32Ptr(cqRing, p.params.cqOff.overflow),
 		cqes:     (*cqe)(unsafe.Pointer(&cqRing[p.params.cqOff.cqes])),
 	}
+	ok = true
 	return nil
 }
 
-func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
+func (p *Poller) prepare(userData uint64, req poller.IORequest) (uint32, error) {
 	head := atomic.LoadUint32(p.sq.head)
 	tail := atomic.LoadUint32(p.sq.tail)
 	if tail-head >= atomic.LoadUint32(p.sq.ringEntries) {
-		return poller.ErrSubmissionQueueFull
+		return 0, poller.ErrSubmissionQueueFull
 	}
 	index := tail & atomic.LoadUint32(p.sq.ringMask)
 	entry := p.sqe(index)
@@ -542,7 +571,7 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 		if req.Datagram {
 			ctx, err := makeRecvMsgContext(req)
 			if err != nil {
-				return err
+				return 0, err
 			}
 			p.msgctx[userData] = ctx
 			entry.opcode = opRecvMsg
@@ -553,7 +582,7 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 		}
 		view := req.Buf.WritableBytesView()
 		if len(view) == 0 {
-			return poller.ErrInvalidIORequest
+			return 0, poller.ErrInvalidIORequest
 		}
 		if req.UseFixedBuffer {
 			entry.opcode = opReadFixed
@@ -568,7 +597,7 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 		if req.Datagram {
 			ctx, err := makeSendMsgContext(req)
 			if err != nil {
-				return err
+				return 0, err
 			}
 			p.msgctx[userData] = ctx
 			entry.opcode = opSendMsg
@@ -592,7 +621,7 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 				}
 			}
 			if len(vectors) == 0 {
-				return poller.ErrInvalidIORequest
+				return 0, poller.ErrInvalidIORequest
 			}
 			p.writev[userData] = vectors
 			entry.opcode = opWritev
@@ -603,7 +632,7 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 		}
 		data := req.Buf.Bytes()
 		if len(data) == 0 {
-			return poller.ErrInvalidIORequest
+			return 0, poller.ErrInvalidIORequest
 		}
 		if req.UseFixedBuffer {
 			entry.opcode = opWriteFixed
@@ -618,13 +647,12 @@ func (p *Poller) prepare(userData uint64, req poller.IORequest) error {
 		entry.opcode = opClose
 		entry.fd = int32(req.FD.FD)
 	default:
-		return poller.ErrInvalidIORequest
+		return 0, poller.ErrInvalidIORequest
 	}
 
 	array := (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(p.sq.array)) + uintptr(index)*unsafe.Sizeof(uint32(0))))
 	atomic.StoreUint32(array, index)
-	atomic.StoreUint32(p.sq.tail, tail+1)
-	return nil
+	return tail + 1, nil
 }
 
 func (p *Poller) reap(dst []poller.Event) int {

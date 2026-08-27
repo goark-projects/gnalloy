@@ -4,7 +4,9 @@ package iouring
 
 import (
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/transport/poller"
@@ -93,4 +95,55 @@ func TestRegisterMmapAllocatorFixedBuffers(t *testing.T) {
 	if err := p.UnregisterBuffers(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestWakeupConcurrent(t *testing.T) {
+	raw, err := NewWithConfig(Config{Entries: 1024})
+	if err != nil {
+		t.Skip(err)
+	}
+	p := raw.(*Poller)
+	defer p.Close()
+
+	const (
+		goroutines        = 8
+		wakeupsPerRoutine = 64
+	)
+	start := make(chan struct{})
+	errs := make(chan error, goroutines)
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for range wakeupsPerRoutine {
+				if err := p.Wakeup(); err != nil {
+					errs <- err
+					return
+				}
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	events := make([]poller.Event, 16)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		n, err := p.Poll(events, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range n {
+			if events[i].Op == poller.OpWakeup {
+				return
+			}
+		}
+	}
+	t.Fatal("未收到 io_uring 唤醒事件")
 }

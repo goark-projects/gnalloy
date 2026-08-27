@@ -56,6 +56,9 @@ func (d *LengthFieldBasedFrameDecoder) Decode(_ *channel.HandlerContext, cumulat
 	readable := cumulation.ReadableBytes()
 	minFrameLength := d.lengthFieldOffset + d.lengthFieldLength
 	if readable < minFrameLength {
+		if cumulation.ComponentCount() > 1 {
+			return nil, compactFragmentedCumulation(cumulation)
+		}
 		return nil, nil
 	}
 
@@ -77,7 +80,16 @@ func (d *LengthFieldBasedFrameDecoder) Decode(_ *channel.HandlerContext, cumulat
 	}
 	frameLength := int(frameLength64)
 	if readable < frameLength {
+		if cumulation.ComponentCount() > 1 {
+			return nil, compactFragmentedCumulation(cumulation)
+		}
 		return nil, nil
+	}
+	if cumulation.ComponentCount() > 1 {
+		if err := compactFragmentedCumulation(cumulation); err != nil {
+			return nil, err
+		}
+		readerIndex = cumulation.ReaderIndex()
 	}
 
 	frameIndex := readerIndex + d.initialBytesToSkip
@@ -91,6 +103,22 @@ func (d *LengthFieldBasedFrameDecoder) Decode(_ *channel.HandlerContext, cumulat
 		return nil, err
 	}
 	return frame, nil
+}
+
+func compactFragmentedCumulation(in *buffer.CompositeByteBuf) error {
+	if in == nil || in.ComponentCount() <= 1 || in.ReadableBytes() == 0 {
+		return nil
+	}
+	merged := buffer.NewHeapBuffer(in.ReadableBytes())
+	for _, part := range in.ReadableSlices(nil) {
+		if _, err := merged.WriteBytes(part); err != nil {
+			merged.Release()
+			return err
+		}
+	}
+	in.Clear()
+	in.Append(merged)
+	return nil
 }
 
 func (d *LengthFieldBasedFrameDecoder) exceededFrameLength(in *buffer.CompositeByteBuf, frameLength int64) (any, error) {
