@@ -128,6 +128,9 @@ func (u *Unsafe) BindEventExecutor(executor interface{ Submit(transport.Task) er
 	}
 	u.eventExecutor.Store(executor)
 	u.closePromise.SetListenerExecutor(executor)
+	if u.ch != nil {
+		u.ch.BindEventExecutor(executor)
+	}
 }
 
 // MarkRegistered 由 EventLoop 在 fd 成功注册到底层 poller 后调用。

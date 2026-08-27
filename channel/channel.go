@@ -1,6 +1,8 @@
 package channel
 
 import (
+	"sync/atomic"
+
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/timer"
 	"goark.dev/gnalloy/transport"
@@ -63,6 +65,8 @@ type LocalChannel struct {
 	timer    *timer.Wheel
 	attrs    *AttributeMap
 	options  *ChannelOptions
+
+	eventExecutor atomic.Value
 }
 
 func NewLocalChannel(id transport.ChannelID, alloc buffer.Allocator, sink OutboundSink) *LocalChannel {
@@ -97,22 +101,47 @@ func (c *LocalChannel) Options() *ChannelOptions {
 }
 
 func (c *LocalChannel) Write(msg any) error {
-	return c.pipeline.Write(msg)
+	future := c.WriteFuture(msg)
+	if future.IsDone() {
+		return future.Err()
+	}
+	return nil
 }
 
 func (c *LocalChannel) WriteFuture(msg any) Future {
+	if executor := c.ownerExecutor(); executor != nil {
+		return c.submitOwnerFuture(executor, msg, func() Future {
+			return c.pipeline.WriteFuture(msg)
+		})
+	}
 	return c.pipeline.WriteFuture(msg)
 }
 
 func (c *LocalChannel) Flush() error {
-	return c.pipeline.Flush()
+	future := c.FlushFuture()
+	if future.IsDone() {
+		return future.Err()
+	}
+	return nil
 }
 
 func (c *LocalChannel) FlushFuture() Future {
+	if executor := c.ownerExecutor(); executor != nil {
+		return c.submitOwnerFuture(executor, nil, func() Future {
+			return c.pipeline.FlushFuture()
+		})
+	}
 	return c.pipeline.FlushFuture()
 }
 
 func (c *LocalChannel) WriteAndFlush(msg any) error {
+	if c.ownerExecutor() != nil {
+		future := c.WriteAndFlushFuture(msg)
+		if future.IsDone() {
+			return future.Err()
+		}
+		return nil
+	}
 	if err := c.Write(msg); err != nil {
 		return err
 	}
@@ -120,18 +149,43 @@ func (c *LocalChannel) WriteAndFlush(msg any) error {
 }
 
 func (c *LocalChannel) WriteAndFlushFuture(msg any) Future {
+	if executor := c.ownerExecutor(); executor != nil {
+		return c.submitOwnerFuture(executor, msg, func() Future {
+			return c.pipeline.WriteAndFlushFuture(msg)
+		})
+	}
 	return c.pipeline.WriteAndFlushFuture(msg)
 }
 
 func (c *LocalChannel) CloseFuture() Future {
+	if executor := c.ownerExecutor(); executor != nil {
+		return c.submitOwnerFuture(executor, nil, func() Future {
+			return c.pipeline.CloseFuture()
+		})
+	}
 	return c.pipeline.CloseFuture()
 }
 
 func (c *LocalChannel) Close() error {
-	return c.pipeline.Close()
+	future := c.CloseFuture()
+	if future.IsDone() {
+		return future.Err()
+	}
+	return nil
 }
 
 func (c *LocalChannel) Read() error {
+	if executor := c.ownerExecutor(); executor != nil {
+		return executor.Submit(func() {
+			if err := c.readDirect(); err != nil {
+				c.pipeline.FireExceptionCaught(err)
+			}
+		})
+	}
+	return c.readDirect()
+}
+
+func (c *LocalChannel) readDirect() error {
 	if sink, ok := c.pipeline.sink.(ReadSink); ok {
 		return sink.Read()
 	}

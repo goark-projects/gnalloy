@@ -53,6 +53,12 @@ func (e *endpoint) Channel() channel.Channel {
 	return e.ch
 }
 
+func (e *endpoint) BindEventExecutor(executor interface{ Submit(transport.Task) error }) {
+	if e.ch != nil {
+		e.ch.BindEventExecutor(executor)
+	}
+}
+
 func (e *endpoint) MarkRegistered() {
 	if e.ch != nil {
 		e.ch.Pipeline().FireChannelRegistered()

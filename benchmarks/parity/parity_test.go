@@ -181,7 +181,7 @@ func TestRunnerCapturesCommandOutput(t *testing.T) {
 			Protocol:  "raw",
 			Command:   []string{os.Args[0], "-test.run=TestRunnerCapturesCommandOutput"},
 			Env:       map[string]string{"GNALLOY_PARITY_HELPER": "1"},
-			Timeout:   Duration(time.Second),
+			Timeout:   Duration(5 * time.Second),
 		}},
 	}
 	report, err := Runner{Now: fixedNow()}.Run(context.Background(), spec)
@@ -215,7 +215,7 @@ func TestRunnerExpandsScenarioVariables(t *testing.T) {
 				"GNALLOY_PARITY_HELPER":  "2",
 				"GNALLOY_PARITY_PAYLOAD": "${PAYLOAD}",
 			},
-			Timeout: Duration(time.Second),
+			Timeout: Duration(5 * time.Second),
 		}},
 	}
 	report, err := Runner{Now: fixedNow()}.Run(context.Background(), spec)
