@@ -23,6 +23,8 @@ type Scenario struct {
 	Protocol   string            `json:"protocol"`
 	Payload    string            `json:"payload,omitempty"`
 	Backend    string            `json:"backend,omitempty"`
+	Warmup     int               `json:"warmup,omitempty"`
+	Repeat     int               `json:"repeat,omitempty"`
 	WorkDir    string            `json:"workDir,omitempty"`
 	Command    []string          `json:"command,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
@@ -102,6 +104,12 @@ func (s Scenario) Validate() error {
 	}
 	if time.Duration(s.Timeout) < 0 {
 		return fmt.Errorf("negative timeout")
+	}
+	if s.Warmup < 0 {
+		return fmt.Errorf("negative warmup")
+	}
+	if s.Repeat < 0 {
+		return fmt.Errorf("negative repeat")
 	}
 	return nil
 }

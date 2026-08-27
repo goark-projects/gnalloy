@@ -1,6 +1,7 @@
 package parity
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -67,7 +68,7 @@ func parseScenarioStatsLine(line string) (ScenarioStats, bool) {
 		case "errors":
 			stat.Errors = parseIntMetric(value)
 		case "elapsed":
-			stat.Elapsed, _ = time.ParseDuration(value)
+			stat.Elapsed = parseDurationMetric(value)
 		case "throughput":
 			stat.ThroughputOpsPerSec, _ = strconv.ParseFloat(value, 64)
 		}
@@ -82,4 +83,51 @@ func parseIntMetric(value string) int64 {
 	value = strings.TrimSuffix(strings.TrimSpace(value), "B")
 	n, _ := strconv.ParseInt(value, 10, 64)
 	return n
+}
+
+func parseDurationMetric(value string) time.Duration {
+	if value == "" {
+		return 0
+	}
+	if duration, err := time.ParseDuration(value); err == nil {
+		return duration
+	}
+	duration, _ := parseJavaDuration(value)
+	return duration
+}
+
+func parseJavaDuration(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "PT") {
+		return 0, fmt.Errorf("%w: %s", ErrInvalidScenario, value)
+	}
+	rest := strings.TrimPrefix(value, "PT")
+	if rest == "" {
+		return 0, fmt.Errorf("%w: empty java duration", ErrInvalidScenario)
+	}
+	var total time.Duration
+	for len(rest) > 0 {
+		idx := strings.IndexAny(rest, "HMS")
+		if idx <= 0 {
+			return 0, fmt.Errorf("%w: %s", ErrInvalidScenario, value)
+		}
+		number := rest[:idx]
+		unit := rest[idx]
+		part, err := strconv.ParseFloat(number, 64)
+		if err != nil {
+			return 0, err
+		}
+		switch unit {
+		case 'H':
+			total += time.Duration(part * float64(time.Hour))
+		case 'M':
+			total += time.Duration(part * float64(time.Minute))
+		case 'S':
+			total += time.Duration(part * float64(time.Second))
+		default:
+			return 0, fmt.Errorf("%w: %s", ErrInvalidScenario, value)
+		}
+		rest = rest[idx+1:]
+	}
+	return total, nil
 }

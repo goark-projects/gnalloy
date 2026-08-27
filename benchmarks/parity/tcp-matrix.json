@@ -1,0 +1,127 @@
+{
+  "name": "gnalloy tcp parity matrix",
+  "notes": "生产级 TCP echo 对标矩阵。覆盖多 payload、三轮正式采样和一次预热；运行前先构建 benchmarks/external/bin 下的 gnalloy、Netty、gnet、netpoll harness。",
+  "variables": {
+    "REPO_ROOT": ".",
+    "CONNECTIONS": "256",
+    "MESSAGES": "20000",
+    "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
+    "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
+    "GNET_BENCH": "./benchmarks/external/bin/gnet-bench",
+    "NETPOLL_BENCH": "./benchmarks/external/bin/netpoll-bench"
+  },
+  "scenarios": [
+    {
+      "name": "gnalloy epoll tcp echo 64B",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "epoll",
+      "payload": "64B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "64", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "tcp", "echo", "payload-64"]
+    },
+    {
+      "name": "gnalloy epoll tcp echo 1KiB",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "epoll",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "tcp", "echo", "payload-1024"]
+    },
+    {
+      "name": "gnalloy epoll tcp echo 16KiB",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "epoll",
+      "payload": "16384B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "16384", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "tcp", "echo", "payload-16384"]
+    },
+    {
+      "name": "gnalloy iouring tcp echo 1KiB",
+      "framework": "gnalloy",
+      "protocol": "tcp-echo",
+      "backend": "iouring",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iouring"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "tcp", "echo", "iouring"]
+    },
+    {
+      "name": "netty epoll tcp echo 64B",
+      "framework": "netty",
+      "protocol": "tcp-echo",
+      "backend": "epoll",
+      "payload": "64B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--backend", "epoll", "--protocol", "tcp-echo", "--payload", "64", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "tcp", "echo", "payload-64"]
+    },
+    {
+      "name": "netty epoll tcp echo 1KiB",
+      "framework": "netty",
+      "protocol": "tcp-echo",
+      "backend": "epoll",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--backend", "epoll", "--protocol", "tcp-echo", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "tcp", "echo", "payload-1024"]
+    },
+    {
+      "name": "netty epoll tcp echo 16KiB",
+      "framework": "netty",
+      "protocol": "tcp-echo",
+      "backend": "epoll",
+      "payload": "16384B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--backend", "epoll", "--protocol", "tcp-echo", "--payload", "16384", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "tcp", "echo", "payload-16384"]
+    },
+    {
+      "name": "gnet tcp echo 1KiB",
+      "framework": "gnet",
+      "protocol": "tcp-echo",
+      "backend": "poller",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["${GNET_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "gnet", "tcp", "echo", "payload-1024"]
+    },
+    {
+      "name": "netpoll tcp echo 1KiB",
+      "framework": "netpoll",
+      "protocol": "tcp-echo",
+      "backend": "poller",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["${NETPOLL_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netpoll", "tcp", "echo", "payload-1024"]
+    }
+  ]
+}

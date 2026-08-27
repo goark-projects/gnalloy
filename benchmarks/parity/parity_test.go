@@ -18,6 +18,21 @@ func TestLoadSpecRejectsInvalidScenario(t *testing.T) {
 	}
 }
 
+func TestLoadSpecRejectsNegativeSampling(t *testing.T) {
+	_, err := LoadSpec(strings.NewReader(`{
+		"scenarios": [{
+			"name": "netty",
+			"framework": "netty",
+			"protocol": "tcp-echo",
+			"warmup": -1,
+			"command": ["netty-bench"]
+		}]
+	}`))
+	if !errors.Is(err, ErrInvalidScenario) {
+		t.Fatalf("err=%v, want ErrInvalidScenario", err)
+	}
+}
+
 func TestLoadSpecAllowsSkippedExternalScenarioWithoutCommand(t *testing.T) {
 	spec, err := LoadSpec(strings.NewReader(`{
 		"scenarios": [{
@@ -64,6 +79,61 @@ func TestBaselineSpecLoads(t *testing.T) {
 	}
 	if enabledExternal != 3 {
 		t.Fatalf("enabled external scenarios=%d, want 3", enabledExternal)
+	}
+}
+
+func TestTCPMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("tcp-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) < 9 {
+		t.Fatalf("scenarios=%d, want tcp matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		if scenario.Warmup != 1 || scenario.Repeat != 3 {
+			t.Fatalf("scenario %q warmup=%d repeat=%d, want 1/3", scenario.Name, scenario.Warmup, scenario.Repeat)
+		}
+	}
+}
+
+func TestBaselineNettyTCPEchoUsesNativeEpoll(t *testing.T) {
+	file, err := os.Open("baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scenario Scenario
+	found := false
+	for _, candidate := range spec.Scenarios {
+		if candidate.Framework == "netty" && candidate.Protocol == "tcp-echo" {
+			scenario = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("netty tcp echo scenario missing")
+	}
+	command := strings.Join(scenario.Command, " ")
+	for _, want := range []string{"--backend epoll", "--connections ${CONNECTIONS}", "--messages ${MESSAGES}"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("missing %q in command %q", want, command)
+		}
+	}
+	if scenario.Backend != "epoll" {
+		t.Fatalf("backend=%q, want epoll", scenario.Backend)
 	}
 }
 
@@ -339,6 +409,40 @@ func TestRunnerCapturesCommandOutput(t *testing.T) {
 	}
 }
 
+func TestRunnerRepeatsScenarioAndDropsWarmupOutput(t *testing.T) {
+	if os.Getenv("GNALLOY_PARITY_HELPER") == "repeat" {
+		os.Stdout.WriteString("framework=netty protocol=tcp-echo backend=epoll payload=16 connections=1 messages=2 total=2 errors=0 elapsed=PT0.000004S throughput=500000.00 ops/s\nBenchmarkNettyTCPEcho-8 2 2000 ns/op\n")
+		return
+	}
+	spec := Spec{
+		Name: "repeat",
+		Scenarios: []Scenario{{
+			Name:      "helper",
+			Framework: "netty",
+			Protocol:  "tcp-echo",
+			Warmup:    1,
+			Repeat:    2,
+			Command:   []string{os.Args[0], "-test.run=TestRunnerRepeatsScenarioAndDropsWarmupOutput"},
+			Env:       map[string]string{"GNALLOY_PARITY_HELPER": "repeat"},
+			Timeout:   Duration(5 * time.Second),
+		}},
+	}
+	report, err := Runner{Now: fixedNow()}.Run(context.Background(), spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := report.Scenarios[0]
+	if len(result.Samples) != 2 || len(result.Stats) != 2 || len(result.Metrics) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	if strings.Count(result.Output, "framework=netty") != 2 {
+		t.Fatalf("warmup output leaked or repeat output missing: %q", result.Output)
+	}
+	if result.Stats[0].Elapsed != 4*time.Microsecond {
+		t.Fatalf("elapsed=%v, want 4us", result.Stats[0].Elapsed)
+	}
+}
+
 func TestRunnerExpandsScenarioVariables(t *testing.T) {
 	if os.Getenv("GNALLOY_PARITY_HELPER") == "2" {
 		os.Stdout.WriteString(os.Getenv("GNALLOY_PARITY_PAYLOAD"))
@@ -375,10 +479,13 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		Name:    "parity",
 		Machine: Machine{Hostname: "host", OS: "linux", Arch: "amd64", CPUs: 8, Go: "go1.25"},
 		Scenarios: []ScenarioResult{{
-			Scenario: Scenario{Name: "netty", Framework: "netty", Protocol: "tcp", Command: []string{"java", "-jar", "bench.jar"}},
+			Scenario: Scenario{Name: "netty", Framework: "netty", Protocol: "tcp", Repeat: 2, Command: []string{"java", "-jar", "bench.jar"}},
 			Output:   "ok\n",
-			Stats:    []ScenarioStats{{Framework: "netty", Protocol: "tcp", Backend: "nio", TotalRequests: 100, Errors: 0, ThroughputOpsPerSec: 1000}},
-			Metrics:  []BenchmarkMetric{{Name: "BenchmarkEcho-16", Iterations: 1000, NsPerOp: 123, BytesPerOp: 64, AllocsPerOp: 2}},
+			Stats: []ScenarioStats{
+				{Framework: "netty", Protocol: "tcp", Backend: "epoll", TotalRequests: 100, Errors: 0, Elapsed: 100 * time.Millisecond, ThroughputOpsPerSec: 1000},
+				{Framework: "netty", Protocol: "tcp", Backend: "epoll", TotalRequests: 100, Errors: 0, Elapsed: 80 * time.Millisecond, ThroughputOpsPerSec: 1250},
+			},
+			Metrics: []BenchmarkMetric{{Name: "BenchmarkEcho-16", Iterations: 1000, NsPerOp: 123, BytesPerOp: 64, AllocsPerOp: 2}},
 		}},
 	}
 	var out bytes.Buffer
@@ -386,7 +493,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "Throughput ops/s", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
+	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "Throughput median", "1125", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}
@@ -407,6 +514,16 @@ func TestParseScenarioStats(t *testing.T) {
 	}
 	if stat.Elapsed != 3200*time.Millisecond || stat.ThroughputOpsPerSec != 8000000.25 {
 		t.Fatalf("stat=%+v", stat)
+	}
+}
+
+func TestParseScenarioStatsParsesJavaDuration(t *testing.T) {
+	stats := ParseScenarioStats("framework=netty protocol=tcp-echo backend=epoll payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=PT2M22.38974812S throughput=179788.22 ops/s\n")
+	if len(stats) != 1 {
+		t.Fatalf("stats=%+v, want one", stats)
+	}
+	if stats[0].Elapsed != 2*time.Minute+22389748120*time.Nanosecond {
+		t.Fatalf("elapsed=%v", stats[0].Elapsed)
 	}
 }
 

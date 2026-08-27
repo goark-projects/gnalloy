@@ -81,6 +81,7 @@ func writeSummary(b *strings.Builder, report Report) {
 	b.WriteString("\n## Summary\n\n")
 	if hasStats(report) {
 		writeStatsSummary(b, report)
+		writeStatsAggregateSummary(b, report)
 	}
 	if hasMetrics(report) {
 		writeBenchmarkSummary(b, report)
@@ -109,6 +110,41 @@ func writeBenchmarkSummary(b *strings.Builder, report Report) {
 	b.WriteString("\n")
 }
 
+func writeStatsAggregateSummary(b *strings.Builder, report Report) {
+	summaries := statsSummaries(report)
+	if len(summaries) == 0 {
+		return
+	}
+	b.WriteString("| Scenario | Framework | Protocol | Backend | Samples | Throughput min | Throughput median | Throughput max | Throughput mean | Median ns/op | Errors |\n")
+	b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	for _, summary := range summaries {
+		b.WriteString("| ")
+		b.WriteString(escapeCell(summary.Scenario))
+		b.WriteString(" | ")
+		b.WriteString(escapeCell(summary.Framework))
+		b.WriteString(" | ")
+		b.WriteString(escapeCell(summary.Protocol))
+		b.WriteString(" | ")
+		b.WriteString(escapeCell(summary.Backend))
+		b.WriteString(" | ")
+		b.WriteString(strconv.Itoa(summary.Samples))
+		b.WriteString(" | ")
+		b.WriteString(formatFloat(summary.MinThroughputOps))
+		b.WriteString(" | ")
+		b.WriteString(formatFloat(summary.MedianThroughputOps))
+		b.WriteString(" | ")
+		b.WriteString(formatFloat(summary.MaxThroughputOps))
+		b.WriteString(" | ")
+		b.WriteString(formatFloat(summary.MeanThroughputOps))
+		b.WriteString(" | ")
+		b.WriteString(formatFloat(summary.MedianNsPerOp))
+		b.WriteString(" | ")
+		b.WriteString(strconv.FormatInt(summary.TotalErrors, 10))
+		b.WriteString(" |\n")
+	}
+	b.WriteString("\n")
+}
+
 func writeScenario(b *strings.Builder, result ScenarioResult) {
 	scenario := result.Scenario
 	b.WriteString("### ")
@@ -119,6 +155,12 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 	writeRow(b, "protocol", scenario.Protocol)
 	writeRow(b, "backend", scenario.Backend)
 	writeRow(b, "payload", scenario.Payload)
+	if scenario.Warmup > 0 {
+		writeRow(b, "warmup", strconv.Itoa(scenario.Warmup))
+	}
+	if scenarioRepeat(scenario) > 1 {
+		writeRow(b, "repeat", strconv.Itoa(scenarioRepeat(scenario)))
+	}
 	writeRow(b, "duration", result.Duration.String())
 	writeRow(b, "exitCode", strconv.Itoa(result.ExitCode))
 	writeRow(b, "skipped", strconv.FormatBool(result.Skipped))
@@ -132,6 +174,27 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 		b.WriteString("Output:\n\n```text\n")
 		b.WriteString(escapeFence(result.Output))
 		b.WriteString("\n```\n\n")
+	}
+	if len(result.Samples) > 0 {
+		b.WriteString("Samples:\n\n")
+		b.WriteString("| Index | Exit | Duration | Stats | Metrics | Error |\n")
+		b.WriteString("| ---: | ---: | ---: | ---: | ---: | --- |\n")
+		for _, sample := range result.Samples {
+			b.WriteString("| ")
+			b.WriteString(strconv.Itoa(sample.Index))
+			b.WriteString(" | ")
+			b.WriteString(strconv.Itoa(sample.ExitCode))
+			b.WriteString(" | ")
+			b.WriteString(sample.Duration.String())
+			b.WriteString(" | ")
+			b.WriteString(strconv.Itoa(len(sample.Stats)))
+			b.WriteString(" | ")
+			b.WriteString(strconv.Itoa(len(sample.Metrics)))
+			b.WriteString(" | ")
+			b.WriteString(escapeCell(sample.Error))
+			b.WriteString(" |\n")
+		}
+		b.WriteString("\n")
 	}
 	if len(result.Stats) > 0 {
 		b.WriteString("Stats:\n\n")

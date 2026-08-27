@@ -43,7 +43,7 @@ func TestWriteBenchmarkResult(t *testing.T) {
 		NsPerOp:       2000,
 	})
 	text := out.String()
-	for _, want := range []string{"framework=netpoll", "total=2", "BenchmarkNetpollTCPEcho-", "2 2000 ns/op"} {
+	for _, want := range []string{"framework=netpoll", "backend=poller", "total=2", "BenchmarkNetpollTCPEcho-", "2 2000 ns/op"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

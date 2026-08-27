@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -49,6 +50,20 @@ type ScenarioResult struct {
 	Duration time.Duration     `json:"duration"`
 	ExitCode int               `json:"exitCode"`
 	Skipped  bool              `json:"skipped"`
+	Samples  []ScenarioSample  `json:"samples,omitempty"`
+	Stats    []ScenarioStats   `json:"stats,omitempty"`
+	Metrics  []BenchmarkMetric `json:"metrics,omitempty"`
+	Output   string            `json:"output,omitempty"`
+	Error    string            `json:"error,omitempty"`
+}
+
+// ScenarioSample 描述一次正式采样命令的原始执行结果。
+type ScenarioSample struct {
+	Index    int               `json:"index"`
+	Started  time.Time         `json:"started"`
+	Finished time.Time         `json:"finished"`
+	Duration time.Duration     `json:"duration"`
+	ExitCode int               `json:"exitCode"`
 	Stats    []ScenarioStats   `json:"stats,omitempty"`
 	Metrics  []BenchmarkMetric `json:"metrics,omitempty"`
 	Output   string            `json:"output,omitempty"`
@@ -97,6 +112,49 @@ func (r Runner) runScenario(ctx context.Context, scenario Scenario) ScenarioResu
 		return result
 	}
 
+	for i := 0; i < scenario.Warmup; i++ {
+		sample := r.runScenarioCommand(ctx, scenario, 0)
+		if sample.ExitCode != 0 || sample.Error != "" {
+			result.Finished = r.now()
+			result.Duration = result.Finished.Sub(started)
+			result.ExitCode = sample.ExitCode
+			result.Output = sample.Output
+			result.Error = fmt.Sprintf("warmup %d failed: %s", i+1, sample.Error)
+			return result
+		}
+	}
+
+	repeat := scenarioRepeat(scenario)
+	if repeat > 1 || scenario.Warmup > 0 {
+		result.Samples = make([]ScenarioSample, 0, repeat)
+	}
+	var output strings.Builder
+	for i := 0; i < repeat; i++ {
+		sample := r.runScenarioCommand(ctx, scenario, i+1)
+		result.Stats = append(result.Stats, sample.Stats...)
+		result.Metrics = append(result.Metrics, sample.Metrics...)
+		if output.Len() > 0 && sample.Output != "" {
+			output.WriteByte('\n')
+		}
+		output.WriteString(sample.Output)
+		if cap(result.Samples) > 0 {
+			result.Samples = append(result.Samples, sample)
+		}
+		if sample.ExitCode != 0 || sample.Error != "" {
+			result.ExitCode = sample.ExitCode
+			result.Error = sample.Error
+			break
+		}
+	}
+	result.Output = output.String()
+	result.Finished = r.now()
+	result.Duration = result.Finished.Sub(started)
+	return result
+}
+
+func (r Runner) runScenarioCommand(ctx context.Context, scenario Scenario, index int) ScenarioSample {
+	started := r.now()
+	sample := ScenarioSample{Index: index, Started: started}
 	timeout := time.Duration(scenario.Timeout)
 	if timeout == 0 {
 		timeout = defaultScenarioTimeout
@@ -114,20 +172,20 @@ func (r Runner) runScenario(ctx context.Context, scenario Scenario) ScenarioResu
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	err := cmd.Run()
-	result.Output = out.String()
-	result.Stats = ParseScenarioStats(result.Output)
-	result.Metrics = ParseBenchmarkMetrics(result.Output)
-	result.Finished = r.now()
-	result.Duration = result.Finished.Sub(started)
-	result.ExitCode = exitCode(err)
+	sample.Output = out.String()
+	sample.Stats = ParseScenarioStats(sample.Output)
+	sample.Metrics = ParseBenchmarkMetrics(sample.Output)
+	sample.Finished = r.now()
+	sample.Duration = sample.Finished.Sub(started)
+	sample.ExitCode = exitCode(err)
 	if err != nil {
 		if errors.Is(scenarioCtx.Err(), context.DeadlineExceeded) {
-			result.Error = scenarioCtx.Err().Error()
+			sample.Error = scenarioCtx.Err().Error()
 		} else {
-			result.Error = err.Error()
+			sample.Error = err.Error()
 		}
 	}
-	return result
+	return sample
 }
 
 func (r Runner) now() time.Time {
@@ -148,6 +206,13 @@ func resolveScenarioCommand(scenario Scenario) string {
 		return command
 	}
 	return resolved
+}
+
+func scenarioRepeat(scenario Scenario) int {
+	if scenario.Repeat <= 0 {
+		return 1
+	}
+	return scenario.Repeat
 }
 
 // DetectMachine 采集低风险机器信息，避免读取敏感环境变量。
