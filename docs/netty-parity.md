@@ -74,6 +74,12 @@ Go 的显式错误、组合式接口、引用计数 `ByteBuf` 和平台原生 I/
 | `FixedChannelPool` | `channel/pool.FixedPool` | done | 支持最大连接数、最大等待队列、获取超时、健康检查、生命周期回调和统计快照。 |
 | `ChannelPoolMap` | `channel/pool.Map` | done | 按 endpoint/tenant 等 key 懒加载并复用子池。 |
 
+## 应用协议装配
+
+| Netty 能力 | gnalloy 对应 | 状态 | 说明 |
+| --- | --- | --- | --- |
+| transport-neutral request/response pipeline | `protocol.ChannelExchanger` | done | 基于 `bootstrap.Dialer` 和 Adapter，把 stream、datagram、raw packet、L2 frame 都统一成上层 request-response 体验，同时保留各 transport 的消息类型。 |
+
 ## Transport 与 EventLoop
 
 | Netty 能力 | gnalloy 对应 | 状态 | 说明 |

@@ -65,6 +65,10 @@ blocks:
   contracts, an atomic low-overhead recorder, a Pipeline handler for lifecycle,
   read/write byte, flush, close, and exception counters, plus Prometheus text
   export and an OpenTelemetry adapter.
+- `protocol`: transport-neutral application protocol assembly API for
+  request-response flows over stream, datagram, raw packet, and L2 frame
+  channels. It uses `bootstrap.Dialer` and explicit adapters instead of
+  bypassing the Pipeline.
 - `queue`: bounded CAS-based MPSC ring queue for cross-EventLoop delivery.
 - `resolver/dns`: Go-native DNS resolver with system fallback, explicit
   exchanger hooks, UDP query support, TCP fallback, hosts override,
