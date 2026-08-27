@@ -18,4 +18,4 @@ CONNECTIONS="${CONNECTIONS:-32}" \
 MESSAGES="${MESSAGES:-32}" \
 PAYLOAD_SIZE="${PAYLOAD_SIZE:-64}" \
 SCENARIO="${SCENARIO:-mixed}" \
-"$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/verify-stress.sh"
+/bin/sh "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/verify-stress.sh"

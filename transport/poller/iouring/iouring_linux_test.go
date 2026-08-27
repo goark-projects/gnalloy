@@ -97,6 +97,19 @@ func TestRegisterMmapAllocatorFixedBuffers(t *testing.T) {
 	}
 }
 
+func TestSubmitEnterFlagsWakeSQPollThread(t *testing.T) {
+	var flags uint32
+	p := &Poller{sq: sq{flags: &flags}}
+	if got := p.submitEnterFlags(); got != 0 {
+		t.Fatalf("flags=%d, want 0", got)
+	}
+
+	flags = sqNeedWakeup
+	if got := p.submitEnterFlags(); got != enterSQWakeup {
+		t.Fatalf("flags=%d, want %d", got, enterSQWakeup)
+	}
+}
+
 func TestWakeupConcurrent(t *testing.T) {
 	raw, err := NewWithConfig(Config{Entries: 1024})
 	if err != nil {

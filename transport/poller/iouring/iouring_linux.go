@@ -20,10 +20,12 @@ const (
 	offSqes   = 0x10000000
 
 	enterGetEvents  = 1
+	enterSQWakeup   = 1 << 1
 	setupSQPoll     = 1 << 1
 	setupSQAffinity = 1 << 2
 
 	featSingleMmap = 1
+	sqNeedWakeup   = 1
 
 	registerBuffers   = 0
 	unregisterBuffers = 1
@@ -111,6 +113,7 @@ type sq struct {
 	tail        *uint32
 	ringMask    *uint32
 	ringEntries *uint32
+	flags       *uint32
 	dropped     *uint32
 	array       *uint32
 }
@@ -353,7 +356,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	}
 	p.pending[uint64(id)] = req
 	atomic.StoreUint32(p.sq.tail, nextTail)
-	if err := p.enter(1, 0, 0); err != nil {
+	if err := p.enter(1, 0, p.submitEnterFlags()); err != nil {
 		delete(p.pending, uint64(id))
 		delete(p.writev, uint64(id))
 		delete(p.msgctx, uint64(id))
@@ -531,6 +534,7 @@ func (p *Poller) setup(entries uint32, cfg Config) error {
 		tail:        uint32Ptr(sqRing, p.params.sqOff.tail),
 		ringMask:    uint32Ptr(sqRing, p.params.sqOff.ringMask),
 		ringEntries: uint32Ptr(sqRing, p.params.sqOff.ringEntries),
+		flags:       uint32Ptr(sqRing, p.params.sqOff.flags),
 		dropped:     uint32Ptr(sqRing, p.params.sqOff.dropped),
 		array:       uint32Ptr(sqRing, p.params.sqOff.array),
 	}
@@ -847,6 +851,13 @@ func (p *Poller) enter(toSubmit uint32, minComplete uint32, flags uint32) error 
 		return errno
 	}
 	return nil
+}
+
+func (p *Poller) submitEnterFlags() uint32 {
+	if p.sq.flags != nil && atomic.LoadUint32(p.sq.flags)&sqNeedWakeup != 0 {
+		return enterSQWakeup
+	}
+	return 0
 }
 
 func (p *Poller) register(op uint32, arg unsafe.Pointer, nrArgs uint32) error {
