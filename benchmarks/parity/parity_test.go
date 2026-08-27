@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -49,14 +50,20 @@ func TestBaselineSpecLoads(t *testing.T) {
 	if len(spec.Scenarios) < 5 {
 		t.Fatalf("scenarios=%d, want external baseline set", len(spec.Scenarios))
 	}
-	hasSkippedExternal := false
+	enabledExternal := 0
 	for _, scenario := range spec.Scenarios {
-		if scenario.Skip && scenario.SkipReason != "" && scenario.Framework != "gnalloy" {
-			hasSkippedExternal = true
+		if isExternalScenario(scenario, externalFrameworkSet(nil)) {
+			if scenario.Skip {
+				t.Fatalf("external scenario %q must be enabled in baseline", scenario.Name)
+			}
+			if len(scenario.Command) == 0 {
+				t.Fatalf("external scenario %q has empty command", scenario.Name)
+			}
+			enabledExternal++
 		}
 	}
-	if !hasSkippedExternal {
-		t.Fatal("baseline must include skipped external framework scenarios")
+	if enabledExternal != 3 {
+		t.Fatalf("enabled external scenarios=%d, want 3", enabledExternal)
 	}
 }
 
@@ -125,6 +132,77 @@ func TestValidateExternalHarnessesAcceptsReadyCommand(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestValidateExternalHarnessesChecksJavaJarArgument(t *testing.T) {
+	spec := Spec{
+		Name: "strict",
+		Scenarios: []Scenario{{
+			Name:      "netty tcp echo",
+			Framework: "netty",
+			Protocol:  "tcp-echo",
+			Command:   []string{"java", "-jar", "./benchmarks/external/bin/netty-bench.jar"},
+		}},
+	}
+	err := ValidateExternalHarnesses(spec, ExternalHarnessOptions{
+		LookPath: func(file string) (string, error) {
+			if file != "java" {
+				t.Fatalf("file=%q", file)
+			}
+			return "/usr/bin/java", nil
+		},
+		Stat: func(string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
+	})
+	if !errors.Is(err, ErrExternalHarness) {
+		t.Fatalf("err=%v, want ErrExternalHarness", err)
+	}
+}
+
+func TestBaselineExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *testing.T) {
+	file, err := os.Open("baseline.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateExternalHarnesses(spec, ExternalHarnessOptions{
+		LookPath: func(file string) (string, error) {
+			if file == "java" {
+				return "/usr/bin/java", nil
+			}
+			return "", os.ErrNotExist
+		},
+		Stat: func(name string) (os.FileInfo, error) {
+			switch filepath.ToSlash(filepath.Clean(name)) {
+			case "benchmarks/external/bin/netty-bench.jar",
+				"benchmarks/external/bin/gnet-bench",
+				"benchmarks/external/bin/gnet-bench.exe",
+				"benchmarks/external/bin/netpoll-bench",
+				"benchmarks/external/bin/netpoll-bench.exe":
+				return fakeFileInfo{name: filepath.Base(name)}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPathCommandCandidatesAddsWindowsExecutableSuffix(t *testing.T) {
+	candidates := pathCommandCandidates("./benchmarks/external/bin/gnet-bench", ".", "windows")
+	joined := strings.Join(candidates, "|")
+	want := filepath.Join("benchmarks", "external", "bin", "gnet-bench.exe")
+	if !strings.Contains(joined, want) && !strings.Contains(joined, "benchmarks/external/bin/gnet-bench.exe") {
+		t.Fatalf("candidates=%v", candidates)
 	}
 }
 
@@ -265,3 +343,14 @@ func fixedNow() func() time.Time {
 	now := time.Unix(100, 0).UTC()
 	return func() time.Time { return now }
 }
+
+type fakeFileInfo struct {
+	name string
+}
+
+func (f fakeFileInfo) Name() string     { return f.name }
+func (fakeFileInfo) Size() int64        { return 1 }
+func (fakeFileInfo) Mode() os.FileMode  { return 0o755 }
+func (fakeFileInfo) ModTime() time.Time { return time.Unix(0, 0) }
+func (fakeFileInfo) IsDir() bool        { return false }
+func (fakeFileInfo) Sys() any           { return nil }

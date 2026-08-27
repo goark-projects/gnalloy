@@ -32,25 +32,54 @@ Windows:
 外部对标 baseline:
 
 ```bash
+./scripts/build-external-bench.sh
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -config benchmarks/parity/baseline.json -out parity-report.md
 ```
 
-`benchmarks/parity/baseline.json` 默认直接保留 gnalloy 本地场景；Netty、gnet、
-netpoll 外部 harness 场景以 `skip=true` 提交。安装对应 harness 后，把对应场景
-改为 `skip=false`，并保留生成报告中的机器信息、命令、原始输出和解析出的
-`ns/op`、`B/op`、`allocs/op`。
+Windows:
+
+```powershell
+.\scripts\build-external-bench.ps1
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
+go run ./examples/parity-bench -config benchmarks/parity/baseline.json -out parity-report.md
+```
+
+`benchmarks/parity/baseline.json` 默认直接保留 gnalloy 本地场景，并启用 Netty、
+gnet、netpoll 外部 harness 场景。外部 harness 源码位于 `benchmarks/external`，
+构建产物输出到 `benchmarks/external/bin`；该目录是本机构建产物，不提交到仓库。
+Netty 使用独立 Maven 工程，gnet/netpoll 使用独立 Go module，避免把对标依赖引入
+gnalloy 根 `go.mod`。
 
 严格外部对标 gate:
 
 ```bash
+./scripts/build-external-bench.sh
 go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/baseline.json
 ```
 
 `-strict-external` 用于正式声称同机对标前的合同检查：Netty、gnet、netpoll
-以及带 `external` tag 的场景不能保持 `skip=true`，且展开变量后的命令入口必须
-在本机可解析。默认 baseline 会在该模式下失败，这是有意设计，表示外部 harness
-尚未安装或尚未打开。
+以及带 `external` tag 的场景不能保持 `skip=true`，展开变量后的命令入口必须
+在本机可解析；`java -jar` 场景还会检查 jar 文件本身是否存在。Windows 下 Go
+harness 构建为 `.exe`，baseline 仍使用无扩展名路径，由 strict gate 和 runner
+按平台解析。
+
+外部 harness 支持的最小命令合同:
+
+```bash
+java -jar benchmarks/external/bin/netty-bench.jar --protocol tcp-echo --payload 1024 --connections 256 --messages 100000
+benchmarks/external/bin/gnet-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
+benchmarks/external/bin/netpoll-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
+```
+
+外部 harness 输出 Go benchmark 兼容的 `Benchmark* ns/op` 行，表示固定连接数和
+固定消息数下的端到端 TCP echo RTT 均值。外部进程无法使用 Go `benchmem` 的
+内存口径准确统计框架内部分配，因此不伪造 `B/op` 和 `allocs/op`。
+
+平台边界：CloudWeGo netpoll v0.7.5 的 Windows 上游实现为空，Windows 下
+`netpoll-bench` 可构建并在运行时明确返回 unsupported；Linux/macOS/BSD 才能执行
+真实 netpoll echo benchmark。Windows 严格 gate 只证明 harness 入口已构建、可发现，
+不等于完成 netpoll 运行时性能采样。
 
 ## 对外对比口径
 

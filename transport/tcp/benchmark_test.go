@@ -28,17 +28,28 @@ func BenchmarkNativeTCPEchoRoundTrip(b *testing.B) {
 	conn := dialTCPBenchmark(b, server.Addr())
 	defer conn.Close()
 
-	payload := []byte("ping")
+	payload := benchmarkPayload(benchmarkEnvInt("GNALLOY_BENCH_PAYLOAD", 4), 0)
 	got := make([]byte, len(payload))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		payload[0] = byte(i)
 		if _, err := conn.Write(payload); err != nil {
 			b.Fatal(err)
 		}
 		if _, err := io.ReadFull(conn, got); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestBenchmarkPayloadUsesRequestedSize(t *testing.T) {
+	payload := benchmarkPayload(16, 7)
+	if len(payload) != 16 {
+		t.Fatalf("payload size=%d, want 16", len(payload))
+	}
+	if payload[0] != 7 || payload[15] != 22 {
+		t.Fatalf("payload seed mismatch: %v", payload)
 	}
 }
 
@@ -166,6 +177,14 @@ func benchmarkEnvInt(name string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func benchmarkPayload(size int, seed int) []byte {
+	payload := make([]byte, size)
+	for i := range payload {
+		payload[i] = byte(seed + i)
+	}
+	return payload
 }
 
 func dialTCPBenchmark(b *testing.B, address string) net.Conn {

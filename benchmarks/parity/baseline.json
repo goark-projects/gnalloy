@@ -1,15 +1,15 @@
 {
   "name": "gnalloy external parity baseline",
-  "notes": "同机外部对标基线。Netty、gnet、netpoll 场景默认 skip，安装对应 harness 后再设为 false。",
+  "notes": "同机外部对标基线。运行前先构建 benchmarks/external/bin 下的 Netty、gnet、netpoll harness。",
   "variables": {
     "REPO_ROOT": ".",
     "GO": "go",
     "PAYLOAD": "1024",
     "CONNECTIONS": "256",
     "MESSAGES": "100000",
-    "NETTY_BENCH_JAR": "./external/netty-bench.jar",
-    "GNET_BENCH": "./external/gnet-bench",
-    "NETPOLL_BENCH": "./external/netpoll-bench"
+    "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
+    "GNET_BENCH": "./benchmarks/external/bin/gnet-bench",
+    "NETPOLL_BENCH": "./benchmarks/external/bin/netpoll-bench"
   },
   "scenarios": [
     {
@@ -159,8 +159,6 @@
         "${MESSAGES}"
       ],
       "timeout": "5m",
-      "skip": true,
-      "skipReason": "安装 Netty benchmark harness 后将 skip 改为 false",
       "tags": ["external", "netty", "tcp", "echo"]
     },
     {
@@ -181,8 +179,6 @@
         "${MESSAGES}"
       ],
       "timeout": "5m",
-      "skip": true,
-      "skipReason": "安装 gnet benchmark harness 后将 skip 改为 false",
       "tags": ["external", "gnet", "tcp", "echo"]
     },
     {
@@ -203,8 +199,6 @@
         "${MESSAGES}"
       ],
       "timeout": "5m",
-      "skip": true,
-      "skipReason": "安装 netpoll benchmark harness 后将 skip 改为 false",
       "tags": ["external", "netpoll", "tcp", "echo"]
     }
   ]

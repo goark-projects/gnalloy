@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -102,7 +103,8 @@ func (r Runner) runScenario(ctx context.Context, scenario Scenario) ScenarioResu
 	scenarioCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(scenarioCtx, scenario.Command[0], scenario.Command[1:]...)
+	command := resolveScenarioCommand(scenario)
+	cmd := exec.CommandContext(scenarioCtx, command, scenario.Command[1:]...)
 	if scenario.WorkDir != "" {
 		cmd.Dir = scenario.WorkDir
 	}
@@ -131,6 +133,19 @@ func (r Runner) now() time.Time {
 		return r.Now()
 	}
 	return time.Now()
+}
+
+func resolveScenarioCommand(scenario Scenario) string {
+	command := scenario.Command[0]
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" || (!hasPathSeparator(trimmed) && !filepath.IsAbs(trimmed)) {
+		return command
+	}
+	resolved, err := pathCommandAvailable(scenario, trimmed, ExternalHarnessOptions{})
+	if err != nil {
+		return command
+	}
+	return resolved
 }
 
 // DetectMachine 采集低风险机器信息，避免读取敏感环境变量。

@@ -7,3 +7,5 @@ coverage.out
 coverage.txt
 dist/
 build/
+benchmarks/external/bin/
+benchmarks/external/netty-bench/target/

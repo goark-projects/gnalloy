@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -127,34 +128,80 @@ func commandAvailable(scenario Scenario, options ExternalHarnessOptions) error {
 	}
 	command := strings.TrimSpace(scenario.Command[0])
 	if hasPathSeparator(command) || filepath.IsAbs(command) {
-		return pathCommandAvailable(scenario, command, options)
+		if _, err := pathCommandAvailable(scenario, command, options); err != nil {
+			return err
+		}
+	} else {
+		lookPath := options.LookPath
+		if lookPath == nil {
+			lookPath = exec.LookPath
+		}
+		if _, err := lookPath(command); err != nil {
+			return fmt.Errorf("%s command %q is not available: %w", scenario.Name, command, err)
+		}
 	}
-	lookPath := options.LookPath
-	if lookPath == nil {
-		lookPath = exec.LookPath
-	}
-	if _, err := lookPath(command); err != nil {
-		return fmt.Errorf("%s command %q is not available: %w", scenario.Name, command, err)
+	if err := javaJarAvailable(scenario, options); err != nil {
+		return err
 	}
 	return nil
 }
 
-func pathCommandAvailable(scenario Scenario, command string, options ExternalHarnessOptions) error {
+func pathCommandAvailable(scenario Scenario, command string, options ExternalHarnessOptions) (string, error) {
 	stat := options.Stat
 	if stat == nil {
 		stat = os.Stat
 	}
-	candidates := []string{command}
-	if !filepath.IsAbs(command) && strings.TrimSpace(scenario.WorkDir) != "" {
-		candidates = append([]string{filepath.Join(scenario.WorkDir, command)}, candidates...)
-	}
-	for _, candidate := range candidates {
+	for _, candidate := range pathCommandCandidates(command, scenario.WorkDir, runtime.GOOS) {
 		info, err := stat(candidate)
 		if err == nil && !info.IsDir() {
-			return nil
+			return candidate, nil
 		}
 	}
-	return fmt.Errorf("%s command %q is not available", scenario.Name, command)
+	return "", fmt.Errorf("%s command %q is not available", scenario.Name, command)
+}
+
+func javaJarAvailable(scenario Scenario, options ExternalHarnessOptions) error {
+	if len(scenario.Command) < 3 {
+		return nil
+	}
+	command := strings.TrimSpace(filepath.Base(scenario.Command[0]))
+	if !strings.EqualFold(command, "java") && !strings.EqualFold(command, "java.exe") {
+		return nil
+	}
+	if strings.TrimSpace(scenario.Command[1]) != "-jar" {
+		return nil
+	}
+	jar := strings.TrimSpace(scenario.Command[2])
+	if jar == "" {
+		return fmt.Errorf("%s jar path is empty", scenario.Name)
+	}
+	if _, err := pathCommandAvailable(scenario, jar, options); err != nil {
+		return fmt.Errorf("%s jar %q is not available", scenario.Name, jar)
+	}
+	return nil
+}
+
+func pathCommandCandidates(command string, workDir string, goos string) []string {
+	bases := []string{command}
+	if !filepath.IsAbs(command) && strings.TrimSpace(workDir) != "" {
+		bases = append([]string{filepath.Join(workDir, command)}, bases...)
+	}
+	out := make([]string, 0, len(bases)*2)
+	seen := make(map[string]struct{}, len(bases)*2)
+	add := func(candidate string) {
+		if _, ok := seen[candidate]; ok {
+			return
+		}
+		seen[candidate] = struct{}{}
+		out = append(out, candidate)
+	}
+	for _, base := range bases {
+		add(base)
+		if goos == "windows" && filepath.Ext(base) == "" {
+			add(base + ".exe")
+		}
+	}
+	return out
 }
 
 func hasPathSeparator(command string) bool {
