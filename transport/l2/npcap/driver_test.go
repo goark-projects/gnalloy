@@ -10,12 +10,25 @@ import (
 )
 
 func TestDriverRequiresBackend(t *testing.T) {
+	if defaultBackend() != nil {
+		t.Skip("native Npcap backend is available on this platform")
+	}
 	_, err := NewDriver(nil, Config{}).Open(context.Background(), l2.Config{InterfaceName: "ethernet0"})
 	if !errors.Is(err, l2.ErrUnsupportedDriver) {
 		t.Fatalf("err=%v, want %v", err, l2.ErrUnsupportedDriver)
 	}
 	if !errors.Is(err, ErrMissingBackend) {
 		t.Fatalf("err=%v, want %v", err, ErrMissingBackend)
+	}
+}
+
+func TestNativeDriverRejectsInvalidConfigBeforeOpen(t *testing.T) {
+	if defaultBackend() == nil {
+		t.Skip("native Npcap backend is not available on this platform")
+	}
+	_, err := NewDriver(nil, Config{}).Open(context.Background(), l2.Config{})
+	if !errors.Is(err, l2.ErrInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, l2.ErrInvalidConfig)
 	}
 }
 

@@ -94,9 +94,10 @@ blocks:
   defaults, and explicit elevated-permission runtime boundaries.
 - `transport/l2`: data-link transport abstraction with the same
   `ServerBootstrap`/`Dialer` experience as TCP/UDP/raw/QUIC. Linux uses
-  native AF_PACKET; `transport/l2/bpf` and `transport/l2/npcap` expose
-  injectable macOS/BSD BPF and Windows Npcap driver boundaries without hard
-  cgo or dynamic library dependencies in core.
+  native AF_PACKET; macOS/BSD use native BPF; Windows uses an Npcap driver that
+  dynamically loads `wpcap.dll` at runtime. `transport/l2/bpf` and
+  `transport/l2/npcap` keep the same injectable `Driver` contract for tests and
+  custom deployments without cgo.
 - `transport/poller`: backend-neutral Poller API, including a cross-platform
   `std` readiness fallback.
 - `transport/poller/epoll`: Linux epoll ET readiness backend.
@@ -292,9 +293,9 @@ Current validation boundary:
   compile-time compatibility.
 - Raw IP and L2 runtime tests are intentionally permission-sensitive. Raw
   sockets usually require administrator privileges or `CAP_NET_RAW`; Linux L2
-  AF_PACKET requires the same class of privilege, while BPF/Npcap drivers are
-  represented as injectable platform boundaries unless the optional driver is
-  installed.
+  AF_PACKET requires the same class of privilege, while BPF/Npcap runtime
+  validation requires a native host with the BPF device or Npcap runtime
+  installed and an explicit interface selected.
 - `mmap` allocator refuses to close while buffers are still in use. This is
   intentional: unmapping memory that an active `ByteBuf` still references is
   unsafe.
@@ -327,8 +328,9 @@ Design rules:
 - Native system calls go through `golang.org/x/sys/unix` or
   `golang.org/x/sys/windows`; the platform gate only allows the documented
   legacy stdlib `syscall` shim in Windows TCP socket setup.
-- L2 platform integrations must enter through `transport/l2.Driver`; the core
-  package must not hard-bind BPF/Npcap cgo or vendor dynamic-library loading.
+- L2 platform integrations must enter through `transport/l2.Driver`; BPF/Npcap
+  native details stay isolated under `transport/l2/internal/nativeframe`, with
+  no cgo or link-time dependency on vendor libraries.
 - Outbound writes are queued per Channel; partial writes remain in the outbound
   buffer until a write-ready/completion event drains them.
 - Outbound buffers are gathered across queued `ByteBuf` instances. Readiness

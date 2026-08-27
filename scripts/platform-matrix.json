@@ -10,7 +10,7 @@
         "readiness": ["std"],
         "completion": ["iocp", "memory"]
       },
-      "l2Drivers": ["npcap-boundary"],
+      "l2Drivers": ["npcap"],
       "gates": [
         {
           "name": "native-tests",
@@ -81,7 +81,7 @@
         "readiness": ["kqueue", "std"],
         "completion": ["memory"]
       },
-      "l2Drivers": ["bpf-boundary"],
+      "l2Drivers": ["bpf"],
       "gates": [
         {
           "name": "cross-compile",

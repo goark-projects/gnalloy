@@ -1,7 +1,6 @@
 // Package l2 提供数据链路层自定义协议的 transport 抽象。
 //
-// Linux native driver 使用 AF_PACKET；macOS/BSD 默认边界对应 BPF；Windows 默认
-// 边界对应 Npcap。BPF/Npcap 依赖平台设备和外部运行时能力，核心包通过 Driver
-// 接口承接实现，transport/l2/bpf 与 transport/l2/npcap 提供可注入扩展边界，
-// 避免在跨平台核心中硬绑定 cgo 或第三方动态库。
+// Linux native driver 使用 AF_PACKET；macOS/BSD 默认 driver 使用 BPF；Windows
+// 默认 driver 使用 Npcap。BPF/Npcap 依赖平台设备、权限和外部运行时库，核心包
+// 通过 Driver 接口承接实现，并把平台细节隔离在 transport/l2/internal/nativeframe。
 package l2

@@ -5,6 +5,10 @@ param(
     [string]$RawProtocol,
     [string]$L2Interface,
     [string]$L2EtherType,
+    [string]$BPFInterface,
+    [string]$BPFEtherType,
+    [string]$NpcapInterface,
+    [string]$NpcapEtherType,
     [string]$DoQServer,
     [string]$QuicInteropAddr,
     [string]$ReportPath
@@ -18,6 +22,10 @@ $oldRawBind = $env:GNALLOY_RAW_BIND
 $oldRawProtocol = $env:GNALLOY_RAW_PROTOCOL
 $oldL2Interface = $env:GNALLOY_L2_INTERFACE
 $oldL2EtherType = $env:GNALLOY_L2_ETHERTYPE
+$oldBPFInterface = $env:GNALLOY_BPF_INTERFACE
+$oldBPFEtherType = $env:GNALLOY_BPF_ETHERTYPE
+$oldNpcapInterface = $env:GNALLOY_NPCAP_INTERFACE
+$oldNpcapEtherType = $env:GNALLOY_NPCAP_ETHERTYPE
 $oldDoQ = $env:GNALLOY_DOQ_ADDR
 $oldQuicInterop = $env:GNALLOY_QUIC_INTEROP_ADDR
 $results = New-Object System.Collections.Generic.List[object]
@@ -88,17 +96,11 @@ Push-Location $repo
 try {
     $go = Resolve-GoCommand
     $env:GOWORK = "off"
-    $nativeGOOS = (& $go env GOOS).Trim()
+    $nativeGOOS = (& $go env GOHOSTOS).Trim()
     if ($LASTEXITCODE -ne 0) {
-        throw "go env GOOS failed"
+        throw "go env GOHOSTOS failed"
     }
-    if ($nativeGOOS -ne "linux") {
-        if ($AllowSkip) {
-            Add-SkippedGate -Name "privileged-runtime" -Reason "requires Linux"
-        } else {
-            throw "privileged runtime requires Linux"
-        }
-    } else {
+    if ($nativeGOOS -eq "linux") {
         if ([string]::IsNullOrWhiteSpace($RawBind)) {
             $RawBind = "0.0.0.0"
         }
@@ -136,6 +138,54 @@ try {
         } else {
             Add-SkippedGate -Name "iouring-runtime" -Reason "set -RunIOUring"
         }
+    } else {
+        Add-SkippedGate -Name "linux-raw-afpacket" -Reason "requires Linux"
+    }
+    if (@("darwin", "freebsd", "netbsd", "openbsd", "dragonfly") -contains $nativeGOOS) {
+        if ([string]::IsNullOrWhiteSpace($BPFInterface)) {
+            $BPFInterface = $env:GNALLOY_BPF_INTERFACE
+        }
+        if ([string]::IsNullOrWhiteSpace($BPFEtherType)) {
+            $BPFEtherType = "0"
+        }
+        if ([string]::IsNullOrWhiteSpace($BPFInterface)) {
+            if ($AllowSkip) {
+                Add-SkippedGate -Name "bpf-open" -Reason "set GNALLOY_BPF_INTERFACE"
+            } else {
+                throw "set GNALLOY_BPF_INTERFACE"
+            }
+        } else {
+            Set-EnvValue "GNALLOY_BPF_INTERFACE" $BPFInterface
+            Set-EnvValue "GNALLOY_BPF_ETHERTYPE" $BPFEtherType
+            Invoke-Gate -Name "bpf-open" -Action {
+                Invoke-Checked -FilePath $go -Arguments @("test", "-count=1", "./transport/l2/bpf", "-run", "TestPrivilegedBPFOpen")
+            }
+        }
+    } else {
+        Add-SkippedGate -Name "bpf-open" -Reason "requires macOS/BSD"
+    }
+    if ($nativeGOOS -eq "windows") {
+        if ([string]::IsNullOrWhiteSpace($NpcapInterface)) {
+            $NpcapInterface = $env:GNALLOY_NPCAP_INTERFACE
+        }
+        if ([string]::IsNullOrWhiteSpace($NpcapEtherType)) {
+            $NpcapEtherType = "0"
+        }
+        if ([string]::IsNullOrWhiteSpace($NpcapInterface)) {
+            if ($AllowSkip) {
+                Add-SkippedGate -Name "npcap-open" -Reason "set GNALLOY_NPCAP_INTERFACE"
+            } else {
+                throw "set GNALLOY_NPCAP_INTERFACE"
+            }
+        } else {
+            Set-EnvValue "GNALLOY_NPCAP_INTERFACE" $NpcapInterface
+            Set-EnvValue "GNALLOY_NPCAP_ETHERTYPE" $NpcapEtherType
+            Invoke-Gate -Name "npcap-open" -Action {
+                Invoke-Checked -FilePath $go -Arguments @("test", "-count=1", "./transport/l2/npcap", "-run", "TestPrivilegedNpcapOpen")
+            }
+        }
+    } else {
+        Add-SkippedGate -Name "npcap-open" -Reason "requires Windows"
     }
     if (-not [string]::IsNullOrWhiteSpace($DoQServer)) {
         Set-EnvValue "GNALLOY_DOQ_ADDR" $DoQServer
@@ -160,6 +210,10 @@ try {
     Restore-EnvValue "GNALLOY_RAW_PROTOCOL" $oldRawProtocol
     Restore-EnvValue "GNALLOY_L2_INTERFACE" $oldL2Interface
     Restore-EnvValue "GNALLOY_L2_ETHERTYPE" $oldL2EtherType
+    Restore-EnvValue "GNALLOY_BPF_INTERFACE" $oldBPFInterface
+    Restore-EnvValue "GNALLOY_BPF_ETHERTYPE" $oldBPFEtherType
+    Restore-EnvValue "GNALLOY_NPCAP_INTERFACE" $oldNpcapInterface
+    Restore-EnvValue "GNALLOY_NPCAP_ETHERTYPE" $oldNpcapEtherType
     Restore-EnvValue "GNALLOY_DOQ_ADDR" $oldDoQ
     Restore-EnvValue "GNALLOY_QUIC_INTEROP_ADDR" $oldQuicInterop
     if (-not [string]::IsNullOrWhiteSpace($ReportPath)) {

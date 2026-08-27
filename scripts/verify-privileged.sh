@@ -8,6 +8,10 @@ RAW_BIND="${GNALLOY_RAW_BIND:-0.0.0.0}"
 RAW_PROTOCOL="${GNALLOY_RAW_PROTOCOL:-1}"
 L2_INTERFACE="${GNALLOY_L2_INTERFACE:-}"
 L2_ETHERTYPE="${GNALLOY_L2_ETHERTYPE:-0}"
+BPF_INTERFACE="${GNALLOY_BPF_INTERFACE:-}"
+BPF_ETHERTYPE="${GNALLOY_BPF_ETHERTYPE:-0}"
+NPCAP_INTERFACE="${GNALLOY_NPCAP_INTERFACE:-}"
+NPCAP_ETHERTYPE="${GNALLOY_NPCAP_ETHERTYPE:-0}"
 DOQ_ADDR="${GNALLOY_DOQ_ADDR:-}"
 QUIC_INTEROP_ADDR="${GNALLOY_QUIC_INTEROP_ADDR:-}"
 
@@ -33,34 +37,70 @@ run_gate() {
     "$@"
 }
 
-if [ "$(uname -s)" != "Linux" ]; then
-    skip_or_fail "privileged-runtime" "requires Linux"
-    exit 0
-fi
+OS_NAME="$(uname -s)"
 
-if [ "$(id -u)" != "0" ] && ! grep -q "CapEff:.*[1-9a-fA-F]" /proc/self/status 2>/dev/null; then
-    skip_or_fail "privileged-runtime" "requires root or effective capabilities such as CAP_NET_RAW"
-    exit 0
-fi
+if [ "${OS_NAME}" = "Linux" ]; then
+    if [ "$(id -u)" != "0" ] && ! grep -q "CapEff:.*[1-9a-fA-F]" /proc/self/status 2>/dev/null; then
+        skip_or_fail "linux-raw-afpacket" "requires root or effective capabilities such as CAP_NET_RAW"
+    else
+        GNALLOY_RAW_PRIVILEGED=1 \
+        GNALLOY_RAW_BIND="${RAW_BIND}" \
+        GNALLOY_RAW_PROTOCOL="${RAW_PROTOCOL}" \
+        run_gate "raw-socket-open" "${GO_CMD}" test -count=1 ./transport/raw -run TestPrivilegedRawSocketOpen
 
-GNALLOY_RAW_PRIVILEGED=1 \
-GNALLOY_RAW_BIND="${RAW_BIND}" \
-GNALLOY_RAW_PROTOCOL="${RAW_PROTOCOL}" \
-run_gate "raw-socket-open" "${GO_CMD}" test -count=1 ./transport/raw -run TestPrivilegedRawSocketOpen
+        if [ -z "${L2_INTERFACE}" ]; then
+            skip_or_fail "af-packet-open" "set GNALLOY_L2_INTERFACE"
+        else
+            GNALLOY_L2_INTERFACE="${L2_INTERFACE}" \
+            GNALLOY_L2_ETHERTYPE="${L2_ETHERTYPE}" \
+            run_gate "af-packet-open" "${GO_CMD}" test -count=1 ./transport/l2 -run TestPrivilegedAFPacketOpen
+        fi
 
-if [ -z "${L2_INTERFACE}" ]; then
-    skip_or_fail "af-packet-open" "set GNALLOY_L2_INTERFACE"
+        if [ "${RUN_IOURING}" = "1" ]; then
+            run_gate "iouring-sqpoll" ./scripts/verify-iouring-sqpoll.sh
+            run_gate "iouring-fixed" ./scripts/verify-iouring-fixed.sh
+        else
+            echo "== iouring-runtime skipped: set RUN_IOURING=1"
+        fi
+    fi
 else
-    GNALLOY_L2_INTERFACE="${L2_INTERFACE}" \
-    GNALLOY_L2_ETHERTYPE="${L2_ETHERTYPE}" \
-    run_gate "af-packet-open" "${GO_CMD}" test -count=1 ./transport/l2 -run TestPrivilegedAFPacketOpen
+    echo "== linux-raw-afpacket skipped: requires Linux"
 fi
 
-if [ "${RUN_IOURING}" = "1" ]; then
-    run_gate "iouring-sqpoll" ./scripts/verify-iouring-sqpoll.sh
-    run_gate "iouring-fixed" ./scripts/verify-iouring-fixed.sh
+case "${OS_NAME}" in
+    Darwin|FreeBSD|NetBSD|OpenBSD|DragonFly)
+        if [ -z "${BPF_INTERFACE}" ]; then
+            skip_or_fail "bpf-open" "set GNALLOY_BPF_INTERFACE"
+        else
+            GNALLOY_BPF_INTERFACE="${BPF_INTERFACE}" \
+            GNALLOY_BPF_ETHERTYPE="${BPF_ETHERTYPE}" \
+            run_gate "bpf-open" "${GO_CMD}" test -count=1 ./transport/l2/bpf -run TestPrivilegedBPFOpen
+        fi
+        ;;
+    *)
+        echo "== bpf-open skipped: requires macOS/BSD"
+        ;;
+esac
+
+case "${OS_NAME}" in
+    MINGW*|MSYS*|CYGWIN*)
+        if [ -z "${NPCAP_INTERFACE}" ]; then
+            skip_or_fail "npcap-open" "set GNALLOY_NPCAP_INTERFACE"
+        else
+            GNALLOY_NPCAP_INTERFACE="${NPCAP_INTERFACE}" \
+            GNALLOY_NPCAP_ETHERTYPE="${NPCAP_ETHERTYPE}" \
+            run_gate "npcap-open" "${GO_CMD}" test -count=1 ./transport/l2/npcap -run TestPrivilegedNpcapOpen
+        fi
+        ;;
+    *)
+        echo "== npcap-open skipped: requires Windows shell"
+        ;;
+esac
+
+if [ "${OS_NAME}" != "Linux" ]; then
+    echo "== iouring-runtime skipped: requires Linux"
 else
-    echo "== iouring-runtime skipped: set RUN_IOURING=1"
+    :
 fi
 
 if [ -n "${DOQ_ADDR}" ]; then

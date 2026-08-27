@@ -39,14 +39,18 @@ func Kind() l2.DriverKind {
 
 // Open 根据 l2.Config 规范化参数后委派给真实 BPF 后端。
 func (d Driver) Open(ctx context.Context, cfg l2.Config) (l2.Endpoint, error) {
-	if d.Backend == nil {
+	backend := d.Backend
+	if backend == nil {
+		backend = defaultBackend()
+	}
+	if backend == nil {
 		return nil, fmt.Errorf("%w: %w", l2.ErrUnsupportedDriver, ErrMissingBackend)
 	}
 	normalized, err := normalizeConfig(d.Config, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return d.Backend.OpenBPF(ctx, normalized)
+	return backend.OpenBPF(ctx, normalized)
 }
 
 var _ l2.Driver = Driver{}

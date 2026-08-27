@@ -69,6 +69,6 @@ go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/pari
 - `transport/webtransport` 已提供 WebTransport session、stream prefix、HTTP Datagram Quarter Stream ID 映射和 capability 校验。
 - `transport/quic.Runtime` 提供 ACK、loss、congestion、stream、path 状态和默认 runtime pipeline；`transport/quic/rfc9000` 提供 RFC9000/TLS1.3 互通连接栈。
 - `transport/quic/application` 提供 QUIC stream/datagram 应用协议装配；`resolver/dns/quic` 以 DNS-over-QUIC 覆盖真实应用协议用例。
-- `transport/l2` 已提供可注入 Driver 的二层帧 transport 抽象；Linux AF_PACKET 可做原生验证，BPF/Npcap 需要安装对应平台驱动后再运行外部 gate。
+- `transport/l2` 已提供可注入 Driver 的二层帧 transport 抽象；Linux AF_PACKET、macOS/BSD BPF、Windows Npcap 均在核心库提供 native driver，运行时验证需要本机权限、接口环境变量和对应平台驱动。
 - `scripts/platform-matrix.json` 是跨平台验证事实源；`scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json` 会输出 passed/skipped/failed gate 结果。
 - `observability.PrometheusExporter` 是无依赖文本导出器；OpenTelemetry 已作为 `observability/otel` adapter 接入。

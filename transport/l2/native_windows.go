@@ -2,7 +2,13 @@
 
 package l2
 
-import "context"
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"goark.dev/gnalloy/transport/l2/internal/nativeframe"
+)
 
 type nativeDriver struct{}
 
@@ -11,6 +17,30 @@ func DefaultDriverKind() DriverKind {
 	return DriverKindNpcap
 }
 
-func (nativeDriver) Open(context.Context, Config) (Endpoint, error) {
-	return nil, ErrUnsupportedDriver
+func (nativeDriver) Open(ctx context.Context, cfg Config) (Endpoint, error) {
+	native, err := nativeframe.OpenNpcap(ctx, nativeframe.Config{
+		InterfaceName:  cfg.InterfaceName,
+		InterfaceIndex: cfg.InterfaceIndex,
+		EtherType:      cfg.EtherType,
+		Promiscuous:    cfg.Promiscuous,
+		SnapshotLength: cfg.ReadBufferSize,
+		Immediate:      true,
+	})
+	if err != nil {
+		return nil, mapNativeDriverOpenError(err)
+	}
+	return newNativeFrameEndpoint(native), nil
+}
+
+func mapNativeDriverOpenError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, nativeframe.ErrInvalidConfig):
+		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+	case errors.Is(err, nativeframe.ErrUnsupportedDriver), errors.Is(err, nativeframe.ErrUnavailable):
+		return fmt.Errorf("%w: %v", ErrUnsupportedDriver, err)
+	default:
+		return err
+	}
 }
