@@ -104,8 +104,9 @@ blocks:
 - `transport/raw`: custom IP protocol transport with server endpoints,
   connected client `Dialer` endpoints, typed `Packet` messages, protocol
   defaults, and explicit elevated-permission runtime boundaries.
-- `transport/zerocopy`: Linux sendfile-based `FileRegion` transfer primitive
-  with explicit unsupported and copy-fallback boundaries.
+- `transport/zerocopy`: Linux/macOS `sendfile` and Windows `TransmitFile`
+  `FileRegion` transfer primitive with explicit unsupported and copy-fallback
+  boundaries.
 - `transport/l2`: data-link transport abstraction with the same
   `ServerBootstrap`/`Dialer` experience as TCP/UDP/raw/QUIC. Linux uses
   native AF_PACKET; macOS/BSD use native BPF; Windows uses an Npcap driver that

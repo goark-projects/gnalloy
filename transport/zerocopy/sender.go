@@ -134,3 +134,11 @@ func nativeFile(region channel.FileRegion) (*os.File, int64, func(int64) error, 
 	}
 	return file, native.Offset(), native.Advance, true
 }
+
+func transferSize(region channel.FileRegion, chunkSize int) int64 {
+	remaining := region.Count() - region.Transferred()
+	if int64(chunkSize) < remaining {
+		return int64(chunkSize)
+	}
+	return remaining
+}
