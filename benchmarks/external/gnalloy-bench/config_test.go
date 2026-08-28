@@ -47,6 +47,7 @@ func TestParseConfigResolvesNativePerformanceFlags(t *testing.T) {
 		"-iouring-fixed-buffers",
 		"-iouring-multishot-accept",
 		"-iouring-sqpoll",
+		"-latency-sample-rate", "32",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +57,9 @@ func TestParseConfigResolvesNativePerformanceFlags(t *testing.T) {
 	}
 	if !cfg.IOUringFixedBuffers || !cfg.IOUringMultishotAccept || !cfg.IOUringSQPoll {
 		t.Fatalf("iouring flags=%+v", cfg)
+	}
+	if cfg.LatencySampleRate != 32 {
+		t.Fatalf("latencySampleRate=%d, want 32", cfg.LatencySampleRate)
 	}
 }
 
@@ -174,6 +178,13 @@ func TestParseConfigRejectsNegativeWorkers(t *testing.T) {
 
 func TestParseConfigRejectsNegativeReadBufferSize(t *testing.T) {
 	_, err := parseConfig([]string{"-read-buffer-size", "-1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
+func TestParseConfigRejectsNegativeLatencySampleRate(t *testing.T) {
+	_, err := parseConfig([]string{"-latency-sample-rate", "-1"})
 	if !errors.Is(err, errInvalidConfig) {
 		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
 	}

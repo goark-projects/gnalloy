@@ -112,6 +112,11 @@ Linux 高性能场景可以显式打开 `-mmap`、`-iouring-fixed-buffers`、
 `-iouring-multishot-accept` 和 `-reuseport`。fixed-buffer 场景必须同时使用
 `-backend iouring -mmap`，且 read buffer 不能超过 mmap block size，避免矩阵把
 不成立的组合误报成性能结果。
+`-latency-sample-rate N` 用于按连接采样端到端 RTT，输出 `p50LatencyNs`、
+`p95LatencyNs`、`p99LatencyNs`、`p999LatencyNs` 和 `maxLatencyNs`；默认 0
+表示关闭逐请求 `time.Now()`，避免污染纯吞吐基线。harness 还会输出当前进程的
+`rssBytes`、`heapAllocBytes`、`heapSysBytes`、`heapObjects`、`gcCount`、
+`gcPauseNs` 和 `goroutines`，用于判断吞吐提升是否靠资源透支换来。
 
 harness 输出 `framework=... total=... errors=... throughput=... ops/s` 汇总行和
 Go benchmark 兼容的 `Benchmark* ns/op` 行，分别用于报告吞吐/错误数和固定连接数、

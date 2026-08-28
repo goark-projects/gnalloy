@@ -471,7 +471,7 @@ func TestRunnerSkipsScenarioMarkedSkip(t *testing.T) {
 
 func TestRunnerCapturesCommandOutput(t *testing.T) {
 	if os.Getenv("GNALLOY_PARITY_HELPER") == "1" {
-		os.Stdout.WriteString("helper-output\nframework=gnalloy protocol=tcp-echo backend=iocp payload=1024 connections=2 messages=3 total=6 errors=0 elapsed=2ms throughput=3000.50 ops/s\nBenchmarkEcho-16 1000 123 ns/op 64 B/op 2 allocs/op\n")
+		os.Stdout.WriteString("helper-output\nframework=gnalloy protocol=tcp-echo backend=iocp latencySampleRate=1 latencySamples=6 p50LatencyNs=1000 p99LatencyNs=2000 rssBytes=4096 gcCount=1 payload=1024 connections=2 messages=3 total=6 errors=0 elapsed=2ms throughput=3000.50 ops/s\nBenchmarkEcho-16 1000 123 ns/op 64 B/op 2 allocs/op\n")
 		return
 	}
 	spec := Spec{
@@ -585,7 +585,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "Throughput median", "eventLoops=8", "1125", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
+	for _, want := range []string{"# parity", "| os | linux |", "## Summary", "Throughput median", "P99 latency", "eventLoops=8", "1125", "BenchmarkEcho-16", "### netty", "java -jar bench.jar", "ok"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}
@@ -593,7 +593,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 }
 
 func TestParseScenarioStats(t *testing.T) {
-	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
+	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true latencySampleRate=16 latencySamples=1600 p50LatencyNs=1000 p95LatencyNs=1500 p99LatencyNs=2000 p999LatencyNs=3000 maxLatencyNs=4000 rssBytes=4096 heapAllocBytes=2048 heapSysBytes=8192 heapObjects=64 gcCount=2 gcPauseNs=100 goroutines=12 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
 	if len(stats) != 1 {
 		t.Fatalf("stats=%+v, want one", stats)
 	}
@@ -615,6 +615,12 @@ func TestParseScenarioStats(t *testing.T) {
 	}
 	if stat.Elapsed != 3200*time.Millisecond || stat.ThroughputOpsPerSec != 8000000.25 {
 		t.Fatalf("stat=%+v", stat)
+	}
+	if stat.LatencySampleRate != 16 || stat.LatencySamples != 1600 || stat.P50LatencyNanos != 1000 || stat.P99LatencyNanos != 2000 || stat.P999LatencyNanos != 3000 || stat.MaxLatencyNanos != 4000 {
+		t.Fatalf("latency=%+v", stat)
+	}
+	if stat.RSSBytes != 4096 || stat.HeapAllocBytes != 2048 || stat.HeapSysBytes != 8192 || stat.HeapObjects != 64 || stat.GCCount != 2 || stat.GCPauseNanos != 100 || stat.Goroutines != 12 {
+		t.Fatalf("resources=%+v", stat)
 	}
 }
 

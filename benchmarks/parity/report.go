@@ -89,8 +89,8 @@ func writeSummary(b *strings.Builder, report Report) {
 }
 
 func writeStatsSummary(b *strings.Builder, report Report) {
-	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Total | Errors | Throughput ops/s | Elapsed |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Total | Errors | Throughput ops/s | P99 latency ns | RSS bytes | GC count | Elapsed |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, result := range report.Scenarios {
 		for _, stat := range result.Stats {
 			writeStatsRow(b, result.Scenario, stat)
@@ -115,8 +115,8 @@ func writeStatsAggregateSummary(b *strings.Builder, report Report) {
 	if len(summaries) == 0 {
 		return
 	}
-	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Samples | Throughput min | Throughput median | Throughput max | Throughput mean | Median ns/op | Errors |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Samples | Throughput min | Throughput median | Throughput max | Throughput mean | Median ns/op | Median P99 latency ns | Max RSS bytes | GC count | Errors |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, summary := range summaries {
 		b.WriteString("| ")
 		b.WriteString(escapeCell(summary.Scenario))
@@ -140,6 +140,12 @@ func writeStatsAggregateSummary(b *strings.Builder, report Report) {
 		b.WriteString(formatFloat(summary.MeanThroughputOps))
 		b.WriteString(" | ")
 		b.WriteString(formatFloat(summary.MedianNsPerOp))
+		b.WriteString(" | ")
+		b.WriteString(formatFloat(summary.MedianP99LatencyNs))
+		b.WriteString(" | ")
+		b.WriteString(strconv.FormatInt(summary.MaxRSSBytes, 10))
+		b.WriteString(" | ")
+		b.WriteString(strconv.FormatInt(summary.TotalGCCount, 10))
 		b.WriteString(" | ")
 		b.WriteString(strconv.FormatInt(summary.TotalErrors, 10))
 		b.WriteString(" |\n")
@@ -200,8 +206,8 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 	}
 	if len(result.Stats) > 0 {
 		b.WriteString("Stats:\n\n")
-		b.WriteString("| Framework | Protocol | Backend | Loops | Payload | Connections | Messages | Total | Errors | Throughput ops/s | Elapsed |\n")
-		b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		b.WriteString("| Framework | Protocol | Backend | Loops | Payload | Connections | Messages | Total | Errors | Throughput ops/s | P50 latency ns | P99 latency ns | RSS bytes | GC count | Elapsed |\n")
+		b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 		for _, stat := range result.Stats {
 			b.WriteString("| ")
 			b.WriteString(escapeCell(stat.Framework))
@@ -223,6 +229,14 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 			b.WriteString(strconv.FormatInt(stat.Errors, 10))
 			b.WriteString(" | ")
 			b.WriteString(formatFloat(stat.ThroughputOpsPerSec))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.P50LatencyNanos, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.P99LatencyNanos, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.RSSBytes, 10))
+			b.WriteString(" | ")
+			b.WriteString(strconv.FormatInt(stat.GCCount, 10))
 			b.WriteString(" | ")
 			b.WriteString(stat.Elapsed.String())
 			b.WriteString(" |\n")
@@ -307,6 +321,12 @@ func writeStatsRow(b *strings.Builder, scenario Scenario, stat ScenarioStats) {
 	b.WriteString(" | ")
 	b.WriteString(formatFloat(stat.ThroughputOpsPerSec))
 	b.WriteString(" | ")
+	b.WriteString(strconv.FormatInt(stat.P99LatencyNanos, 10))
+	b.WriteString(" | ")
+	b.WriteString(strconv.FormatInt(stat.RSSBytes, 10))
+	b.WriteString(" | ")
+	b.WriteString(strconv.FormatInt(stat.GCCount, 10))
+	b.WriteString(" | ")
 	b.WriteString(stat.Elapsed.String())
 	b.WriteString(" |\n")
 }
@@ -344,6 +364,9 @@ func loopSummary(stat ScenarioStats) string {
 		}
 		if stat.IOUringSQPoll {
 			parts = append(parts, "sqpoll=true")
+		}
+		if stat.LatencySampleRate > 0 {
+			parts = append(parts, "latencySampleRate="+strconv.FormatInt(stat.LatencySampleRate, 10))
 		}
 		return strings.Join(parts, " ")
 	case stat.EventLoops > 0:

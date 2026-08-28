@@ -18,6 +18,9 @@ type StatsSummary struct {
 	MaxThroughputOps    float64 `json:"maxThroughputOps"`
 	MeanThroughputOps   float64 `json:"meanThroughputOps"`
 	MedianNsPerOp       float64 `json:"medianNsPerOp"`
+	MedianP99LatencyNs  float64 `json:"medianP99LatencyNs,omitempty"`
+	MaxRSSBytes         int64   `json:"maxRSSBytes,omitempty"`
+	TotalGCCount        int64   `json:"totalGCCount,omitempty"`
 	TotalErrors         int64   `json:"totalErrors"`
 }
 
@@ -38,6 +41,7 @@ func summarizeScenarioStats(result ScenarioResult) (StatsSummary, bool) {
 	}
 	throughputs := make([]float64, 0, len(result.Stats))
 	nsPerOp := make([]float64, 0, len(result.Stats))
+	p99Latency := make([]float64, 0, len(result.Stats))
 	summary := StatsSummary{
 		Scenario: result.Scenario.Name,
 		Samples:  len(result.Stats),
@@ -55,6 +59,13 @@ func summarizeScenarioStats(result ScenarioResult) (StatsSummary, bool) {
 		if stat.Elapsed > 0 && stat.TotalRequests > 0 {
 			nsPerOp = append(nsPerOp, float64(stat.Elapsed.Nanoseconds())/float64(stat.TotalRequests))
 		}
+		if stat.P99LatencyNanos > 0 {
+			p99Latency = append(p99Latency, float64(stat.P99LatencyNanos))
+		}
+		if stat.RSSBytes > summary.MaxRSSBytes {
+			summary.MaxRSSBytes = stat.RSSBytes
+		}
+		summary.TotalGCCount += stat.GCCount
 		summary.TotalErrors += stat.Errors
 	}
 	if len(throughputs) == 0 {
@@ -67,6 +78,8 @@ func summarizeScenarioStats(result ScenarioResult) (StatsSummary, bool) {
 	summary.MeanThroughputOps = mean(throughputs)
 	sort.Float64s(nsPerOp)
 	summary.MedianNsPerOp = medianSorted(nsPerOp)
+	sort.Float64s(p99Latency)
+	summary.MedianP99LatencyNs = medianSorted(p99Latency)
 	return summary, true
 }
 

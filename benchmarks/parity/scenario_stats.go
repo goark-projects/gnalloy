@@ -23,6 +23,20 @@ type ScenarioStats struct {
 	IOUringFixedBuffers    bool          `json:"ioUringFixedBuffers,omitempty"`
 	IOUringMultishotAccept bool          `json:"ioUringMultishotAccept,omitempty"`
 	IOUringSQPoll          bool          `json:"ioUringSQPoll,omitempty"`
+	LatencySampleRate      int64         `json:"latencySampleRate,omitempty"`
+	LatencySamples         int64         `json:"latencySamples,omitempty"`
+	P50LatencyNanos        int64         `json:"p50LatencyNanos,omitempty"`
+	P95LatencyNanos        int64         `json:"p95LatencyNanos,omitempty"`
+	P99LatencyNanos        int64         `json:"p99LatencyNanos,omitempty"`
+	P999LatencyNanos       int64         `json:"p999LatencyNanos,omitempty"`
+	MaxLatencyNanos        int64         `json:"maxLatencyNanos,omitempty"`
+	RSSBytes               int64         `json:"rssBytes,omitempty"`
+	HeapAllocBytes         int64         `json:"heapAllocBytes,omitempty"`
+	HeapSysBytes           int64         `json:"heapSysBytes,omitempty"`
+	HeapObjects            int64         `json:"heapObjects,omitempty"`
+	GCCount                int64         `json:"gcCount,omitempty"`
+	GCPauseNanos           int64         `json:"gcPauseNanos,omitempty"`
+	Goroutines             int64         `json:"goroutines,omitempty"`
 	PayloadBytes           int64         `json:"payloadBytes"`
 	Connections            int64         `json:"connections"`
 	Messages               int64         `json:"messages"`
@@ -90,6 +104,34 @@ func parseScenarioStatsLine(line string) (ScenarioStats, bool) {
 			stat.IOUringMultishotAccept = parseBoolMetric(value)
 		case "iouringSQPoll":
 			stat.IOUringSQPoll = parseBoolMetric(value)
+		case "latencySampleRate":
+			stat.LatencySampleRate = parseIntMetric(value)
+		case "latencySamples":
+			stat.LatencySamples = parseIntMetric(value)
+		case "p50LatencyNs":
+			stat.P50LatencyNanos = parseIntMetric(value)
+		case "p95LatencyNs":
+			stat.P95LatencyNanos = parseIntMetric(value)
+		case "p99LatencyNs":
+			stat.P99LatencyNanos = parseIntMetric(value)
+		case "p999LatencyNs":
+			stat.P999LatencyNanos = parseIntMetric(value)
+		case "maxLatencyNs":
+			stat.MaxLatencyNanos = parseIntMetric(value)
+		case "rssBytes":
+			stat.RSSBytes = parseIntMetric(value)
+		case "heapAllocBytes":
+			stat.HeapAllocBytes = parseIntMetric(value)
+		case "heapSysBytes":
+			stat.HeapSysBytes = parseIntMetric(value)
+		case "heapObjects":
+			stat.HeapObjects = parseIntMetric(value)
+		case "gcCount":
+			stat.GCCount = parseIntMetric(value)
+		case "gcPauseNs":
+			stat.GCPauseNanos = parseIntMetric(value)
+		case "goroutines":
+			stat.Goroutines = parseIntMetric(value)
 		case "payload":
 			stat.PayloadBytes = parseIntMetric(value)
 		case "connections":

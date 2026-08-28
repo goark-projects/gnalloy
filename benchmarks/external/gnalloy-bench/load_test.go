@@ -15,6 +15,7 @@ func TestRunBenchmarkTCPEcho(t *testing.T) {
 		"-messages", "2",
 		"-timeout", "5s",
 		"-workers", "1",
+		"-latency-sample-rate", "1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -24,6 +25,9 @@ func TestRunBenchmarkTCPEcho(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.TotalRequests != 2 || result.Errors != 0 || result.NsPerOp <= 0 {
+		t.Fatalf("result=%+v", result)
+	}
+	if result.Latency.Samples != 2 || result.Latency.P50 <= 0 || result.Resources.HeapSysBytes == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 }

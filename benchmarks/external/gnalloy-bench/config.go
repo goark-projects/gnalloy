@@ -32,6 +32,7 @@ type config struct {
 	IOUringFixedBuffers    bool
 	IOUringMultishotAccept bool
 	IOUringSQPoll          bool
+	LatencySampleRate      int
 }
 
 func parseConfig(args []string) (config, error) {
@@ -68,6 +69,7 @@ func parseConfig(args []string) (config, error) {
 	fs.BoolVar(&cfg.IOUringFixedBuffers, "iouring-fixed-buffers", cfg.IOUringFixedBuffers, "register mmap allocator blocks as io_uring fixed buffers")
 	fs.BoolVar(&cfg.IOUringMultishotAccept, "iouring-multishot-accept", cfg.IOUringMultishotAccept, "enable io_uring multishot accept")
 	fs.BoolVar(&cfg.IOUringSQPoll, "iouring-sqpoll", cfg.IOUringSQPoll, "enable io_uring SQPOLL")
+	fs.IntVar(&cfg.LatencySampleRate, "latency-sample-rate", cfg.LatencySampleRate, "record one round-trip latency sample every N messages per connection; 0 disables latency sampling")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -132,6 +134,9 @@ func (c config) validate() error {
 	}
 	if (c.IOUringMultishotAccept || c.IOUringSQPoll) && c.Backend != transport.BackendIOUring {
 		return fmt.Errorf("%w: io_uring options require iouring backend", errInvalidConfig)
+	}
+	if c.LatencySampleRate < 0 {
+		return fmt.Errorf("%w: latency-sample-rate must not be negative", errInvalidConfig)
 	}
 	return nil
 }

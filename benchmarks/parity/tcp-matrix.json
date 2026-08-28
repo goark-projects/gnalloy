@@ -5,6 +5,7 @@
     "REPO_ROOT": ".",
     "CONNECTIONS": "256",
     "MESSAGES": "20000",
+    "LATENCY_SAMPLE_RATE": "128",
     "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
     "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
     "GNET_BENCH": "./benchmarks/external/bin/gnet-bench",
@@ -20,7 +21,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "64", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "64", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}"],
       "timeout": "5m",
       "tags": ["local", "parity-harness", "tcp", "echo", "payload-64"]
     },
@@ -33,7 +34,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}"],
       "timeout": "5m",
       "tags": ["local", "parity-harness", "tcp", "echo", "payload-1024"]
     },
@@ -46,7 +47,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "16384", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "16384", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "epoll", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}"],
       "timeout": "5m",
       "tags": ["local", "parity-harness", "tcp", "echo", "payload-16384"]
     },
@@ -59,7 +60,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iouring"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iouring", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}"],
       "timeout": "5m",
       "tags": ["local", "parity-harness", "tcp", "echo", "iouring"]
     },
@@ -72,7 +73,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iouring", "-mmap", "-mmap-block-size", "4096", "-mmap-blocks", "512", "-iouring-fixed-buffers", "-iouring-multishot-accept"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "tcp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-backend", "iouring", "-mmap", "-mmap-block-size", "4096", "-mmap-blocks", "512", "-iouring-fixed-buffers", "-iouring-multishot-accept", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}"],
       "timeout": "5m",
       "tags": ["local", "parity-harness", "tcp", "echo", "iouring", "mmap", "fixed-buffers"]
     },
