@@ -9,6 +9,11 @@ import (
 	"goark.dev/gnalloy/codec"
 )
 
+var (
+	crlfBytes      = []byte{'\r', '\n'}
+	headerEndBytes = []byte{'\r', '\n', '\r', '\n'}
+)
+
 type Headers map[string]string
 
 func (h Headers) Get(name string) string {
@@ -303,7 +308,7 @@ func decodeChunkedBody(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf,
 				aggregate.Release()
 				return nil, 0, false, err
 			}
-			if _, err := next.WriteBytes(aggregate.Bytes()); err != nil {
+			if err := buffer.WriteReadableBytes(next, aggregate); err != nil {
 				next.Release()
 				part.Release()
 				aggregate.Release()
@@ -312,7 +317,7 @@ func decodeChunkedBody(ctx *channel.HandlerContext, in *buffer.CompositeByteBuf,
 			aggregate.Release()
 			aggregate = next
 		}
-		if _, err := aggregate.WriteBytes(part.Bytes()); err != nil {
+		if err := buffer.WriteReadableBytes(aggregate, part); err != nil {
 			part.Release()
 			aggregate.Release()
 			return nil, 0, false, err
@@ -601,27 +606,11 @@ func writeLastChunk(ctx *channel.HandlerContext, trailers Headers) error {
 }
 
 func findCRLF(in *buffer.CompositeByteBuf, start int) (int, bool) {
-	for i := start; i+1 < in.WriterIndex(); i++ {
-		a, _ := in.GetByte(i)
-		b, _ := in.GetByte(i + 1)
-		if a == '\r' && b == '\n' {
-			return i, true
-		}
-	}
-	return 0, false
+	return in.Index(start, crlfBytes)
 }
 
 func findHeaderEnd(in *buffer.CompositeByteBuf) (int, bool) {
-	for i := in.ReaderIndex(); i+3 < in.WriterIndex(); i++ {
-		a, _ := in.GetByte(i)
-		b, _ := in.GetByte(i + 1)
-		c, _ := in.GetByte(i + 2)
-		d, _ := in.GetByte(i + 3)
-		if a == '\r' && b == '\n' && c == '\r' && d == '\n' {
-			return i, true
-		}
-	}
-	return 0, false
+	return findHeaderEndFrom(in, in.ReaderIndex())
 }
 
 func stringSlice(in *buffer.CompositeByteBuf, index int, length int) (string, error) {
@@ -630,7 +619,7 @@ func stringSlice(in *buffer.CompositeByteBuf, index int, length int) (string, er
 		return "", err
 	}
 	defer part.Release()
-	return string(part.Bytes()), nil
+	return buffer.ReadableString(part), nil
 }
 
 func parseRequestHeader(src string) (Request, error) {

@@ -1,8 +1,6 @@
 package websocket
 
 import (
-	"encoding/binary"
-
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/codec"
@@ -169,7 +167,11 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 		}
 	}
 	if opcode == OpcodeClose && payload != nil && payload.ReadableBytes() >= 2 {
-		status := binary.BigEndian.Uint16(payload.Bytes()[:2])
+		status, err := readCloseStatus(payload)
+		if err != nil {
+			payload.Release()
+			return nil, err
+		}
 		if !IsValidCloseStatusCode(status) {
 			payload.Release()
 			return nil, ErrCloseStatusInvalid
@@ -252,7 +254,8 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 
 func unmask(in buffer.ByteBuf, key [4]byte) (buffer.ByteBuf, error) {
 	offset := 0
-	for _, data := range in.ReadableSlices(nil) {
+	var stack [8][]byte
+	for _, data := range in.ReadableSlices(stack[:0]) {
 		for i := range data {
 			data[i] ^= key[(offset+i)&3]
 		}
@@ -266,7 +269,7 @@ func maskCopy(ctx *channel.HandlerContext, in buffer.ByteBuf, key [4]byte) (buff
 	if err != nil {
 		return nil, err
 	}
-	if _, err := out.WriteBytes(in.Bytes()); err != nil {
+	if err := buffer.WriteReadableBytes(out, in); err != nil {
 		out.Release()
 		return nil, err
 	}
@@ -342,7 +345,10 @@ func validateOutboundFrame(frame Frame, payloadLength int) error {
 		return codec.ErrInvalidFrameLength
 	}
 	if frame.Opcode == OpcodeClose && payloadLength >= 2 && frame.Payload != nil {
-		status := binary.BigEndian.Uint16(frame.Payload.Bytes()[:2])
+		status, err := readCloseStatus(frame.Payload)
+		if err != nil {
+			return err
+		}
 		if !IsValidCloseStatusCode(status) {
 			return ErrCloseStatusInvalid
 		}
@@ -351,6 +357,14 @@ func validateOutboundFrame(frame Frame, payloadLength int) error {
 		return ErrControlFrameInvalid
 	}
 	return nil
+}
+
+func readCloseStatus(payload buffer.ByteBuf) (uint16, error) {
+	value, err := payload.ReadUnsigned(payload.ReaderIndex(), 2, buffer.BigEndian)
+	if err != nil {
+		return 0, err
+	}
+	return uint16(value), nil
 }
 
 func allowedRSV(cfg FrameDecoderConfig) byte {

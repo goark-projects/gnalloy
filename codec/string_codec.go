@@ -20,7 +20,7 @@ func (d *StringDecoder) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		ctx.FireChannelRead(msg)
 		return
 	}
-	s := string(in.Bytes())
+	s := buffer.ReadableString(in)
 	in.Release()
 	ctx.FireChannelRead(s)
 }

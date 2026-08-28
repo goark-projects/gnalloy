@@ -38,12 +38,22 @@ func (e *Base64Encoder) Write(ctx *channel.HandlerContext, msg any) error {
 		return ctx.Write(msg)
 	}
 	defer in.Release()
-	out, err := ctx.Channel().Allocator().Acquire(e.encoding.EncodedLen(in.ReadableBytes()))
+	readable := in.ReadableBytes()
+	encodedLen := e.encoding.EncodedLen(readable)
+	out, err := ctx.Channel().Allocator().Acquire(encodedLen)
 	if err != nil {
 		return err
 	}
-	e.encoding.Encode(out.WritableBytesView(), in.Bytes())
-	if err := out.AdvanceWriter(e.encoding.EncodedLen(in.ReadableBytes())); err != nil {
+	src, ok := buffer.ContiguousReadableBytes(in)
+	if !ok {
+		src = make([]byte, readable)
+		if buffer.CopyReadableBytes(src, in) != readable {
+			out.Release()
+			return buffer.ErrInvalidIndex
+		}
+	}
+	e.encoding.Encode(out.WritableBytesView()[:encodedLen], src)
+	if err := out.AdvanceWriter(encodedLen); err != nil {
 		out.Release()
 		return err
 	}
@@ -73,12 +83,22 @@ func (d *Base64Decoder) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		return
 	}
 	defer in.Release()
-	out, err := ctx.Channel().Allocator().Acquire(d.encoding.DecodedLen(in.ReadableBytes()))
+	readable := in.ReadableBytes()
+	out, err := ctx.Channel().Allocator().Acquire(d.encoding.DecodedLen(readable))
 	if err != nil {
 		ctx.FireExceptionCaught(err)
 		return
 	}
-	n, err := d.encoding.Decode(out.WritableBytesView(), in.Bytes())
+	src, ok := buffer.ContiguousReadableBytes(in)
+	if !ok {
+		src = make([]byte, readable)
+		if buffer.CopyReadableBytes(src, in) != readable {
+			out.Release()
+			ctx.FireExceptionCaught(buffer.ErrInvalidIndex)
+			return
+		}
+	}
+	n, err := d.encoding.Decode(out.WritableBytesView(), src)
 	if err != nil {
 		out.Release()
 		ctx.FireExceptionCaught(err)

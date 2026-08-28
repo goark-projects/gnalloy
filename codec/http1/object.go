@@ -451,7 +451,7 @@ func (a *HTTPObjectAggregator) appendBody(ctx *channel.HandlerContext, data buff
 			a.release()
 			return err
 		}
-		if _, err := next.WriteBytes(a.body.Bytes()); err != nil {
+		if err := buffer.WriteReadableBytes(next, a.body); err != nil {
 			next.Release()
 			a.release()
 			return err
@@ -459,7 +459,7 @@ func (a *HTTPObjectAggregator) appendBody(ctx *channel.HandlerContext, data buff
 		a.body.Release()
 		a.body = next
 	}
-	_, err := a.body.WriteBytes(data.Bytes())
+	err := buffer.WriteReadableBytes(a.body, data)
 	if err != nil {
 		a.release()
 	}
@@ -524,16 +524,7 @@ func (a *HTTPObjectAggregator) release() {
 }
 
 func findHeaderEndFrom(in *buffer.CompositeByteBuf, start int) (int, bool) {
-	for i := start; i+3 < in.WriterIndex(); i++ {
-		a, _ := in.GetByte(i)
-		b, _ := in.GetByte(i + 1)
-		c, _ := in.GetByte(i + 2)
-		d, _ := in.GetByte(i + 3)
-		if a == '\r' && b == '\n' && c == '\r' && d == '\n' {
-			return i, true
-		}
-	}
-	return 0, false
+	return in.Index(start, headerEndBytes)
 }
 
 func parseTrailerHeaders(src string) (Headers, error) {

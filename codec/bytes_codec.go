@@ -19,7 +19,11 @@ func (d *ByteSliceDecoder) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		ctx.FireChannelRead(msg)
 		return
 	}
-	out := append([]byte(nil), in.Bytes()...)
+	var out []byte
+	if readable := in.ReadableBytes(); readable > 0 {
+		out = make([]byte, readable)
+		buffer.CopyReadableBytes(out, in)
+	}
 	in.Release()
 	ctx.FireChannelRead(out)
 }
