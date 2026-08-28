@@ -216,6 +216,10 @@ func (p *Pipeline) Write(msg any) error {
 	return p.tail.Write(msg)
 }
 
+func (p *Pipeline) WriteAndFlush(msg any) error {
+	return p.tail.WriteAndFlush(msg)
+}
+
 func (p *Pipeline) FlushFuture() Future {
 	return p.tail.FlushFuture()
 }

@@ -41,6 +41,31 @@ func (s *captureSink) Close() error {
 	return nil
 }
 
+type captureWriteAndFlushSink struct {
+	captureSink
+	writeAndFlushes []any
+}
+
+func (s *captureWriteAndFlushSink) WriteAndFlush(msg any) error {
+	s.writeAndFlushes = append(s.writeAndFlushes, msg)
+	return nil
+}
+
+type outboundRecorder struct {
+	writes  int
+	flushes int
+}
+
+func (h *outboundRecorder) Write(ctx *HandlerContext, msg any) error {
+	h.writes++
+	return ctx.Write(msg)
+}
+
+func (h *outboundRecorder) Flush(ctx *HandlerContext) error {
+	h.flushes++
+	return ctx.Flush()
+}
+
 func TestPipelineInboundPropagation(t *testing.T) {
 	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureSink{})
 	capture := &captureInbound{}
@@ -70,6 +95,44 @@ func TestPipelineOutboundSink(t *testing.T) {
 	}
 	if len(sink.writes) != 1 || sink.writes[0] != "payload" || !sink.flushed || !sink.closed {
 		t.Fatalf("sink=%+v", sink)
+	}
+}
+
+func TestPipelineWriteAndFlushUsesDirectSinkWithoutOutboundHandlers(t *testing.T) {
+	sink := &captureWriteAndFlushSink{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("inbound", forwardingInbound{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().WriteAndFlush("payload"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writeAndFlushes) != 1 || sink.writeAndFlushes[0] != "payload" {
+		t.Fatalf("writeAndFlushes=%v, want payload", sink.writeAndFlushes)
+	}
+	if len(sink.writes) != 0 || sink.flushed {
+		t.Fatalf("separate write/flush used: writes=%v flushed=%t", sink.writes, sink.flushed)
+	}
+}
+
+func TestPipelineWriteAndFlushPreservesOutboundHandlers(t *testing.T) {
+	sink := &captureWriteAndFlushSink{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	recorder := &outboundRecorder{}
+	if err := ch.Pipeline().AddLast("outbound", recorder); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().WriteAndFlush("payload"); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.writes != 1 || recorder.flushes != 1 {
+		t.Fatalf("recorder writes=%d flushes=%d, want 1/1", recorder.writes, recorder.flushes)
+	}
+	if len(sink.writeAndFlushes) != 0 {
+		t.Fatalf("direct sink used despite outbound handler: %v", sink.writeAndFlushes)
+	}
+	if len(sink.writes) != 1 || sink.writes[0] != "payload" || !sink.flushed {
+		t.Fatalf("sink writes=%v flushed=%t, want separate path", sink.writes, sink.flushed)
 	}
 }
 
@@ -132,5 +195,18 @@ func BenchmarkPipelineInboundNoop(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		ch.Pipeline().FireChannelRead("msg")
+	}
+}
+
+func BenchmarkPipelineWriteAndFlushDirectSink(b *testing.B) {
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureWriteAndFlushSink{})
+	if err := ch.Pipeline().AddLast("inbound", forwardingInbound{}); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if err := ch.Pipeline().WriteAndFlush("msg"); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

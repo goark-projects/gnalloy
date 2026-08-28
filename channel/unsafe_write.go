@@ -24,6 +24,26 @@ func (u *Unsafe) Write(msg any) error {
 	return nil
 }
 
+func (u *Unsafe) WriteAndFlush(msg any) error {
+	if u.closed.Load() {
+		if buf, ok := msg.(buffer.ByteBuf); ok {
+			buf.Release()
+		}
+		return ErrPromiseFailed
+	}
+	buf, ok := msg.(buffer.ByteBuf)
+	if !ok {
+		return ErrInvalidMessage
+	}
+	if buf.ReadableBytes() == 0 {
+		buf.Release()
+		u.ch.Pipeline().FireFlushComplete()
+		return nil
+	}
+	u.enqueueOutbound(buf, nil)
+	return u.flushOutbound()
+}
+
 func (u *Unsafe) WriteFuture(msg any) Future {
 	if u.closed.Load() {
 		if buf, ok := msg.(buffer.ByteBuf); ok {

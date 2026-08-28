@@ -148,10 +148,7 @@ func (c *LocalChannel) WriteAndFlush(msg any) error {
 		}
 		return nil
 	}
-	if err := c.Write(msg); err != nil {
-		return err
-	}
-	return c.Flush()
+	return c.pipeline.WriteAndFlush(msg)
 }
 
 func (c *LocalChannel) WriteAndFlushFuture(msg any) Future {

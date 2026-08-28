@@ -1,5 +1,9 @@
 package channel
 
+type writeAndFlushSink interface {
+	WriteAndFlush(msg any) error
+}
+
 type HandlerContext struct {
 	pipeline *Pipeline
 	name     string
@@ -147,10 +151,32 @@ func (c *HandlerContext) Flush() error {
 }
 
 func (c *HandlerContext) WriteAndFlush(msg any) error {
+	if sink, ok := c.directWriteAndFlushSink(); ok {
+		return sink.WriteAndFlush(msg)
+	}
 	if err := c.Write(msg); err != nil {
 		return err
 	}
 	return c.Flush()
+}
+
+func (c *HandlerContext) directWriteAndFlushSink() (writeAndFlushSink, bool) {
+	if c == nil || c.pipeline == nil || c.pipeline.sink == nil {
+		return nil, false
+	}
+	sink, ok := c.pipeline.sink.(writeAndFlushSink)
+	if !ok {
+		return nil, false
+	}
+	for n := c.prev; n != nil; n = n.prev {
+		if _, ok := n.handler.(WriteHandler); ok {
+			return nil, false
+		}
+		if _, ok := n.handler.(FlushHandler); ok {
+			return nil, false
+		}
+	}
+	return sink, true
 }
 
 func (c *HandlerContext) CloseFuture() Future {
