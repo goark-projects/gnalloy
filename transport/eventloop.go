@@ -56,6 +56,8 @@ type EventLoop struct {
 	channels map[ChannelID]EventHandler
 	locals   eventLoopLocalRegistry
 	closed   atomic.Bool
+
+	taskWakeupPending atomic.Bool
 }
 
 func NewEventLoop(cfg EventLoopConfig) (*EventLoop, error) {
@@ -148,7 +150,7 @@ func (l *EventLoop) Submit(task Task) error {
 	if !l.tasks.Offer(task) {
 		return ErrTaskQueueFull
 	}
-	return l.poller.Wakeup()
+	return l.signalTaskWakeup()
 }
 
 // Invoke 将控制面任务投递到 EventLoop 并等待执行结果。
@@ -248,6 +250,7 @@ func (l *EventLoop) Close() error {
 }
 
 func (l *EventLoop) drainTasks() {
+	l.taskWakeupPending.Store(false)
 	for {
 		task, ok := l.tasks.Poll()
 		if !ok {
@@ -255,4 +258,15 @@ func (l *EventLoop) drainTasks() {
 		}
 		task()
 	}
+}
+
+func (l *EventLoop) signalTaskWakeup() error {
+	if !l.taskWakeupPending.CompareAndSwap(false, true) {
+		return nil
+	}
+	if err := l.poller.Wakeup(); err != nil {
+		l.taskWakeupPending.Store(false)
+		return err
+	}
+	return nil
 }
