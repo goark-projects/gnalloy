@@ -225,26 +225,6 @@ func (c *CompositeByteBuf) Bytes() []byte {
 	return append([]byte(nil), out.Bytes()...)
 }
 
-func (c *CompositeByteBuf) ReadableSlices(dst [][]byte) [][]byte {
-	if c.refs.Load() <= 0 || c.readerIndex == c.writerIndex {
-		return dst
-	}
-	for _, comp := range c.components {
-		from := max(c.readerIndex, comp.start)
-		to := min(c.writerIndex, comp.end)
-		if from >= to {
-			continue
-		}
-		part, err := comp.buf.Slice(comp.buf.ReaderIndex()+from-comp.start, to-from)
-		if err != nil {
-			continue
-		}
-		dst = part.ReadableSlices(dst)
-		part.Release()
-	}
-	return dst
-}
-
 func (c *CompositeByteBuf) WritableBytesView() []byte {
 	return nil
 }

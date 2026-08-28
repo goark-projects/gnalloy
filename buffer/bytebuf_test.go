@@ -115,6 +115,42 @@ func TestCompositeReadableSlicesAreViews(t *testing.T) {
 	c.Release()
 }
 
+func TestCompositeReadableSlicesPreservePartialViews(t *testing.T) {
+	a := NewHeapBuffer(8)
+	b := NewHeapBuffer(8)
+	_, _ = a.WriteBytes([]byte("ab"))
+	_, _ = b.WriteBytes([]byte("cd"))
+
+	c := NewCompositeByteBuf()
+	c.Append(a)
+	c.Append(b)
+	if err := c.SkipBytes(1); err != nil {
+		t.Fatal(err)
+	}
+	slices := c.ReadableSlices(nil)
+	if len(slices) != 2 || string(slices[0]) != "b" || string(slices[1]) != "cd" {
+		t.Fatalf("slices=%q", slices)
+	}
+	c.Release()
+}
+
+func BenchmarkCompositeReadableSlicesFullComponents(b *testing.B) {
+	a := NewHeapBuffer(8)
+	c := NewCompositeByteBuf()
+	_, _ = a.WriteBytes([]byte("abcd"))
+	c.Append(a)
+	var stack [4][]byte
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		slices := c.ReadableSlices(stack[:0])
+		if len(slices) != 1 || len(slices[0]) != 4 {
+			b.Fatalf("slices=%d", len(slices))
+		}
+	}
+	c.Release()
+}
+
 func TestCompositeAppendAfterReleaseDropsInput(t *testing.T) {
 	c := NewCompositeByteBuf()
 	c.Release()
