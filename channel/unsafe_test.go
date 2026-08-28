@@ -489,6 +489,32 @@ func TestUnsafeReadinessUsesGatheringWrite(t *testing.T) {
 	}
 }
 
+func TestUnsafeReadinessSkipsGatheringForSingleDirectBuffer(t *testing.T) {
+	rw := &vectorWriteRW{}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     &fakeReadyPoller{},
+		ReadWriter: rw,
+	})
+
+	buf := buffer.NewHeapBuffer(4)
+	_, _ = buf.WriteBytes([]byte("pong"))
+	if err := ch.WriteAndFlush(buf); err != nil {
+		t.Fatal(err)
+	}
+	if rw.scalar != 1 || rw.writev != 0 {
+		t.Fatalf("scalar=%d writev=%d, want direct scalar write", rw.scalar, rw.writev)
+	}
+	if len(unsafeCh.writeSlices) != 0 {
+		t.Fatalf("write slices=%d, want 0 for single direct buffer", len(unsafeCh.writeSlices))
+	}
+	if buf.RefCnt() != 0 {
+		t.Fatalf("ref=%d, want 0", buf.RefCnt())
+	}
+}
+
 func TestUnsafeCompletionSubmitsGatheringWrite(t *testing.T) {
 	poller := &fakeCompletionPoller{}
 	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{

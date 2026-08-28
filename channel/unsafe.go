@@ -66,6 +66,7 @@ type Unsafe struct {
 	writeInterest bool
 	readCallback  bool
 	deferredFlush bool
+	vectorWriter  FDVectorWriter
 	writeBatch    []buffer.ByteBuf
 	writeSlices   [][]byte
 	flushWaiters  []*DefaultPromise
@@ -102,6 +103,7 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 		closeHook:          cfg.CloseHook,
 		readBufferSize:     readBufferSize,
 		fixedBuffers:       cfg.FixedBuffers,
+		vectorWriter:       vectorWriterOf(cfg.ReadWriter),
 		closePromise:       NewPromise(),
 		writeHighWatermark: int64(watermark.High),
 		writeLowWatermark:  int64(watermark.Low),
@@ -198,4 +200,9 @@ func (u *Unsafe) cacheMaxMessagesPerRead(value any, present bool) {
 		v = 1
 	}
 	u.cachedMaxMessagesPerRead.Store(int64(v))
+}
+
+func vectorWriterOf(rw FDReadWriter) FDVectorWriter {
+	vector, _ := rw.(FDVectorWriter)
+	return vector
 }

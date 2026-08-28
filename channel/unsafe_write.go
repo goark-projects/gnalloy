@@ -127,7 +127,13 @@ func (u *Unsafe) flushReady() error {
 }
 
 func (u *Unsafe) writeReadyBatch() (int, bool, error) {
-	if vector, ok := u.rw.(FDVectorWriter); ok {
+	if u.outHead.next == nil {
+		buf := u.outHead.buf
+		if _, ok := buf.(*buffer.DirectByteBuf); ok {
+			return u.rw.Write(u.fd, buf.Bytes())
+		}
+	}
+	if vector := u.vectorWriter; vector != nil {
 		u.writeSlices = u.writeSlices[:0]
 		u.collectOutboundSlices(maxGatheringBuffers)
 		if len(u.writeSlices) > 1 {
