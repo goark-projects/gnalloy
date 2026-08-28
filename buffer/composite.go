@@ -1,6 +1,7 @@
 package buffer
 
 import (
+	"bytes"
 	"io"
 	"sync/atomic"
 )
@@ -109,12 +110,18 @@ func (c *CompositeByteBuf) GetByte(index int) (byte, bool) {
 	if c.refs.Load() <= 0 || index < c.readerIndex || index >= c.writerIndex {
 		return 0, false
 	}
-	for _, comp := range c.components {
+	if len(c.components) == 1 {
+		comp := &c.components[0]
 		if index >= comp.start && index < comp.end {
 			return comp.buf.GetByte(comp.buf.ReaderIndex() + index - comp.start)
 		}
+		return 0, false
 	}
-	return 0, false
+	comp := c.findComponent(index)
+	if comp == nil {
+		return 0, false
+	}
+	return comp.buf.GetByte(comp.buf.ReaderIndex() + index - comp.start)
 }
 
 func (c *CompositeByteBuf) ReadByte() (byte, error) {
@@ -135,6 +142,9 @@ func (c *CompositeByteBuf) ReadUnsigned(offset int, length int, order ByteOrder)
 	}
 	if length <= 0 || length > 8 || offset < c.readerIndex || offset+length > c.writerIndex {
 		return 0, ErrInvalidIndex
+	}
+	if data, ok := c.readableSpan(offset, length); ok {
+		return readUnsignedFrom(data, order), nil
 	}
 	var v uint64
 	if order == LittleEndian {
@@ -164,16 +174,8 @@ func (c *CompositeByteBuf) Read(p []byte) (int, error) {
 	if c.ReadableBytes() == 0 {
 		return 0, io.EOF
 	}
-	n := 0
-	for n < len(p) && c.readerIndex < c.writerIndex {
-		b, ok := c.GetByte(c.readerIndex)
-		if !ok {
-			break
-		}
-		p[n] = b
-		n++
-		c.readerIndex++
-	}
+	n := c.copyReadableTo(p)
+	c.readerIndex += n
 	return n, nil
 }
 
@@ -281,13 +283,9 @@ func (c *CompositeByteBuf) Copy() (ByteBuf, error) {
 		return nil, err
 	}
 	out := NewHeapBuffer(c.ReadableBytes())
-	for idx := c.readerIndex; idx < c.writerIndex; idx++ {
-		b, ok := c.GetByte(idx)
-		if !ok {
-			out.Release()
-			return nil, ErrInvalidIndex
-		}
-		_, _ = out.WriteBytes([]byte{b})
+	if err := c.writeReadableTo(out); err != nil {
+		out.Release()
+		return nil, err
 	}
 	return out, nil
 }
@@ -354,20 +352,236 @@ func (c *CompositeByteBuf) DiscardReadComponents() {
 }
 
 func (c *CompositeByteBuf) findComponent(index int) *component {
-	for i := range c.components {
-		if index >= c.components[i].start && index < c.components[i].end {
-			return &c.components[i]
-		}
+	if i := c.findComponentIndex(index); i >= 0 {
+		return &c.components[i]
 	}
 	return nil
 }
 
 func (c *CompositeByteBuf) singleComponent(start int, end int) *component {
-	for i := range c.components {
+	if len(c.components) == 1 {
+		comp := &c.components[0]
+		if start >= comp.start && end <= comp.end {
+			return comp
+		}
+		return nil
+	}
+	if i := c.findComponentIndex(start); i >= 0 {
 		comp := &c.components[i]
 		if start >= comp.start && end <= comp.end {
 			return comp
 		}
 	}
 	return nil
+}
+
+// IndexByte 返回可读区间内第一个匹配字节的绝对索引。
+func (c *CompositeByteBuf) IndexByte(index int, value byte) (int, bool) {
+	if c.refs.Load() <= 0 || index < c.readerIndex || index >= c.writerIndex {
+		return 0, false
+	}
+	startComponent := c.findComponentIndex(index)
+	if startComponent < 0 {
+		return 0, false
+	}
+	for i := startComponent; i < len(c.components); i++ {
+		comp := &c.components[i]
+		from := max(index, comp.start)
+		to := min(c.writerIndex, comp.end)
+		if to <= from {
+			continue
+		}
+		if data, ok := componentBytes(comp.buf); ok {
+			offset := from - comp.start
+			found := bytes.IndexByte(data[offset:offset+to-from], value)
+			if found >= 0 {
+				return from + found, true
+			}
+			continue
+		}
+		for pos := from; pos < to; pos++ {
+			b, ok := comp.buf.GetByte(comp.buf.ReaderIndex() + pos - comp.start)
+			if ok && b == value {
+				return pos, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// Index 返回可读区间内第一个匹配字节序列的绝对索引。
+func (c *CompositeByteBuf) Index(index int, value []byte) (int, bool) {
+	if len(value) == 0 || c.refs.Load() <= 0 || index < c.readerIndex {
+		return 0, false
+	}
+	limit := c.writerIndex - len(value)
+	if index > limit {
+		return 0, false
+	}
+	if len(value) == 1 {
+		return c.IndexByte(index, value[0])
+	}
+	for index <= limit {
+		found, ok := c.IndexByte(index, value[0])
+		if !ok || found > limit {
+			return 0, false
+		}
+		if c.matchAt(found, value) {
+			return found, true
+		}
+		index = found + 1
+	}
+	return 0, false
+}
+
+func (c *CompositeByteBuf) matchAt(index int, value []byte) bool {
+	if data, ok := c.readableSpan(index, len(value)); ok {
+		return bytes.Equal(data, value)
+	}
+	for i := range value {
+		b, ok := c.GetByte(index + i)
+		if !ok || b != value[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *CompositeByteBuf) readableSpan(index int, length int) ([]byte, bool) {
+	if length < 0 {
+		return nil, false
+	}
+	comp := c.findComponent(index)
+	if comp == nil || index > comp.end-length {
+		return nil, false
+	}
+	data, ok := componentBytes(comp.buf)
+	if !ok {
+		return nil, false
+	}
+	offset := index - comp.start
+	if offset < 0 || offset+length > len(data) {
+		return nil, false
+	}
+	return data[offset : offset+length], true
+}
+
+func (c *CompositeByteBuf) copyReadableTo(dst []byte) int {
+	if len(dst) == 0 {
+		return 0
+	}
+	written := 0
+	for i := c.findFirstReadableComponent(); i >= 0 && i < len(c.components) && written < len(dst); i++ {
+		comp := &c.components[i]
+		from := max(c.readerIndex, comp.start)
+		to := min(c.writerIndex, comp.end)
+		if to <= from {
+			continue
+		}
+		if data, ok := componentBytes(comp.buf); ok {
+			offset := from - comp.start
+			written += copy(dst[written:], data[offset:offset+to-from])
+			continue
+		}
+		for pos := from; pos < to && written < len(dst); pos++ {
+			b, ok := comp.buf.GetByte(comp.buf.ReaderIndex() + pos - comp.start)
+			if !ok {
+				return written
+			}
+			dst[written] = b
+			written++
+		}
+	}
+	return written
+}
+
+func (c *CompositeByteBuf) writeReadableTo(dst ByteBuf) error {
+	var one [1]byte
+	for i := c.findFirstReadableComponent(); i >= 0 && i < len(c.components); i++ {
+		comp := &c.components[i]
+		from := max(c.readerIndex, comp.start)
+		to := min(c.writerIndex, comp.end)
+		if to <= from {
+			continue
+		}
+		if data, ok := componentBytes(comp.buf); ok {
+			offset := from - comp.start
+			if _, err := dst.WriteBytes(data[offset : offset+to-from]); err != nil {
+				return err
+			}
+			continue
+		}
+		for pos := from; pos < to; pos++ {
+			b, ok := comp.buf.GetByte(comp.buf.ReaderIndex() + pos - comp.start)
+			if !ok {
+				return ErrInvalidIndex
+			}
+			one[0] = b
+			if _, err := dst.WriteBytes(one[:]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (c *CompositeByteBuf) findFirstReadableComponent() int {
+	if len(c.components) == 0 || c.readerIndex >= c.writerIndex {
+		return -1
+	}
+	if i := c.findComponentIndex(c.readerIndex); i >= 0 {
+		return i
+	}
+	return 0
+}
+
+func (c *CompositeByteBuf) findComponentIndex(index int) int {
+	n := len(c.components)
+	if n == 0 {
+		return -1
+	}
+	if n == 1 {
+		if componentContains(c.components[0], index) {
+			return 0
+		}
+		return -1
+	}
+	if n == 2 {
+		for i := 0; i < 2; i++ {
+			if componentContains(c.components[i], index) {
+				return i
+			}
+		}
+		return -1
+	}
+	low, high := 0, n
+	for low < high {
+		mid := low + (high-low)/2
+		comp := c.components[mid]
+		if index < comp.start {
+			high = mid
+			continue
+		}
+		if index >= comp.end {
+			low = mid + 1
+			continue
+		}
+		return mid
+	}
+	return -1
+}
+
+func componentContains(comp component, index int) bool {
+	return index >= comp.start && index < comp.end
+}
+
+func componentBytes(buf ByteBuf) ([]byte, bool) {
+	switch b := buf.(type) {
+	case *DirectByteBuf:
+		return b.Bytes(), true
+	case *slicedByteBuf:
+		return b.Bytes(), true
+	default:
+		return nil, false
+	}
 }

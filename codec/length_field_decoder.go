@@ -110,7 +110,8 @@ func compactFragmentedCumulation(in *buffer.CompositeByteBuf) error {
 		return nil
 	}
 	merged := buffer.NewHeapBuffer(in.ReadableBytes())
-	for _, part := range in.ReadableSlices(nil) {
+	var scratch [8][]byte
+	for _, part := range in.ReadableSlices(scratch[:0]) {
 		if _, err := merged.WriteBytes(part); err != nil {
 			merged.Release()
 			return err

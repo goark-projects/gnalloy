@@ -92,19 +92,15 @@ func (d *LineBasedFrameDecoder) decodeLine(in *buffer.CompositeByteBuf, lineEnd 
 
 func findLineEnd(in *buffer.CompositeByteBuf) (int, int) {
 	readerIndex := in.ReaderIndex()
-	writerIndex := in.WriterIndex()
-	for i := readerIndex; i < writerIndex; i++ {
-		b, ok := in.GetByte(i)
-		if !ok || b != '\n' {
-			continue
-		}
-		if i > readerIndex {
-			prev, _ := in.GetByte(i - 1)
-			if prev == '\r' {
-				return i, 2
-			}
-		}
-		return i, 1
+	lineEnd, ok := in.IndexByte(readerIndex, '\n')
+	if !ok {
+		return -1, 0
 	}
-	return -1, 0
+	if lineEnd > readerIndex {
+		prev, _ := in.GetByte(lineEnd - 1)
+		if prev == '\r' {
+			return lineEnd, 2
+		}
+	}
+	return lineEnd, 1
 }

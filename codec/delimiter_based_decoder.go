@@ -114,14 +114,11 @@ func (d *DelimiterBasedFrameDecoder) findDelimiter(in *buffer.CompositeByteBuf) 
 
 func indexOfDelimiter(in *buffer.CompositeByteBuf, delimiter []byte) int {
 	readerIndex := in.ReaderIndex()
-	writerIndex := in.WriterIndex()
-	maxStart := writerIndex - len(delimiter)
-	for i := readerIndex; i <= maxStart; i++ {
-		if delimiterMatches(in, i, delimiter) {
-			return i - readerIndex
-		}
+	index, ok := in.Index(readerIndex, delimiter)
+	if !ok {
+		return -1
 	}
-	return -1
+	return index - readerIndex
 }
 
 func delimiterMatches(in *buffer.CompositeByteBuf, index int, delimiter []byte) bool {

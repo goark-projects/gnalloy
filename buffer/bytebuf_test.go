@@ -151,6 +151,62 @@ func BenchmarkCompositeReadableSlicesFullComponents(b *testing.B) {
 	c.Release()
 }
 
+func TestCompositeIndexFindsValuesAcrossComponents(t *testing.T) {
+	c := NewCompositeByteBuf()
+	c.Append(testBuffer("ab"))
+	c.Append(testBuffer("cd"))
+	c.Append(testBuffer("ef"))
+	defer c.Release()
+
+	if index, ok := c.IndexByte(0, 'd'); !ok || index != 3 {
+		t.Fatalf("IndexByte=%d,%t, want 3,true", index, ok)
+	}
+	if index, ok := c.Index(0, []byte("cde")); !ok || index != 2 {
+		t.Fatalf("Index=%d,%t, want 2,true", index, ok)
+	}
+	if _, ok := c.Index(0, []byte("xyz")); ok {
+		t.Fatal("Index should not find missing delimiter")
+	}
+}
+
+func BenchmarkCompositeGetByteFragmented(b *testing.B) {
+	c := NewCompositeByteBuf()
+	for i := 0; i < 32; i++ {
+		c.Append(testBuffer("abcdefghijklmnop"))
+	}
+	defer c.Release()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	var v byte
+	for i := 0; i < b.N; i++ {
+		pos := i & (c.ReadableBytes() - 1)
+		value, ok := c.GetByte(pos)
+		if !ok {
+			b.Fatal("missing byte")
+		}
+		v ^= value
+	}
+	_ = v
+}
+
+func BenchmarkCompositeIndexByteFragmented(b *testing.B) {
+	c := NewCompositeByteBuf()
+	for i := 0; i < 31; i++ {
+		c.Append(testBuffer("aaaaaaaaaaaaaaaa"))
+	}
+	c.Append(testBuffer("aaaaaaaazaaaaaaa"))
+	defer c.Release()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if index, ok := c.IndexByte(0, 'z'); !ok || index != 504 {
+			b.Fatalf("IndexByte=%d,%t, want 504,true", index, ok)
+		}
+	}
+}
+
 func TestCompositeAppendAfterReleaseDropsInput(t *testing.T) {
 	c := NewCompositeByteBuf()
 	c.Release()
@@ -161,4 +217,10 @@ func TestCompositeAppendAfterReleaseDropsInput(t *testing.T) {
 	if buf.RefCnt() != 0 {
 		t.Fatalf("ref=%d, want 0", buf.RefCnt())
 	}
+}
+
+func testBuffer(value string) ByteBuf {
+	buf := NewHeapBuffer(len(value))
+	_, _ = buf.WriteBytes([]byte(value))
+	return buf
 }

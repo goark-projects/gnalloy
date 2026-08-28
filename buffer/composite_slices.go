@@ -5,6 +5,18 @@ func (c *CompositeByteBuf) ReadableSlices(dst [][]byte) [][]byte {
 	if c.refs.Load() <= 0 || c.readerIndex == c.writerIndex {
 		return dst
 	}
+	if len(c.components) == 1 {
+		comp := &c.components[0]
+		from := max(c.readerIndex, comp.start)
+		to := min(c.writerIndex, comp.end)
+		if from >= to {
+			return dst
+		}
+		if from == comp.start && to == comp.end {
+			return comp.buf.ReadableSlices(dst)
+		}
+		return appendPartialReadableSlice(dst, comp, from, to)
+	}
 	for i := range c.components {
 		comp := &c.components[i]
 		from := max(c.readerIndex, comp.start)

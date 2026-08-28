@@ -177,17 +177,26 @@ func mergeCumulate(ctx *channel.HandlerContext, cumulation *buffer.CompositeByte
 		in.Release()
 		return nil, err
 	}
-	for _, part := range cumulation.ReadableSlices(nil) {
+	var scratch [8][]byte
+	for _, part := range cumulation.ReadableSlices(scratch[:0]) {
 		if _, err := merged.WriteBytes(part); err != nil {
 			merged.Release()
 			in.Release()
 			return nil, err
 		}
 	}
-	if _, err := merged.WriteBytes(in.Bytes()); err != nil {
+	slices := in.ReadableSlices(scratch[:0])
+	for _, part := range slices {
+		if _, err := merged.WriteBytes(part); err != nil {
+			merged.Release()
+			in.Release()
+			return nil, err
+		}
+	}
+	if len(slices) == 0 && in.ReadableBytes() > 0 {
 		merged.Release()
 		in.Release()
-		return nil, err
+		return nil, buffer.ErrInvalidIndex
 	}
 	in.Release()
 	cumulation.Release()
