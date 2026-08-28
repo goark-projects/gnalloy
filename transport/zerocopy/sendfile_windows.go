@@ -23,12 +23,14 @@ func sendFile(dst transport.FDRef, region channel.FileRegion, chunkSize int) (Re
 	}
 	socket := windows.Handle(uintptr(dst.FD))
 	file := windows.Handle(src.Fd())
-	overlapped := windows.Overlapped{}
 	start := offset + region.Transferred()
-	overlapped.Offset = uint32(start)
-	overlapped.OffsetHigh = uint32(uint64(start) >> 32)
+	overlapped, event, err := newTransmitFileOverlapped(start)
+	if err != nil {
+		return Result{}, false, err
+	}
+	defer windows.CloseHandle(event)
 
-	err := windows.TransmitFile(socket, file, uint32(remaining), 0, &overlapped, nil, windows.TF_WRITE_BEHIND)
+	err = windows.TransmitFile(socket, file, uint32(remaining), 0, &overlapped, nil, windows.TF_WRITE_BEHIND)
 	if err == nil {
 		result := Result{Bytes: remaining, ZeroCopy: remaining > 0}
 		if remaining > 0 {
@@ -48,6 +50,17 @@ func sendFile(dst transport.FDRef, region channel.FileRegion, chunkSize int) (Re
 		return Result{}, false, ErrUnsupported
 	}
 	return Result{}, false, err
+}
+
+func newTransmitFileOverlapped(start int64) (windows.Overlapped, windows.Handle, error) {
+	event, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		return windows.Overlapped{}, 0, err
+	}
+	overlapped := windows.Overlapped{HEvent: event}
+	overlapped.Offset = uint32(start)
+	overlapped.OffsetHigh = uint32(uint64(start) >> 32)
+	return overlapped, event, nil
 }
 
 func waitTransmitFile(socket windows.Handle, overlapped *windows.Overlapped, advance func(int64) error) (Result, bool, error) {

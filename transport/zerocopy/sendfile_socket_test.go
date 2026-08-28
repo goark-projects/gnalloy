@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/transport"
@@ -41,6 +42,7 @@ func TestSendFileToTCPSocket(t *testing.T) {
 			return
 		}
 		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 		tcpConn, ok := conn.(*net.TCPConn)
 		if !ok {
 			done <- fmt.Errorf("accepted conn=%T, want *net.TCPConn", conn)
@@ -60,6 +62,10 @@ func TestSendFileToTCPSocket(t *testing.T) {
 
 	client, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		_ = client.Close()
 		t.Fatal(err)
 	}
 	data, readErr := io.ReadAll(client)
