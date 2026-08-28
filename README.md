@@ -45,8 +45,9 @@ blocks:
   extended CONNECT helpers, Protobuf varint32 frames, MQTT frames, Redis RESP
   frames, WebSocket frames, and permessage-deflate extension compression.
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`, and
-  `FileRegion` fallback encoding; the `Unsafe` bridge normalizes
-  readiness/completion events before they enter business handlers.
+  `FileRegion` fallback encoding with optional native source metadata; the
+  `Unsafe` bridge normalizes readiness/completion events before they enter
+  business handlers.
 - `channel/pool`: `SimplePool`, `FixedPool`, and `Map` Channel reuse
   primitives with explicit factory, health check, lifecycle callback, return,
   discard, timeout, and close semantics.
@@ -103,6 +104,8 @@ blocks:
 - `transport/raw`: custom IP protocol transport with server endpoints,
   connected client `Dialer` endpoints, typed `Packet` messages, protocol
   defaults, and explicit elevated-permission runtime boundaries.
+- `transport/zerocopy`: Linux sendfile-based `FileRegion` transfer primitive
+  with explicit unsupported and copy-fallback boundaries.
 - `transport/l2`: data-link transport abstraction with the same
   `ServerBootstrap`/`Dialer` experience as TCP/UDP/raw/QUIC. Linux uses
   native AF_PACKET; macOS/BSD use native BPF; Windows uses an Npcap driver that

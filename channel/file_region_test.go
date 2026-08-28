@@ -44,6 +44,32 @@ func TestFileRegionReadsConfiguredRange(t *testing.T) {
 	}
 }
 
+func TestFileRegionExposesNativeSourceAndAdvance(t *testing.T) {
+	reader := strings.NewReader("0123456789")
+	region, err := NewFileRegion(reader, 3, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if region.ReaderAt() != reader || region.Offset() != 3 {
+		t.Fatalf("reader=%v offset=%d", region.ReaderAt(), region.Offset())
+	}
+	if err := region.Advance(2); err != nil {
+		t.Fatal(err)
+	}
+	if region.Transferred() != 2 {
+		t.Fatalf("transferred=%d, want 2", region.Transferred())
+	}
+	if err := region.Advance(3); !errors.Is(err, ErrInvalidFileRegion) {
+		t.Fatalf("err=%v, want invalid region", err)
+	}
+	if err := region.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := region.Advance(1); !errors.Is(err, ErrFileRegionClosed) {
+		t.Fatalf("err=%v, want closed region", err)
+	}
+}
+
 func TestFileRegionEncoderWritesChunks(t *testing.T) {
 	region, err := NewFileRegion(strings.NewReader("abcdefgh"), 0, 8)
 	if err != nil {

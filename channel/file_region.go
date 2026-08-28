@@ -45,6 +45,34 @@ func (r *DefaultFileRegion) Transferred() int64 {
 	return r.transferred
 }
 
+// Offset 返回该区域在底层 reader 中的起始偏移。
+func (r *DefaultFileRegion) Offset() int64 {
+	if r == nil {
+		return 0
+	}
+	return r.offset
+}
+
+// ReaderAt 返回底层随机读源，zero-copy 传输会按需识别 *os.File。
+func (r *DefaultFileRegion) ReaderAt() io.ReaderAt {
+	if r == nil {
+		return nil
+	}
+	return r.reader
+}
+
+// Advance 在外部原生传输完成后推进进度。
+func (r *DefaultFileRegion) Advance(n int64) error {
+	if r == nil || n < 0 || r.transferred+n > r.count {
+		return ErrInvalidFileRegion
+	}
+	if r.closed {
+		return ErrFileRegionClosed
+	}
+	r.transferred += n
+	return nil
+}
+
 func (r *DefaultFileRegion) Read(dst []byte) (int, error) {
 	if r == nil || r.reader == nil {
 		return 0, ErrInvalidFileRegion

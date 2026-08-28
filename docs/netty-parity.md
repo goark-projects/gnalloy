@@ -51,7 +51,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `AttributeKey/AttributeMap` | `channel.AttributeMap` | done | Channel 级轻量属性存储。 |
 | `ChannelFuture` | `channel.Future` | done | 支持完成、失败、listener、deadline 等待，并可将 listener 绑定到所属 EventLoop。 |
 | `ChannelGroup` | `channel.Group` | done | 批量 close/write/flush 和 group handler。 |
-| `FileRegion` | `channel.FileRegion` | done | 提供文件区域出站消息和 fallback 编码路径。 |
+| `FileRegion` | `channel.FileRegion`、`transport/zerocopy` | done | 提供文件区域出站消息、fallback 编码路径和 Linux sendfile 零拷贝传输原语。 |
 
 ## Pipeline 与 Handler
 
@@ -144,7 +144,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | WebSocket extension compression | `codec/websocket/deflate` done | 支持 permessage-deflate 协商参数、RSV1 显式 decoder 配置、data message 压缩/解压、分片最终聚合、控制帧透传和解压膨胀预算。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
 | OCSP、OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
-| true sendfile/splice 零拷贝文件传输 | planned | `FileRegion` 已有 fallback 语义；内核级零拷贝需要按 OS 后端拆分实现和退化路径。 |
+| true sendfile/splice 零拷贝文件传输 | `transport/zerocopy` done | Linux `sendfile` 路径可直接传输 `DefaultFileRegion` backed by `*os.File`，非 Linux 或非原生 region 明确返回 unsupported，保留 `Copy` fallback。 |
 | SCTP、UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
 | in-VM local transport | defer | Go 里可用 memory backend 与嵌入式测试替代；无需复制 Netty 的 JVM 内本地传输模型。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |
