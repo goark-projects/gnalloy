@@ -74,6 +74,10 @@ func (u *Unsafe) FlushFuture() Future {
 
 func (u *Unsafe) flushOutbound() error {
 	if u.poller != nil && u.poller.Model() == transport.PollerCompletion {
+		if u.readCallback {
+			u.deferredFlush = true
+			return nil
+		}
 		return u.submitWrite()
 	}
 	return u.flushReady()
@@ -115,11 +119,26 @@ func (u *Unsafe) writeReadyBatch() (int, bool, error) {
 }
 
 func (u *Unsafe) submitWrite() error {
-	if u.writePending || u.outHead == nil {
+	req, ok := u.prepareWriteRequest()
+	if !ok {
 		return nil
 	}
 	u.writePending = true
+	err := u.poller.Submit(req)
+	if err != nil {
+		u.writePending = false
+	}
+	return err
+}
+
+func (u *Unsafe) prepareWriteRequest() (transport.IORequest, bool) {
+	if u.writePending || u.outHead == nil {
+		return transport.IORequest{}, false
+	}
 	u.collectOutboundBatch()
+	if len(u.writeBatch) == 0 {
+		return transport.IORequest{}, false
+	}
 	req := transport.IORequest{
 		Op:        transport.OpWrite,
 		FD:        u.fd,
@@ -131,11 +150,7 @@ func (u *Unsafe) submitWrite() error {
 		req.Bufs = u.writeBatch
 	}
 	req = u.prepareIORequest(req)
-	err := u.poller.Submit(req)
-	if err != nil {
-		u.writePending = false
-	}
-	return err
+	return req, true
 }
 
 func (u *Unsafe) completeWrite(n int) {

@@ -138,6 +138,12 @@ type Poller interface {
 	Close() error
 }
 
+// BatchSubmitter 是 completion poller 的可选批量提交能力，不接收 OpWakeup。
+// SubmitBatch 成功后才接管 TransferBufferOwnership 标记的 ByteBuf；失败时调用方仍持有原引用。
+type BatchSubmitter interface {
+	SubmitBatch(reqs []IORequest) error
+}
+
 // BufferRegistrar 是支持 registered buffers 的 completion poller 可选能力。
 type BufferRegistrar interface {
 	RegisterBuffers(buffers [][]byte) error

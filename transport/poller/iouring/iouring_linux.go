@@ -321,45 +321,6 @@ func (p *Poller) Deregister(fd poller.FDRef) error {
 	return nil
 }
 
-func (p *Poller) Submit(req poller.IORequest) error {
-	if req.Op == poller.OpWakeup {
-		return p.Wakeup()
-	}
-	if p.closed.Load() {
-		return poller.ErrClosedPoller
-	}
-	if !validRequest(req) {
-		return poller.ErrInvalidIORequest
-	}
-	id := req.OpID
-	if id == 0 {
-		id = poller.OpID(p.nextUserData())
-		req.OpID = id
-	}
-	retainedBuffers := req.RetainBuffers()
-	nextTail, err := p.prepare(uint64(id), req)
-	if err != nil {
-		delete(p.writev, uint64(id))
-		delete(p.msgctx, uint64(id))
-		if retainedBuffers {
-			req.ReleaseBuffers()
-		}
-		return err
-	}
-	p.pending[uint64(id)] = req
-	atomic.StoreUint32(p.sq.tail, nextTail)
-	if err := p.enter(1, 0, p.submitEnterFlags()); err != nil {
-		delete(p.pending, uint64(id))
-		delete(p.writev, uint64(id))
-		delete(p.msgctx, uint64(id))
-		if retainedBuffers {
-			req.ReleaseBuffers()
-		}
-		return err
-	}
-	return nil
-}
-
 func (p *Poller) Poll(dst []poller.Event, timeoutMillis int) (int, error) {
 	if p.closed.Load() {
 		return 0, poller.ErrClosedPoller
@@ -535,8 +496,12 @@ func (p *Poller) setup(entries uint32, cfg Config) error {
 }
 
 func (p *Poller) prepare(userData uint64, req poller.IORequest) (uint32, error) {
-	head := atomic.LoadUint32(p.sq.head)
 	tail := atomic.LoadUint32(p.sq.tail)
+	return p.prepareAt(userData, req, tail)
+}
+
+func (p *Poller) prepareAt(userData uint64, req poller.IORequest, tail uint32) (uint32, error) {
+	head := atomic.LoadUint32(p.sq.head)
 	if tail-head >= atomic.LoadUint32(p.sq.ringEntries) {
 		return 0, poller.ErrSubmissionQueueFull
 	}

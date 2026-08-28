@@ -26,6 +26,7 @@ type SocketAddress = poller.SocketAddress
 type PollEvent = poller.Event
 type IORequest = poller.IORequest
 type Poller = poller.Poller
+type BatchSubmitter = poller.BatchSubmitter
 type BufferRegistrar = poller.BufferRegistrar
 type Config = poller.Config
 

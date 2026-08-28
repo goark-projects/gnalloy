@@ -94,6 +94,25 @@ func (p *fakeCompletionPoller) Close() error {
 	return nil
 }
 
+type fakeBatchCompletionPoller struct {
+	fakeCompletionPoller
+	batches [][]transport.IORequest
+}
+
+func (p *fakeBatchCompletionPoller) Backend() transport.BackendKind {
+	return transport.BackendIOUring
+}
+
+func (p *fakeBatchCompletionPoller) SubmitBatch(reqs []transport.IORequest) error {
+	copied := make([]transport.IORequest, len(reqs))
+	for i := range reqs {
+		reqs[i].RetainBuffers()
+		copied[i] = reqs[i]
+	}
+	p.batches = append(p.batches, copied)
+	return nil
+}
+
 type writeStep struct {
 	n     int
 	again bool
@@ -217,6 +236,11 @@ type releaseReadHandler struct {
 	closeAfter bool
 }
 
+type echoReadHandler struct {
+	writes int
+	err    error
+}
+
 type fixedTestBuf struct {
 	buffer.ByteBuf
 	idx uint16
@@ -234,6 +258,11 @@ func (h *releaseReadHandler) ChannelRead(ctx *HandlerContext, msg any) {
 	if h.closeAfter {
 		_ = ctx.Pipeline().Close()
 	}
+}
+
+func (h *echoReadHandler) ChannelRead(ctx *HandlerContext, msg any) {
+	h.writes++
+	h.err = ctx.WriteAndFlush(msg)
 }
 
 func TestUnsafeOutboundPartialWrite(t *testing.T) {
@@ -564,6 +593,78 @@ func TestUnsafeCompletionReadKeepsPendingBufferAliveUntilEvent(t *testing.T) {
 	}
 	if buf.RefCnt() != 0 {
 		t.Fatalf("read buf ref=%d, want 0", buf.RefCnt())
+	}
+}
+
+func TestUnsafeCompletionBatchesEchoWriteAndFollowUpRead(t *testing.T) {
+	poller := &fakeBatchCompletionPoller{}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:             1,
+		FD:             transport.FDRef{FD: 1},
+		Allocator:      buffer.NewHeapAllocator(),
+		Poller:         poller,
+		ReadBufferSize: 16,
+	})
+	echo := &echoReadHandler{}
+	if err := ch.Pipeline().AddLast("echo", echo); err != nil {
+		t.Fatal(err)
+	}
+	if err := unsafeCh.BeginRead(); err != nil {
+		t.Fatal(err)
+	}
+	if len(poller.submitted) != 1 {
+		t.Fatalf("initial submitted=%d, want 1", len(poller.submitted))
+	}
+
+	readBuf := poller.submitted[0].Buf
+	if _, err := readBuf.WriteBytes([]byte("pong")); err != nil {
+		t.Fatal(err)
+	}
+	unsafeCh.HandleEvent(transport.PollEvent{
+		Model: transport.PollerCompletion,
+		Op:    transport.OpRead,
+		FD:    transport.FDRef{FD: 1},
+		Buf:   readBuf,
+		N:     4,
+	})
+	if echo.err != nil {
+		t.Fatal(echo.err)
+	}
+	if echo.writes != 1 {
+		t.Fatalf("echo writes=%d, want 1", echo.writes)
+	}
+	if len(poller.submitted) != 1 {
+		t.Fatalf("standalone submitted=%d, want only initial read", len(poller.submitted))
+	}
+	if len(poller.batches) != 1 || len(poller.batches[0]) != 2 {
+		t.Fatalf("batches=%v, want one write+read batch", poller.batches)
+	}
+	writeReq, nextReadReq := poller.batches[0][0], poller.batches[0][1]
+	if writeReq.Op != transport.OpWrite || nextReadReq.Op != transport.OpRead {
+		t.Fatalf("batch ops=%v,%v, want write,read", writeReq.Op, nextReadReq.Op)
+	}
+	if !nextReadReq.TransferBufferOwnership {
+		t.Fatal("follow-up read should transfer buffer ownership")
+	}
+	if !unsafeCh.writePending || !unsafeCh.readPending {
+		t.Fatalf("pending write=%v read=%v, want both pending", unsafeCh.writePending, unsafeCh.readPending)
+	}
+
+	unsafeCh.HandleEvent(transport.PollEvent{
+		Model: transport.PollerCompletion,
+		Op:    transport.OpWrite,
+		FD:    transport.FDRef{FD: 1},
+		Buf:   writeReq.Buf,
+		N:     4,
+	})
+	unsafeCh.HandleEvent(transport.PollEvent{
+		Model: transport.PollerCompletion,
+		Op:    transport.OpRead,
+		FD:    transport.FDRef{FD: 1},
+		Buf:   nextReadReq.Buf,
+	})
+	if readBuf.RefCnt() != 0 {
+		t.Fatalf("echo buf ref=%d, want 0", readBuf.RefCnt())
 	}
 }
 

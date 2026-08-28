@@ -3,6 +3,7 @@
 package iouring
 
 import (
+	"bytes"
 	"errors"
 	"sync"
 	"testing"
@@ -10,7 +11,10 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/transport/poller"
+	"golang.org/x/sys/unix"
 )
+
+var _ poller.BatchSubmitter = (*Poller)(nil)
 
 func TestNewWithConfigRejectsInvalidSQPollAffinity(t *testing.T) {
 	_, err := NewWithConfig(Config{SQPollAffinity: true})
@@ -159,4 +163,140 @@ func TestWakeupConcurrent(t *testing.T) {
 		}
 	}
 	t.Fatal("未收到 io_uring 唤醒事件")
+}
+
+func TestSubmitBatchRejectsDuplicateOperationID(t *testing.T) {
+	raw, err := NewWithConfig(Config{Entries: 8})
+	if err != nil {
+		t.Skip(err)
+	}
+	p := raw.(*Poller)
+	defer p.Close()
+
+	first := buffer.NewHeapBuffer(8)
+	defer first.Release()
+	if _, err := first.WriteBytes([]byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	second := buffer.NewHeapBuffer(8)
+	defer second.Release()
+	if _, err := second.WriteBytes([]byte("b")); err != nil {
+		t.Fatal(err)
+	}
+
+	err = p.SubmitBatch([]poller.IORequest{
+		{Op: poller.OpWrite, FD: poller.FDRef{FD: 1}, OpID: 7, Buf: first},
+		{Op: poller.OpWrite, FD: poller.FDRef{FD: 2}, OpID: 7, Buf: second},
+	})
+	if !errors.Is(err, poller.ErrInvalidIORequest) {
+		t.Fatalf("err=%v, want %v", err, poller.ErrInvalidIORequest)
+	}
+	if first.RefCnt() != 1 || second.RefCnt() != 1 {
+		t.Fatalf("refs=%d,%d, want 1,1", first.RefCnt(), second.RefCnt())
+	}
+	if stats := p.Stats(); stats.Pending != 0 {
+		t.Fatalf("pending=%d, want 0", stats.Pending)
+	}
+}
+
+func TestSubmitBatchRollsBackRetainedBuffersOnPrepareError(t *testing.T) {
+	raw, err := NewWithConfig(Config{Entries: 8})
+	if err != nil {
+		t.Skip(err)
+	}
+	p := raw.(*Poller)
+	defer p.Close()
+
+	okBuf := buffer.NewHeapBuffer(8)
+	defer okBuf.Release()
+	if _, err := okBuf.WriteBytes([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	emptyBuf := buffer.NewHeapBuffer(8)
+	defer emptyBuf.Release()
+
+	err = p.SubmitBatch([]poller.IORequest{
+		{Op: poller.OpWrite, FD: poller.FDRef{FD: 1}, Buf: okBuf},
+		{Op: poller.OpWrite, FD: poller.FDRef{FD: 2}, Buf: emptyBuf},
+	})
+	if !errors.Is(err, poller.ErrInvalidIORequest) {
+		t.Fatalf("err=%v, want %v", err, poller.ErrInvalidIORequest)
+	}
+	if okBuf.RefCnt() != 1 || emptyBuf.RefCnt() != 1 {
+		t.Fatalf("refs=%d,%d, want 1,1", okBuf.RefCnt(), emptyBuf.RefCnt())
+	}
+	if stats := p.Stats(); stats.Pending != 0 {
+		t.Fatalf("pending=%d, want 0", stats.Pending)
+	}
+}
+
+func TestSubmitBatchCompletesPipeReadAndWrite(t *testing.T) {
+	raw, err := NewWithConfig(Config{Entries: 8})
+	if err != nil {
+		t.Skip(err)
+	}
+	p := raw.(*Poller)
+	defer p.Close()
+
+	var fds [2]int
+	if err := unix.Pipe2(fds[:], unix.O_NONBLOCK|unix.O_CLOEXEC); err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fds[0])
+	defer unix.Close(fds[1])
+
+	readBuf := buffer.NewHeapBuffer(32)
+	defer readBuf.Release()
+	writeBuf := buffer.NewHeapBuffer(32)
+	defer writeBuf.Release()
+	payload := []byte("gnalloy-batch")
+	if _, err := writeBuf.WriteBytes(payload); err != nil {
+		t.Fatal(err)
+	}
+
+	err = p.SubmitBatch([]poller.IORequest{
+		{Op: poller.OpRead, FD: poller.FDRef{FD: fds[0]}, ChannelID: 1, Buf: readBuf},
+		{Op: poller.OpWrite, FD: poller.FDRef{FD: fds[1]}, ChannelID: 2, Buf: writeBuf},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events := make([]poller.Event, 4)
+	var sawRead, sawWrite bool
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && (!sawRead || !sawWrite) {
+		n, err := p.Poll(events, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < n; i++ {
+			ev := events[i]
+			if ev.Err != nil {
+				t.Fatalf("event=%+v", ev)
+			}
+			switch ev.Op {
+			case poller.OpRead:
+				sawRead = true
+				if ev.N != len(payload) || !bytes.Equal(ev.Buf.Bytes(), payload) {
+					t.Fatalf("read n=%d bytes=%q, want %q", ev.N, ev.Buf.Bytes(), payload)
+				}
+				ev.Buf.Release()
+			case poller.OpWrite:
+				sawWrite = true
+				if ev.N != len(payload) {
+					t.Fatalf("write n=%d, want %d", ev.N, len(payload))
+				}
+				ev.Buf.Release()
+			default:
+				t.Fatalf("unexpected event=%+v", ev)
+			}
+		}
+	}
+	if !sawRead || !sawWrite {
+		t.Fatalf("sawRead=%v sawWrite=%v", sawRead, sawWrite)
+	}
+	if readBuf.RefCnt() != 1 || writeBuf.RefCnt() != 1 {
+		t.Fatalf("refs=%d,%d, want 1,1", readBuf.RefCnt(), writeBuf.RefCnt())
+	}
 }

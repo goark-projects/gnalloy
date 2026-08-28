@@ -64,6 +64,8 @@ type Unsafe struct {
 	readPending   bool
 	writePending  bool
 	writeInterest bool
+	readCallback  bool
+	deferredFlush bool
 	writeBatch    []buffer.ByteBuf
 	writeSlices   [][]byte
 	flushWaiters  []*DefaultPromise

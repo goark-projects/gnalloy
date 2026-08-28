@@ -85,9 +85,23 @@ func (u *Unsafe) submitRead() error {
 	if u.readPending {
 		return nil
 	}
-	buf, err := u.ch.Allocator().Acquire(u.readBufferSize)
+	req, buf, err := u.prepareReadRequest()
 	if err != nil {
 		return err
+	}
+	u.readPending = true
+	err = u.poller.Submit(req)
+	if err != nil {
+		u.readPending = false
+		buf.Release()
+	}
+	return err
+}
+
+func (u *Unsafe) prepareReadRequest() (transport.IORequest, buffer.ByteBuf, error) {
+	buf, err := u.ch.Allocator().Acquire(u.readBufferSize)
+	if err != nil {
+		return transport.IORequest{}, nil, err
 	}
 	req := u.prepareIORequest(transport.IORequest{
 		Op:                      transport.OpRead,
@@ -96,13 +110,7 @@ func (u *Unsafe) submitRead() error {
 		Buf:                     buf,
 		TransferBufferOwnership: true,
 	})
-	u.readPending = true
-	err = u.poller.Submit(req)
-	if err != nil {
-		u.readPending = false
-		buf.Release()
-	}
-	return err
+	return req, buf, nil
 }
 
 func (u *Unsafe) readInterest() transport.ReadyMask {
