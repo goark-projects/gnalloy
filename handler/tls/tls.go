@@ -11,6 +11,7 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 )
 
 // drainWaitTimeout 限制同步 drain 等待后台 TLS 协程产物的最长时间。
@@ -417,11 +418,5 @@ func (h *Handler) fail(ctx *channel.HandlerContext, err error) {
 }
 
 func release(msg any) {
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

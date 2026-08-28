@@ -3,6 +3,7 @@ package codec
 import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 )
 
 // ByteDecoder 是 ByteToMessageDecoder 的实际解码策略。
@@ -148,13 +149,7 @@ func (d *ByteToMessageDecoder) releaseCumulation() {
 }
 
 func releaseMessage(msg any) {
-	if buf, ok := msg.(buffer.ByteBuf); ok && buf != nil {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }
 
 func compositeCumulate(_ *channel.HandlerContext, cumulation *buffer.CompositeByteBuf, in buffer.ByteBuf) (*buffer.CompositeByteBuf, error) {

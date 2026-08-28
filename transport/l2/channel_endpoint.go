@@ -8,6 +8,7 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/timer"
 	"goark.dev/gnalloy/transport"
 )
@@ -221,18 +222,9 @@ func (e *channelEndpoint) frameFromMessage(msg any) (Frame, bool) {
 }
 
 func releaseMessage(msg any) {
-	if msg == nil {
-		return
-	}
 	if frame, ok := msg.(Frame); ok {
 		frame.Release()
 		return
 	}
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

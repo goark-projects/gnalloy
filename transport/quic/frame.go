@@ -3,6 +3,7 @@ package quic
 import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport/udp"
 )
 
@@ -644,7 +645,5 @@ func asPacketEvent(msg any) (PacketEvent, bool) {
 }
 
 func releaseFrame(frame any) {
-	if releasable, ok := frame.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(frame)
 }

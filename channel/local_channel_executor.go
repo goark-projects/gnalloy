@@ -1,7 +1,7 @@
 package channel
 
 import (
-	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport"
 )
 
@@ -69,14 +69,5 @@ func completePromise(promise Promise, err error) {
 }
 
 func releaseMessage(msg any) {
-	if msg == nil {
-		return
-	}
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

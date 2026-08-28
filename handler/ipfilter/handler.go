@@ -4,6 +4,7 @@ import (
 	"net"
 
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport/raw"
 	"goark.dev/gnalloy/transport/udp"
 )
@@ -84,7 +85,5 @@ func remoteIP(msg any) (net.IP, bool) {
 }
 
 func release(msg any) {
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

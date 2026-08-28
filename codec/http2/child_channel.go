@@ -5,6 +5,7 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport"
 )
 
@@ -336,9 +337,7 @@ func streamChildChannelID(parent transport.ChannelID, streamID StreamID) transpo
 }
 
 func releaseChildMessage(msg any) {
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }
 
 var _ channel.Channel = (*StreamChannel)(nil)

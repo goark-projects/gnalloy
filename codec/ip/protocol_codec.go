@@ -6,6 +6,7 @@ import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/codec"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport/raw"
 )
 
@@ -507,11 +508,5 @@ func asIPPacket(msg any) (Packet, bool) {
 }
 
 func releaseProtocolMessage(msg any) {
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

@@ -4,6 +4,7 @@ import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/codec"
+	"goark.dev/gnalloy/internal/message"
 )
 
 type Decoder struct {
@@ -530,9 +531,7 @@ func readable(buf buffer.ByteBuf) int {
 }
 
 func releaseMessage(msg any) {
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }
 
 func readStreamID(in *buffer.CompositeByteBuf, index int) (uint32, error) {

@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 )
 
 // InboundHandler 把被代理 Handler 的入站事件提交到业务执行器。
@@ -173,10 +174,5 @@ func (h *InboundHandler) recover(ctx *channel.HandlerContext) {
 }
 
 func releaseMessage(msg any) {
-	if msg == nil {
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

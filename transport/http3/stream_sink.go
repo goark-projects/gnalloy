@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/internal/message"
 )
 
 type streamSink struct {
@@ -78,14 +79,5 @@ func writeAll(writer streamWriter, data []byte) error {
 }
 
 func releaseMessage(msg any) {
-	if msg == nil {
-		return
-	}
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

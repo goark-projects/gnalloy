@@ -6,6 +6,7 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport"
 )
 
@@ -273,20 +274,9 @@ func (s *sink) ReleaseAll() {
 }
 
 func releaseMessages(msgs []any) {
-	for _, msg := range msgs {
-		releaseMessage(msg)
-	}
+	message.ReleaseAll(msgs)
 }
 
 func releaseMessage(msg any) {
-	if msg == nil {
-		return
-	}
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

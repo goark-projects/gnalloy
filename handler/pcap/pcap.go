@@ -8,6 +8,7 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport/raw"
 	"goark.dev/gnalloy/transport/udp"
 )
@@ -209,7 +210,5 @@ func payloadLength(slices [][]byte) int {
 }
 
 func release(msg any) {
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

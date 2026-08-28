@@ -1,6 +1,6 @@
 package channel
 
-import "goark.dev/gnalloy/buffer"
+import "goark.dev/gnalloy/internal/message"
 
 type Pipeline struct {
 	ch    Channel
@@ -288,13 +288,7 @@ type headHandler struct{}
 type tailHandler struct{}
 
 func (tailHandler) ChannelRead(_ *HandlerContext, msg any) {
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }
 
 func (tailHandler) ExceptionCaught(_ *HandlerContext, _ error) {}

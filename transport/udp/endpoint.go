@@ -5,6 +5,7 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 	"goark.dev/gnalloy/transport"
 )
 
@@ -521,13 +522,7 @@ func (e *endpoint) datagramFromMessage(msg any) (Datagram, bool) {
 }
 
 func releaseMessage(msg any) {
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }
 
 func releasePollEvent(ev transport.PollEvent) {

@@ -1,8 +1,8 @@
 package protocol
 
 import (
-	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/internal/message"
 )
 
 type response struct {
@@ -51,14 +51,5 @@ func (c *collector) ExceptionCaught(_ *channel.HandlerContext, err error) {
 }
 
 func releaseMessage(msg any) {
-	if msg == nil {
-		return
-	}
-	if buf, ok := msg.(buffer.ByteBuf); ok {
-		buf.Release()
-		return
-	}
-	if releasable, ok := msg.(interface{ Release() }); ok {
-		releasable.Release()
-	}
+	message.Release(msg)
 }

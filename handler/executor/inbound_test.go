@@ -67,6 +67,30 @@ func TestInboundHandlerPropagatesRejectedSubmitAndReleasesMessage(t *testing.T) 
 	}
 }
 
+func TestInboundHandlerReleasesByteBufWhenSubmitRejected(t *testing.T) {
+	rejected := rejectedExecutor{err: ErrTaskQueueFull}
+	exceptions := &exceptionRecorder{done: make(chan struct{})}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("business", NewInboundHandler(rejected, testReadHandler{})); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("exceptions", exceptions); err != nil {
+		t.Fatal(err)
+	}
+
+	msg := buffer.NewHeapBuffer(4)
+	ch.Pipeline().FireChannelRead(msg)
+
+	select {
+	case <-exceptions.done:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting exception")
+	}
+	if msg.RefCnt() != 0 {
+		t.Fatalf("ref=%d, want released", msg.RefCnt())
+	}
+}
+
 func TestInboundHandlerRecoversDelegatePanic(t *testing.T) {
 	group, err := NewGroup(Config{Size: 1, QueueSize: 4})
 	if err != nil {

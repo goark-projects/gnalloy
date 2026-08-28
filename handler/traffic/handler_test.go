@@ -53,6 +53,28 @@ func TestHandlerDelaysInboundReadWithChannelTimer(t *testing.T) {
 	}
 }
 
+func TestHandlerReleasesDelayedByteBufWhenTimerMissing(t *testing.T) {
+	var now int64
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	handler, err := NewChannelHandler(Config{
+		ReadLimitBytesPerSecond: 4,
+		Clock:                   func() int64 { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("traffic", handler); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelRead(testBuffer(t, "abcd"))
+	delayed := testBuffer(t, "efgh")
+	ch.Pipeline().FireChannelRead(delayed)
+	if delayed.RefCnt() != 0 {
+		t.Fatalf("ref=%d, want released", delayed.RefCnt())
+	}
+}
+
 func TestHandlerQueuesOutboundWriteUntilFlushDelayExpires(t *testing.T) {
 	var now int64
 	wheel, err := timer.NewWheel(10, 128, 0)
