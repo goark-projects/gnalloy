@@ -7,6 +7,7 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/codec"
 	"goark.dev/gnalloy/codec/http1"
 	"goark.dev/gnalloy/handler/timeout"
 )
@@ -113,6 +114,59 @@ func TestFrameEncoder(t *testing.T) {
 	}
 	if string(sink.writes[0].Bytes()) != string([]byte{0x81, 0x02}) || string(sink.writes[1].Bytes()) != "hi" {
 		t.Fatalf("writes=%q,%q", sink.writes[0].Bytes(), sink.writes[1].Bytes())
+	}
+}
+
+func TestFrameDecoderRequiresExplicitRSV(t *testing.T) {
+	decoder, err := NewFrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("errors", errs)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0xc1, 0x00}))
+	if len(errs.errs) != 1 || !errors.Is(errs.errs[0], codec.ErrInvalidFrameLength) {
+		t.Fatalf("errs=%v, want ErrInvalidFrameLength", errs.errs)
+	}
+}
+
+func TestFrameDecoderAllowsConfiguredRSV1(t *testing.T) {
+	decoder, err := NewFrameDecoderWithConfig(FrameDecoderConfig{MaxFrameLength: 1024, AllowMaskedFrames: true, AllowRSV1: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0xc1, 0x00}))
+	if len(collector.frames) != 1 {
+		t.Fatalf("frames=%d, want 1", len(collector.frames))
+	}
+	frame := collector.frames[0]
+	if !frame.Final || frame.Opcode != OpcodeText || !frame.RSV1 || frame.RSV2 || frame.RSV3 {
+		t.Fatalf("frame=%+v", frame)
+	}
+}
+
+func TestFrameEncoderWritesRSV1(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewFrameEncoder())
+	defer sink.release()
+
+	if err := ch.Write(Frame{Final: true, Opcode: OpcodeText, RSV1: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
+	}
+	if string(sink.writes[0].Bytes()) != string([]byte{0xc1, 0x00}) {
+		t.Fatalf("header=%q", sink.writes[0].Bytes())
 	}
 }
 

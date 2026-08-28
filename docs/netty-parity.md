@@ -141,7 +141,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | 范围 | 状态 | 原因 |
 | --- | --- | --- |
 | HTTP multipart 高级工具 | `codec/http1/multipart` done | 提供 Content-Type boundary 提取、受限流式解码、ByteBuf/Request 适配和 append-style form-data 编码；part 数量、头部、单 part 和总正文都有预算保护。 |
-| WebSocket extension compression | planned | 基础 WebSocket frame 已覆盖；扩展协商和压缩状态机需要独立语义测试与内存预算。 |
+| WebSocket extension compression | `codec/websocket/deflate` done | 支持 permessage-deflate 协商参数、RSV1 显式 decoder 配置、data message 压缩/解压、分片最终聚合、控制帧透传和解压膨胀预算。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
 | OCSP、OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
 | true sendfile/splice 零拷贝文件传输 | planned | `FileRegion` 已有 fallback 语义；内核级零拷贝需要按 OS 后端拆分实现和退化路径。 |

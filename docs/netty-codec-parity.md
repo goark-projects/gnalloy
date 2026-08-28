@@ -62,6 +62,7 @@
 | `ClientCookieEncoder/Decoder`、`ServerCookieEncoder/Decoder` | `codec/http1/cookie` | done | 支持 Cookie 请求多值、Set-Cookie 响应属性、Expires、Max-Age、SameSite、Secure、HttpOnly、Partitioned 和 Append 热路径。 |
 | `HttpPostRequestDecoder/Encoder` | `codec/http1/multipart` | done | Go 化 boundary 解析、受限流式 part 消费、ByteBuf/Request 适配和 append-style form-data 输出。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |
+| `PerMessageDeflate*ExtensionHandshaker`、`WebSocketClient/ServerCompressionHandler` | `codec/websocket/deflate` | done | 支持 permessage-deflate 参数解析、RSV1 承载、无上下文复用压缩/解压、分片最终聚合和解压大小限制。 |
 | `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame，HPACK header block 编解码保持独立 handler；已覆盖 fuzz smoke。 |
 | `Http2MultiplexHandler` | `codec/http2.StreamMultiplexer` / `StreamChildChannel` | done | 支持 stream 生命周期事件、奇偶性校验、END_STREAM 半关闭、RST/GOAWAY、连接/stream 窗口校验和 Netty 风格 child-channel 入站体验。 |
 | `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE、未知扩展帧、QPACK header block、control stream 顺序校验和 QUIC 单向 stream type 前缀；已覆盖 fuzz smoke。 |

@@ -20,6 +20,9 @@ const (
 type Frame struct {
 	Final   bool
 	Opcode  byte
+	RSV1    bool
+	RSV2    bool
+	RSV3    bool
 	Payload buffer.ByteBuf
 	Masked  bool
 	MaskKey [4]byte
@@ -31,30 +34,45 @@ func (f Frame) Release() {
 	}
 }
 
+// FrameDecoderConfig 描述 WebSocket frame decoder 的掩码和扩展 RSV 规则。
+type FrameDecoderConfig struct {
+	MaxFrameLength     int
+	ExpectMaskedFrames bool
+	AllowMaskedFrames  bool
+	AllowRSV1          bool
+	AllowRSV2          bool
+	AllowRSV3          bool
+}
+
 type FrameDecoder struct {
 	*codec.ByteToMessageDecoder
 	maxFrameLength     int
 	expectMaskedFrames bool
 	allowMaskedFrames  bool
+	allowedRSV         byte
 }
 
 func NewFrameDecoder(maxFrameLength int) (*FrameDecoder, error) {
-	return newFrameDecoder(maxFrameLength, false, true)
+	return newFrameDecoder(maxFrameLength, false, true, 0)
 }
 
 func NewServerFrameDecoder(maxFrameLength int) (*FrameDecoder, error) {
-	return newFrameDecoder(maxFrameLength, true, true)
+	return newFrameDecoder(maxFrameLength, true, true, 0)
 }
 
 func NewClientFrameDecoder(maxFrameLength int) (*FrameDecoder, error) {
-	return newFrameDecoder(maxFrameLength, false, false)
+	return newFrameDecoder(maxFrameLength, false, false, 0)
 }
 
 func NewFrameDecoderWithMaskPolicy(maxFrameLength int, expectMaskedFrames bool, allowMaskedFrames bool) (*FrameDecoder, error) {
-	return newFrameDecoder(maxFrameLength, expectMaskedFrames, allowMaskedFrames)
+	return newFrameDecoder(maxFrameLength, expectMaskedFrames, allowMaskedFrames, 0)
 }
 
-func newFrameDecoder(maxFrameLength int, expectMaskedFrames bool, allowMaskedFrames bool) (*FrameDecoder, error) {
+func NewFrameDecoderWithConfig(cfg FrameDecoderConfig) (*FrameDecoder, error) {
+	return newFrameDecoder(cfg.MaxFrameLength, cfg.ExpectMaskedFrames, cfg.AllowMaskedFrames, allowedRSV(cfg))
+}
+
+func newFrameDecoder(maxFrameLength int, expectMaskedFrames bool, allowMaskedFrames bool, allowedRSV byte) (*FrameDecoder, error) {
 	if maxFrameLength <= 0 {
 		return nil, codec.ErrInvalidFrameLength
 	}
@@ -62,6 +80,7 @@ func newFrameDecoder(maxFrameLength int, expectMaskedFrames bool, allowMaskedFra
 		maxFrameLength:     maxFrameLength,
 		expectMaskedFrames: expectMaskedFrames,
 		allowMaskedFrames:  allowMaskedFrames,
+		allowedRSV:         allowedRSV,
 	}
 	d.ByteToMessageDecoder = codec.NewByteToMessageDecoder(d)
 	return d, nil
@@ -76,7 +95,8 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 	b1, _ := in.GetByte(reader + 1)
 	opcode := b0 & 0x0f
 	final := b0&0x80 != 0
-	if b0&0x70 != 0 || !isKnownOpcode(opcode) {
+	rsv := b0 & 0x70
+	if rsv&^d.allowedRSV != 0 || !isKnownOpcode(opcode) {
 		return nil, codec.ErrInvalidFrameLength
 	}
 	masked := b1&0x80 != 0
@@ -116,7 +136,7 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 		return nil, codec.ErrFrameTooLong
 	}
 	if isControlOpcode(opcode) {
-		if !final || payloadLength > 125 || (opcode == OpcodeClose && payloadLength == 1) {
+		if rsv != 0 || !final || payloadLength > 125 || (opcode == OpcodeClose && payloadLength == 1) {
 			return nil, ErrControlFrameInvalid
 		}
 	}
@@ -161,7 +181,16 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 		}
 		return nil, err
 	}
-	return Frame{Final: final, Opcode: opcode, Payload: payload, Masked: masked, MaskKey: mask}, nil
+	return Frame{
+		Final:   final,
+		Opcode:  opcode,
+		RSV1:    rsv&0x40 != 0,
+		RSV2:    rsv&0x20 != 0,
+		RSV3:    rsv&0x10 != 0,
+		Payload: payload,
+		Masked:  masked,
+		MaskKey: mask,
+	}, nil
 }
 
 type FrameEncoder struct{}
@@ -266,6 +295,15 @@ func writeWebSocketHeader(out buffer.ByteBuf, frame Frame, payloadLength int) er
 	if frame.Final {
 		b0 |= 0x80
 	}
+	if frame.RSV1 {
+		b0 |= 0x40
+	}
+	if frame.RSV2 {
+		b0 |= 0x20
+	}
+	if frame.RSV3 {
+		b0 |= 0x10
+	}
 	if _, err := out.WriteBytes([]byte{b0}); err != nil {
 		return err
 	}
@@ -300,16 +338,33 @@ func writeWebSocketHeader(out buffer.ByteBuf, frame Frame, payloadLength int) er
 }
 
 func validateOutboundFrame(frame Frame, payloadLength int) error {
+	if !isKnownOpcode(frame.Opcode) {
+		return codec.ErrInvalidFrameLength
+	}
 	if frame.Opcode == OpcodeClose && payloadLength >= 2 && frame.Payload != nil {
 		status := binary.BigEndian.Uint16(frame.Payload.Bytes()[:2])
 		if !IsValidCloseStatusCode(status) {
 			return ErrCloseStatusInvalid
 		}
 	}
-	if isControlOpcode(frame.Opcode) && (!frame.Final || payloadLength > 125 || (frame.Opcode == OpcodeClose && payloadLength == 1)) {
+	if isControlOpcode(frame.Opcode) && (frame.RSV1 || frame.RSV2 || frame.RSV3 || !frame.Final || payloadLength > 125 || (frame.Opcode == OpcodeClose && payloadLength == 1)) {
 		return ErrControlFrameInvalid
 	}
 	return nil
+}
+
+func allowedRSV(cfg FrameDecoderConfig) byte {
+	var rsv byte
+	if cfg.AllowRSV1 {
+		rsv |= 0x40
+	}
+	if cfg.AllowRSV2 {
+		rsv |= 0x20
+	}
+	if cfg.AllowRSV3 {
+		rsv |= 0x10
+	}
+	return rsv
 }
 
 func IsValidCloseStatusCode(code uint16) bool {
