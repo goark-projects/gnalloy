@@ -59,10 +59,11 @@ go run ./examples/parity-bench -strict-external -config benchmarks/parity/tcp-ma
 ```
 
 `benchmarks/parity/tcp-matrix.json` 覆盖 64B、1KiB、16KiB payload，包含 gnalloy
-epoll/io_uring、Netty epoll、gnet、netpoll，并为每个正式场景设置一次 warmup 和
-三次 repeat。报告会保留每次采样，同时汇总 throughput 的 min/median/max/mean、
-median ns/op 和总错误数。runner 同时兼容 Go duration 和 Java `Duration` 文本，
-例如 Netty 输出中的 `PT2M22.38974812S`。
+epoll、gnalloy io_uring 默认配置、gnalloy io_uring+mmap+fixed-buffer 优化配置、
+Netty epoll、gnet、netpoll，并为每个正式场景设置一次 warmup 和三次 repeat。报告会
+保留每次采样，同时汇总 throughput 的 min/median/max/mean、median ns/op 和总错误数。
+runner 同时兼容 Go duration 和 Java `Duration` 文本，例如 Netty 输出中的
+`PT2M22.38974812S`。
 
 Windows TCP echo 对标矩阵:
 
@@ -107,6 +108,10 @@ benchmarks/external/bin/netpoll-bench -protocol tcp-echo -payload 1024 -connecti
 native poller/完成端口上竞争导致吞吐退化。
 `-read-buffer-size 0` 表示按 `max(payload, 4096)` 自动设置单次读缓冲区，避免
 大包 TCP echo 被默认 4KiB 缓冲拆成多次 read completion。
+Linux 高性能场景可以显式打开 `-mmap`、`-iouring-fixed-buffers`、
+`-iouring-multishot-accept` 和 `-reuseport`。fixed-buffer 场景必须同时使用
+`-backend iouring -mmap`，且 read buffer 不能超过 mmap block size，避免矩阵把
+不成立的组合误报成性能结果。
 
 harness 输出 `framework=... total=... errors=... throughput=... ops/s` 汇总行和
 Go benchmark 兼容的 `Benchmark* ns/op` 行，分别用于报告吞吐/错误数和固定连接数、

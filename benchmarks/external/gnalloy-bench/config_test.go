@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ func TestParseConfig(t *testing.T) {
 		"-boss", "1",
 		"-workers", "2",
 		"-read-buffer-size", "8192",
+		"-reuseport",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -30,6 +32,30 @@ func TestParseConfig(t *testing.T) {
 	}
 	if cfg.Boss != 1 || cfg.Workers != 2 || cfg.ReadBufferSize != 8192 || backendLabel(cfg.Backend) != "std" {
 		t.Fatalf("cfg=%+v", cfg)
+	}
+	if !cfg.ReusePort {
+		t.Fatalf("reuseport=%v, want true", cfg.ReusePort)
+	}
+}
+
+func TestParseConfigResolvesNativePerformanceFlags(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-backend", "iouring",
+		"-mmap",
+		"-mmap-block-size", "8192",
+		"-mmap-blocks", "1024",
+		"-iouring-fixed-buffers",
+		"-iouring-multishot-accept",
+		"-iouring-sqpoll",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Backend != transport.BackendIOUring || !cfg.Mmap || cfg.MmapBlockSize != 8192 || cfg.MmapBlocks != 1024 {
+		t.Fatalf("cfg=%+v", cfg)
+	}
+	if !cfg.IOUringFixedBuffers || !cfg.IOUringMultishotAccept || !cfg.IOUringSQPoll {
+		t.Fatalf("iouring flags=%+v", cfg)
 	}
 }
 
@@ -148,6 +174,27 @@ func TestParseConfigRejectsNegativeWorkers(t *testing.T) {
 
 func TestParseConfigRejectsNegativeReadBufferSize(t *testing.T) {
 	_, err := parseConfig([]string{"-read-buffer-size", "-1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
+func TestParseConfigRejectsFixedBuffersWithoutMmap(t *testing.T) {
+	_, err := parseConfig([]string{"-backend", "iouring", "-iouring-fixed-buffers"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
+func TestParseConfigRejectsMmapBlockSmallerThanReadBuffer(t *testing.T) {
+	_, err := parseConfig([]string{"-mmap", "-mmap-block-size", "1024", "-read-buffer-size", "4096"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
+func TestParseConfigRejectsMmapSizeOverflow(t *testing.T) {
+	_, err := parseConfig([]string{"-mmap", "-mmap-block-size", strconv.Itoa(maxInt), "-mmap-blocks", "2"})
 	if !errors.Is(err, errInvalidConfig) {
 		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
 	}

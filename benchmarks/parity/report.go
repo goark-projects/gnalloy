@@ -324,6 +324,27 @@ func loopSummary(stat ScenarioStats) string {
 		if stat.ReadBufferBytes > 0 {
 			parts = append(parts, "readBuffer="+strconv.FormatInt(stat.ReadBufferBytes, 10))
 		}
+		if stat.ReusePort {
+			parts = append(parts, "reuseport=true")
+		}
+		if stat.Mmap {
+			parts = append(parts, "mmap=true")
+		}
+		if stat.MmapBlockSize > 0 {
+			parts = append(parts, "mmapBlock="+strconv.FormatInt(stat.MmapBlockSize, 10))
+		}
+		if stat.MmapBlocks > 0 {
+			parts = append(parts, "mmapBlocks="+strconv.FormatInt(stat.MmapBlocks, 10))
+		}
+		if stat.IOUringFixedBuffers {
+			parts = append(parts, "fixedBuffers=true")
+		}
+		if stat.IOUringMultishotAccept {
+			parts = append(parts, "multishotAccept=true")
+		}
+		if stat.IOUringSQPoll {
+			parts = append(parts, "sqpoll=true")
+		}
 		return strings.Join(parts, " ")
 	case stat.EventLoops > 0:
 		return "eventLoops=" + strconv.FormatInt(stat.EventLoops, 10)

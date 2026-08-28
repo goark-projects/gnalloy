@@ -38,7 +38,11 @@ func startEchoServer(ctx context.Context, cfg config) (*echoServer, error) {
 }
 
 func newGroups(cfg config) (*transport.EventLoopGroup, *transport.EventLoopGroup, error) {
-	pollerConfig := transport.Config{Backend: cfg.Backend}
+	pollerConfig := transport.Config{
+		Backend:         cfg.Backend,
+		MultishotAccept: cfg.IOUringMultishotAccept,
+		SQPoll:          cfg.IOUringSQPoll,
+	}
 	boss, err := transport.NewEventLoopGroup(transport.EventLoopGroupConfig{
 		Size:         cfg.Boss,
 		PollerConfig: pollerConfig,
@@ -60,6 +64,14 @@ func newGroups(cfg config) (*transport.EventLoopGroup, *transport.EventLoopGroup
 func bindEchoServer(ctx context.Context, cfg config, boss *transport.EventLoopGroup, workers *transport.EventLoopGroup) (bootstrap.Server, error) {
 	tcpConfig := tcp.DefaultConfig()
 	tcpConfig.ReadBufferSize = cfg.ReadBufferSize
+	tcpConfig.ReusePort = cfg.ReusePort
+	tcpConfig.IOUringFixedBuffers = cfg.IOUringFixedBuffers
+	if cfg.Mmap {
+		tcpConfig.AllocatorFactory = tcp.NewMmapAllocatorFactory(buffer.MmapAllocatorConfig{
+			BlockSize: cfg.MmapBlockSize,
+			Blocks:    cfg.MmapBlocks,
+		}, false)
+	}
 	return bootstrap.NewServerBootstrap().
 		Group(boss, workers).
 		Transport(tcp.NewTransport(tcpConfig)).

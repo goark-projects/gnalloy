@@ -103,6 +103,32 @@ func TestTCPMatrixSpecLoads(t *testing.T) {
 	}
 }
 
+func TestTCPMatrixIncludesOptimizedIOUringScenario(t *testing.T) {
+	file, err := os.Open("tcp-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scenario := range spec.Scenarios {
+		if scenario.Name != "gnalloy iouring fixed tcp echo 1KiB" {
+			continue
+		}
+		command := strings.Join(scenario.Command, " ")
+		for _, want := range []string{"-backend iouring", "-mmap", "-mmap-blocks 512", "-iouring-fixed-buffers", "-iouring-multishot-accept"} {
+			if !strings.Contains(command, want) {
+				t.Fatalf("missing %q in command %q", want, command)
+			}
+		}
+		return
+	}
+	t.Fatal("optimized iouring scenario missing")
+}
+
 func TestWindowsTCPMatrixSpecLoads(t *testing.T) {
 	file, err := os.Open("windows-tcp.json")
 	if err != nil {
@@ -567,7 +593,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 }
 
 func TestParseScenarioStats(t *testing.T) {
-	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp boss=1 workers=8 readBufferSize=4096 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
+	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
 	if len(stats) != 1 {
 		t.Fatalf("stats=%+v, want one", stats)
 	}
@@ -580,6 +606,12 @@ func TestParseScenarioStats(t *testing.T) {
 	}
 	if stat.Boss != 1 || stat.Workers != 8 || stat.ReadBufferBytes != 4096 {
 		t.Fatalf("stat=%+v", stat)
+	}
+	if !stat.ReusePort || !stat.Mmap || !stat.IOUringFixedBuffers || !stat.IOUringMultishotAccept || !stat.IOUringSQPoll {
+		t.Fatalf("native flags=%+v", stat)
+	}
+	if stat.MmapBlockSize != 4096 || stat.MmapBlocks != 512 {
+		t.Fatalf("mmap shape=%+v", stat)
 	}
 	if stat.Elapsed != 3200*time.Millisecond || stat.ThroughputOpsPerSec != 8000000.25 {
 		t.Fatalf("stat=%+v", stat)

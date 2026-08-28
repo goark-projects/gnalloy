@@ -9,21 +9,28 @@ import (
 
 // ScenarioStats 是 external harness 汇总行的结构化指标。
 type ScenarioStats struct {
-	Framework           string        `json:"framework,omitempty"`
-	Protocol            string        `json:"protocol,omitempty"`
-	Backend             string        `json:"backend,omitempty"`
-	Boss                int64         `json:"boss,omitempty"`
-	Workers             int64         `json:"workers,omitempty"`
-	EventLoops          int64         `json:"eventLoops,omitempty"`
-	ReadBufferBytes     int64         `json:"readBufferBytes,omitempty"`
-	PayloadBytes        int64         `json:"payloadBytes"`
-	Connections         int64         `json:"connections"`
-	Messages            int64         `json:"messages"`
-	TotalRequests       int64         `json:"totalRequests"`
-	Errors              int64         `json:"errors"`
-	Elapsed             time.Duration `json:"elapsed"`
-	ThroughputOpsPerSec float64       `json:"throughputOpsPerSec"`
-	Raw                 string        `json:"raw"`
+	Framework              string        `json:"framework,omitempty"`
+	Protocol               string        `json:"protocol,omitempty"`
+	Backend                string        `json:"backend,omitempty"`
+	Boss                   int64         `json:"boss,omitempty"`
+	Workers                int64         `json:"workers,omitempty"`
+	EventLoops             int64         `json:"eventLoops,omitempty"`
+	ReadBufferBytes        int64         `json:"readBufferBytes,omitempty"`
+	ReusePort              bool          `json:"reusePort,omitempty"`
+	Mmap                   bool          `json:"mmap,omitempty"`
+	MmapBlockSize          int64         `json:"mmapBlockSize,omitempty"`
+	MmapBlocks             int64         `json:"mmapBlocks,omitempty"`
+	IOUringFixedBuffers    bool          `json:"ioUringFixedBuffers,omitempty"`
+	IOUringMultishotAccept bool          `json:"ioUringMultishotAccept,omitempty"`
+	IOUringSQPoll          bool          `json:"ioUringSQPoll,omitempty"`
+	PayloadBytes           int64         `json:"payloadBytes"`
+	Connections            int64         `json:"connections"`
+	Messages               int64         `json:"messages"`
+	TotalRequests          int64         `json:"totalRequests"`
+	Errors                 int64         `json:"errors"`
+	Elapsed                time.Duration `json:"elapsed"`
+	ThroughputOpsPerSec    float64       `json:"throughputOpsPerSec"`
+	Raw                    string        `json:"raw"`
 }
 
 // ParseScenarioStats 解析 harness 输出中的 key=value 汇总行。
@@ -69,6 +76,20 @@ func parseScenarioStatsLine(line string) (ScenarioStats, bool) {
 			stat.EventLoops = parseIntMetric(value)
 		case "readBufferSize":
 			stat.ReadBufferBytes = parseIntMetric(value)
+		case "reuseport":
+			stat.ReusePort = parseBoolMetric(value)
+		case "mmap":
+			stat.Mmap = parseBoolMetric(value)
+		case "mmapBlockSize":
+			stat.MmapBlockSize = parseIntMetric(value)
+		case "mmapBlocks":
+			stat.MmapBlocks = parseIntMetric(value)
+		case "iouringFixedBuffers":
+			stat.IOUringFixedBuffers = parseBoolMetric(value)
+		case "iouringMultishotAccept":
+			stat.IOUringMultishotAccept = parseBoolMetric(value)
+		case "iouringSQPoll":
+			stat.IOUringSQPoll = parseBoolMetric(value)
 		case "payload":
 			stat.PayloadBytes = parseIntMetric(value)
 		case "connections":
@@ -89,6 +110,11 @@ func parseScenarioStatsLine(line string) (ScenarioStats, bool) {
 		return ScenarioStats{}, false
 	}
 	return stat, true
+}
+
+func parseBoolMetric(value string) bool {
+	v, _ := strconv.ParseBool(strings.TrimSpace(value))
+	return v
 }
 
 func parseIntMetric(value string) int64 {

@@ -14,17 +14,24 @@ import (
 const maxInt = int(^uint(0) >> 1)
 
 type config struct {
-	Protocol       string
-	Addr           string
-	Payload        int
-	Connections    int
-	Messages       int
-	Timeout        time.Duration
-	BackendName    string
-	Backend        transport.BackendKind
-	Boss           int
-	Workers        int
-	ReadBufferSize int
+	Protocol               string
+	Addr                   string
+	Payload                int
+	Connections            int
+	Messages               int
+	Timeout                time.Duration
+	BackendName            string
+	Backend                transport.BackendKind
+	Boss                   int
+	Workers                int
+	ReadBufferSize         int
+	ReusePort              bool
+	Mmap                   bool
+	MmapBlockSize          int
+	MmapBlocks             int
+	IOUringFixedBuffers    bool
+	IOUringMultishotAccept bool
+	IOUringSQPoll          bool
 }
 
 func parseConfig(args []string) (config, error) {
@@ -39,6 +46,8 @@ func parseConfig(args []string) (config, error) {
 		Boss:           1,
 		Workers:        0,
 		ReadBufferSize: 0,
+		MmapBlockSize:  4096,
+		MmapBlocks:     4096,
 	}
 	fs := flag.NewFlagSet("gnalloy-bench", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -52,6 +61,13 @@ func parseConfig(args []string) (config, error) {
 	fs.IntVar(&cfg.Boss, "boss", cfg.Boss, "boss event-loop count")
 	fs.IntVar(&cfg.Workers, "workers", cfg.Workers, "worker event-loop count; 0 selects a backend-aware default")
 	fs.IntVar(&cfg.ReadBufferSize, "read-buffer-size", cfg.ReadBufferSize, "per-read ByteBuf size; 0 selects max(payload, 4096)")
+	fs.BoolVar(&cfg.ReusePort, "reuseport", cfg.ReusePort, "enable SO_REUSEPORT when the platform supports it")
+	fs.BoolVar(&cfg.Mmap, "mmap", cfg.Mmap, "use one mmap allocator per worker event loop")
+	fs.IntVar(&cfg.MmapBlockSize, "mmap-block-size", cfg.MmapBlockSize, "mmap allocator block size")
+	fs.IntVar(&cfg.MmapBlocks, "mmap-blocks", cfg.MmapBlocks, "mmap allocator block count per worker")
+	fs.BoolVar(&cfg.IOUringFixedBuffers, "iouring-fixed-buffers", cfg.IOUringFixedBuffers, "register mmap allocator blocks as io_uring fixed buffers")
+	fs.BoolVar(&cfg.IOUringMultishotAccept, "iouring-multishot-accept", cfg.IOUringMultishotAccept, "enable io_uring multishot accept")
+	fs.BoolVar(&cfg.IOUringSQPoll, "iouring-sqpoll", cfg.IOUringSQPoll, "enable io_uring SQPOLL")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -101,6 +117,21 @@ func (c config) validate() error {
 	}
 	if c.ReadBufferSize <= 0 {
 		return fmt.Errorf("%w: read-buffer-size must be positive", errInvalidConfig)
+	}
+	if c.Mmap && (c.MmapBlockSize <= 0 || c.MmapBlocks <= 0) {
+		return fmt.Errorf("%w: mmap block size and blocks must be positive", errInvalidConfig)
+	}
+	if c.Mmap && c.MmapBlockSize > maxInt/c.MmapBlocks {
+		return fmt.Errorf("%w: mmap block size and blocks overflow", errInvalidConfig)
+	}
+	if c.Mmap && c.ReadBufferSize > c.MmapBlockSize {
+		return fmt.Errorf("%w: read-buffer-size must fit mmap block size", errInvalidConfig)
+	}
+	if c.IOUringFixedBuffers && (!c.Mmap || c.Backend != transport.BackendIOUring) {
+		return fmt.Errorf("%w: fixed buffers require iouring backend with mmap", errInvalidConfig)
+	}
+	if (c.IOUringMultishotAccept || c.IOUringSQPoll) && c.Backend != transport.BackendIOUring {
+		return fmt.Errorf("%w: io_uring options require iouring backend", errInvalidConfig)
 	}
 	return nil
 }
