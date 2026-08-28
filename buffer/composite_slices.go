@@ -12,12 +12,21 @@ func (c *CompositeByteBuf) ReadableSlices(dst [][]byte) [][]byte {
 		if from >= to {
 			continue
 		}
-		part, err := comp.buf.Slice(comp.buf.ReaderIndex()+from-comp.start, to-from)
-		if err != nil {
-			continue
+		if from == comp.start && to == comp.end {
+			dst = comp.buf.ReadableSlices(dst)
+		} else {
+			dst = appendPartialReadableSlice(dst, comp, from, to)
 		}
-		dst = part.ReadableSlices(dst)
-		part.Release()
 	}
+	return dst
+}
+
+func appendPartialReadableSlice(dst [][]byte, comp *component, from int, to int) [][]byte {
+	part, err := comp.buf.Slice(comp.buf.ReaderIndex()+from-comp.start, to-from)
+	if err != nil {
+		return dst
+	}
+	dst = part.ReadableSlices(dst)
+	part.Release()
 	return dst
 }
