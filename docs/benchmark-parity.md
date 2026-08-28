@@ -29,6 +29,25 @@ Windows:
 .\scripts\verify-bench.ps1 -Backends default,iocp -Groups tcp -Workers 4 -Benchtime 1s -Count 3
 ```
 
+上一版本对比:
+
+```bash
+go run ./cmd/gnalloy-benchdiff -base HEAD -packages ./buffer -bench 'BenchmarkPooledAllocator' -count 5 -benchtime 500ms
+go run ./cmd/gnalloy-benchdiff -base HEAD~1 -packages ./channel -bench 'BenchmarkPipelineWriteAndFlushDirectSink$' -count 5 -benchtime 500ms -out benchdiff.md
+```
+
+Windows:
+
+```powershell
+go run ./cmd/gnalloy-benchdiff -base HEAD -packages ./buffer -bench BenchmarkPooledAllocator -count 5 -benchtime 500ms
+go run ./cmd/gnalloy-benchdiff -base HEAD~1 -packages ./channel -bench BenchmarkPipelineWriteAndFlushDirectSink$ -count 5 -benchtime 500ms -out benchdiff.md
+```
+
+`-base HEAD` 用于未提交改动和当前版本对比，`-base HEAD~1` 用于提交后复核与上一提交的
+差异。报告使用每个 benchmark 的中位数计算 `ns/op`、`B/op` 和 `allocs/op` 变化率；
+任何性能改动提交前必须保留同机、同 Go 版本、同命令的 before/after 结果。负数表示
+候选版本在对应指标上下降，通常代表更快或分配更少。
+
 外部对标 baseline:
 
 ```bash
