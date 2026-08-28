@@ -125,6 +125,17 @@ func (a *PooledAllocator) Release(buf *DirectByteBuf) {
 	if buf.owner != a {
 		return
 	}
+	a.releaseOwnedDirect(buf)
+}
+
+func (a *PooledAllocator) releaseDirect(buf *DirectByteBuf) {
+	if a == nil || buf == nil {
+		return
+	}
+	a.releaseOwnedDirect(buf)
+}
+
+func (a *PooledAllocator) releaseOwnedDirect(buf *DirectByteBuf) {
 	idx := buf.ownerIndex
 	if idx == pooledOversizedClass || int(idx) >= len(a.classes) {
 		a.oversized.Add(-1)
@@ -138,7 +149,6 @@ func (a *PooledAllocator) Release(buf *DirectByteBuf) {
 	}
 	buf.readerIndex = 0
 	buf.writerIndex = 0
-	buf.owner = a
 	if a.zeroOnAcquire {
 		clear(buf.data)
 	}
@@ -147,10 +157,6 @@ func (a *PooledAllocator) Release(buf *DirectByteBuf) {
 	default:
 		class.dropped.Add(1)
 	}
-}
-
-func (a *PooledAllocator) releaseDirect(buf *DirectByteBuf) {
-	a.Release(buf)
 }
 
 // Close 标记 allocator 不再接受新分配，已借出的 buffer 归还后会直接丢弃。

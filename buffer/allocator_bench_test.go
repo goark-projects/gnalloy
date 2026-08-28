@@ -35,6 +35,32 @@ func BenchmarkPooledAllocatorAcquireRelease(b *testing.B) {
 	}
 }
 
+func BenchmarkPooledAllocatorParallelAcquireRelease(b *testing.B) {
+	alloc, err := NewPooledAllocator(PooledAllocatorConfig{
+		SizeClasses:       []int{4096},
+		MaxCachedPerClass: 4096,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	warm, err := alloc.Acquire(4096)
+	if err != nil {
+		b.Fatal(err)
+	}
+	warm.Release()
+
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			buf, err := alloc.Acquire(4096)
+			if err != nil {
+				b.Fatal(err)
+			}
+			buf.Release()
+		}
+	})
+}
+
 func BenchmarkMmapAllocatorAcquireRelease(b *testing.B) {
 	alloc, err := NewMmapAllocator(MmapAllocatorConfig{
 		BlockSize: 4096,
