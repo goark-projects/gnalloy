@@ -3,11 +3,13 @@ package channel
 import "goark.dev/gnalloy/internal/message"
 
 type Pipeline struct {
-	ch    Channel
-	sink  OutboundSink
-	head  *HandlerContext
-	tail  *HandlerContext
-	names map[string]*HandlerContext
+	ch               Channel
+	sink             OutboundSink
+	writeAndFlush    writeAndFlushSink
+	outboundHandlers int
+	head             *HandlerContext
+	tail             *HandlerContext
+	names            map[string]*HandlerContext
 }
 
 func NewPipeline(ch Channel, sink OutboundSink) *Pipeline {
@@ -15,6 +17,9 @@ func NewPipeline(ch Channel, sink OutboundSink) *Pipeline {
 		ch:    ch,
 		sink:  sink,
 		names: make(map[string]*HandlerContext, 8),
+	}
+	if sink, ok := sink.(writeAndFlushSink); ok {
+		p.writeAndFlush = sink
 	}
 	p.head = &HandlerContext{pipeline: p, name: "$head", handler: headHandler{}}
 	p.tail = &HandlerContext{pipeline: p, name: "$tail", handler: tailHandler{}}
@@ -113,6 +118,7 @@ func (p *Pipeline) Replace(oldName string, newName string, h Handler) error {
 	replacement.next = next
 	delete(p.names, oldName)
 	p.names[newName] = replacement
+	p.replaceOutboundHandler(old.handler, h)
 	old.prev = nil
 	old.next = nil
 	if err := p.callHandlerAdded(replacement); err != nil {
@@ -268,6 +274,7 @@ func (p *Pipeline) linkBetween(prev *HandlerContext, next *HandlerContext, ctx *
 	ctx.next = next
 	next.prev = ctx
 	p.names[ctx.name] = ctx
+	p.addOutboundHandler(ctx.handler)
 }
 
 func (p *Pipeline) unlink(ctx *HandlerContext) error {
@@ -284,7 +291,41 @@ func (p *Pipeline) unlink(ctx *HandlerContext) error {
 	ctx.prev = nil
 	ctx.next = nil
 	delete(p.names, ctx.name)
+	p.removeOutboundHandler(ctx.handler)
 	return nil
+}
+
+func (p *Pipeline) addOutboundHandler(h Handler) {
+	if isOutboundHandler(h) {
+		p.outboundHandlers++
+	}
+}
+
+func (p *Pipeline) removeOutboundHandler(h Handler) {
+	if isOutboundHandler(h) && p.outboundHandlers > 0 {
+		p.outboundHandlers--
+	}
+}
+
+func (p *Pipeline) replaceOutboundHandler(old Handler, next Handler) {
+	oldOutbound := isOutboundHandler(old)
+	nextOutbound := isOutboundHandler(next)
+	switch {
+	case oldOutbound && !nextOutbound && p.outboundHandlers > 0:
+		p.outboundHandlers--
+	case !oldOutbound && nextOutbound:
+		p.outboundHandlers++
+	}
+}
+
+func isOutboundHandler(h Handler) bool {
+	if _, ok := h.(WriteHandler); ok {
+		return true
+	}
+	if _, ok := h.(FlushHandler); ok {
+		return true
+	}
+	return false
 }
 
 type headHandler struct{}

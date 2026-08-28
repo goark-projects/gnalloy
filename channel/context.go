@@ -161,22 +161,13 @@ func (c *HandlerContext) WriteAndFlush(msg any) error {
 }
 
 func (c *HandlerContext) directWriteAndFlushSink() (writeAndFlushSink, bool) {
-	if c == nil || c.pipeline == nil || c.pipeline.sink == nil {
+	if c == nil || c.pipeline == nil || c.pipeline.writeAndFlush == nil {
 		return nil, false
 	}
-	sink, ok := c.pipeline.sink.(writeAndFlushSink)
-	if !ok {
+	if c.pipeline.outboundHandlers != 0 {
 		return nil, false
 	}
-	for n := c.prev; n != nil; n = n.prev {
-		if _, ok := n.handler.(WriteHandler); ok {
-			return nil, false
-		}
-		if _, ok := n.handler.(FlushHandler); ok {
-			return nil, false
-		}
-	}
-	return sink, true
+	return c.pipeline.writeAndFlush, true
 }
 
 func (c *HandlerContext) CloseFuture() Future {

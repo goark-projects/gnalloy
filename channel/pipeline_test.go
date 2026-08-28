@@ -157,6 +157,61 @@ func TestPipelineWriteAndFlushPreservesOutboundHandlers(t *testing.T) {
 	}
 }
 
+func TestPipelineWriteAndFlushRestoresDirectSinkAfterOutboundRemove(t *testing.T) {
+	sink := &captureWriteAndFlushSink{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("outbound", &outboundRecorder{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().Remove("outbound"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().WriteAndFlush("payload"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writeAndFlushes) != 1 || len(sink.writes) != 0 || sink.flushed {
+		t.Fatalf("sink=%+v", sink)
+	}
+}
+
+func TestPipelineWriteAndFlushRestoresDirectSinkAfterOutboundReplace(t *testing.T) {
+	sink := &captureWriteAndFlushSink{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("outbound", &outboundRecorder{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().Replace("outbound", "inbound", forwardingInbound{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().WriteAndFlush("payload"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writeAndFlushes) != 1 || len(sink.writes) != 0 || sink.flushed {
+		t.Fatalf("sink=%+v", sink)
+	}
+}
+
+func TestPipelineWriteAndFlushDisablesDirectSinkAfterInboundReplace(t *testing.T) {
+	sink := &captureWriteAndFlushSink{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	recorder := &outboundRecorder{}
+	if err := ch.Pipeline().AddLast("inbound", forwardingInbound{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().Replace("inbound", "outbound", recorder); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().WriteAndFlush("payload"); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.writes != 1 || recorder.flushes != 1 {
+		t.Fatalf("recorder writes=%d flushes=%d, want 1/1", recorder.writes, recorder.flushes)
+	}
+	if len(sink.writeAndFlushes) != 0 {
+		t.Fatalf("direct sink used despite replaced outbound handler: %v", sink.writeAndFlushes)
+	}
+}
+
 func TestPipelineTailReleasesByteBuf(t *testing.T) {
 	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureSink{})
 	buf := buffer.NewHeapBuffer(8)
