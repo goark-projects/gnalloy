@@ -11,10 +11,7 @@ func copyReadableBytes(buf buffer.ByteBuf, pool BytePool) []byte {
 		return nil
 	}
 	out := acquireBytes(pool, buf.ReadableBytes())
-	offset := 0
-	for _, part := range buf.ReadableSlices(nil) {
-		offset += copy(out[offset:], part)
-	}
+	buffer.CopyReadableBytes(out, buf)
 	return out
 }
 

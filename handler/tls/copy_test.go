@@ -1,6 +1,7 @@
 package tls
 
 import (
+	"bytes"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
@@ -39,6 +40,33 @@ func TestCopyReadableBytesUsesConfiguredPool(t *testing.T) {
 	releaseBytes(pool, data)
 	if pool.released != 1 {
 		t.Fatalf("pool released=%d, want 1", pool.released)
+	}
+}
+
+func BenchmarkCopyReadableBytesComposite(b *testing.B) {
+	first := buffer.NewHeapBuffer(1024)
+	second := buffer.NewHeapBuffer(1024)
+	_, _ = first.WriteBytes(bytes.Repeat([]byte("a"), 1024))
+	_, _ = second.WriteBytes(bytes.Repeat([]byte("b"), 1024))
+	composite := buffer.NewCompositeByteBuf()
+	composite.Append(first)
+	composite.Append(second)
+	defer composite.Release()
+
+	pool := NewPooledBytePool(BytePoolConfig{
+		DefaultSize: 2048,
+		MaxSize:     2048,
+	})
+	warm := pool.Acquire(2048)
+	pool.Release(warm)
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		data := copyReadableBytes(composite, pool)
+		if len(data) != 2048 {
+			b.Fatalf("len=%d, want 2048", len(data))
+		}
+		releaseBytes(pool, data)
 	}
 }
 
