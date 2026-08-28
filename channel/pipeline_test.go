@@ -51,6 +51,27 @@ func (s *captureWriteAndFlushSink) WriteAndFlush(msg any) error {
 	return nil
 }
 
+type countingWriteAndFlushSink struct {
+	writeAndFlushes int
+}
+
+func (s *countingWriteAndFlushSink) Write(any) error {
+	return nil
+}
+
+func (s *countingWriteAndFlushSink) Flush() error {
+	return nil
+}
+
+func (s *countingWriteAndFlushSink) Close() error {
+	return nil
+}
+
+func (s *countingWriteAndFlushSink) WriteAndFlush(any) error {
+	s.writeAndFlushes++
+	return nil
+}
+
 type outboundRecorder struct {
 	writes  int
 	flushes int
@@ -199,7 +220,8 @@ func BenchmarkPipelineInboundNoop(b *testing.B) {
 }
 
 func BenchmarkPipelineWriteAndFlushDirectSink(b *testing.B) {
-	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), &captureWriteAndFlushSink{})
+	sink := &countingWriteAndFlushSink{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
 	if err := ch.Pipeline().AddLast("inbound", forwardingInbound{}); err != nil {
 		b.Fatal(err)
 	}
@@ -208,5 +230,8 @@ func BenchmarkPipelineWriteAndFlushDirectSink(b *testing.B) {
 		if err := ch.Pipeline().WriteAndFlush("msg"); err != nil {
 			b.Fatal(err)
 		}
+	}
+	if sink.writeAndFlushes != b.N {
+		b.Fatalf("writeAndFlushes=%d, want %d", sink.writeAndFlushes, b.N)
 	}
 }
