@@ -57,6 +57,10 @@ blocks:
   explicit pipeline controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
+- `handler/flow`: Pipeline-level inbound flow-control handler with explicit
+  pause/resume, bounded pending message/byte budgets, read-complete coalescing,
+  AutoRead option synchronization, and deterministic release on overflow or
+  close.
 - `handler/pcap`: pipeline-level libpcap capture for inbound and outbound
   payloads without taking message ownership.
 - `handler/proxy`: HTTP CONNECT client handler plus SOCKS5 and HAProxy v1/v2
@@ -349,6 +353,10 @@ Design rules:
 - Outbound buffers are gathered across queued `ByteBuf` instances. Readiness
   transports use `writev`/multi-buffer `WSASend`, while completion transports
   can submit batched buffers through io_uring `WRITEV` or IOCP `WSASend`.
+- `handler/flow` is intentionally a Pipeline-level inbound gate. It gives
+  business handlers Netty-style pause/resume behavior without touching fd
+  readiness directly; transport-level AutoRead integration remains controlled
+  by each native endpoint.
 - io_uring supports optional registered buffers and multishot accept at the
   poller layer; both are opt-in because kernel/version support differs.
 - Performance-only CPU affinity is configured on `EventLoopGroup`; Linux binds

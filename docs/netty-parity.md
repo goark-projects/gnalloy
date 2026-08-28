@@ -29,7 +29,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 任何“超过 Netty”的表述都必须引用矩阵报告中的具体平台、后端、payload、连接数、
 延迟分位和错误率。
 
-## P0-P3 完成面
+## P0-P4 完成面
 
 | 优先级 | 范围 | 当前状态 | 验证入口 |
 | --- | --- | --- | --- |
@@ -37,6 +37,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | P1 | 业务 handler executor group、流量整形、DNS resolver cache/TCP fallback/search/hosts/CNAME、Simple/Fixed/Map ChannelPool、IP filter、pcap、轻量观测延迟指标和 Prometheus 文本导出 | done | `go test ./handler/executor ./handler/traffic ./resolver/dns ./channel/pool ./handler/ipfilter ./handler/pcap ./observability ./handler/metrics` |
 | P2 | LoggingHandler、FlushConsolidationHandler、协议 fuzz smoke、Netty parity 文档、性能预算 benchmark 和回归脚本 | done | `go test ./handler/logging ./handler/flush ./codec/dns ./codec/redis ./codec/http2 ./codec/http3`、`scripts/verify-regression.*` |
 | P3 | RFC9000 QUIC v1 适配、TLS 1.3 packet protection、0-RTT/session resumption、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、HTTP/3 transport binding、WebTransport session binding、QUIC application exchanger、DNS-over-QUIC exchanger、L2 transport 抽象、同机/外部 benchmark baseline、TLS copy reduction/native TLS 评估、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter、跨平台验证矩阵 | done | `go test ./transport/quic/rfc9000 ./transport/quic/application ./resolver/dns/quic ./transport/http3 ./transport/webtransport ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/l2 ./transport/unix ./observability/otel ./benchmarks/parity ./validation/platformmatrix`、`scripts/verify-platform.ps1 -SkipBench`、`go test ./...` |
+| P4 | Netty `FlowControlHandler` 风格入站暂停/恢复、有限队列、AutoRead 同步、溢出释放和 read-complete 合并 | done | `go test ./handler/flow` |
 
 ## Bootstrap 与 Channel
 
@@ -61,6 +62,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `DefaultEventExecutorGroup` | `handler/executor` | done | 固定 worker group、有限队列、按 handler 保序 offload。 |
 | `IdleStateHandler`/timeout | `handler/timeout` | done | 基于时间轮，避免每连接独立 `time.Timer` 膨胀。 |
 | `TrafficShapingHandler` | `handler/traffic` | done | 支持本地/共享读写限速和指标快照。 |
+| `FlowControlHandler` | `handler/flow` | done | 支持入站 pause/resume、暂停期间有限队列、按序恢复、AutoRead 选项同步、溢出异常和确定性释放。 |
 | `LoggingHandler` | `handler/logging` | done | 基于标准库 `slog`，记录生命周期、读写、flush、close 和异常事件，不接管消息所有权。 |
 | `FlushConsolidationHandler` | `handler/flush` | done | 读循环内合并 flush，支持阈值强制下发、无读循环延迟合并和 Future 完成传播。 |
 | Netty 风格 pipeline initializer | `recipes` | done | 使用 per-channel handler factory 装配 ByteBuf echo、length-field、HTTP/1、HTTP/2、WebSocket、MQTT 和 HTTP/3 stream pipeline，避免复用有状态 codec。 |
@@ -140,7 +142,6 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
 | OCSP、OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
 | true sendfile/splice 零拷贝文件传输 | planned | `FileRegion` 已有 fallback 语义；内核级零拷贝需要按 OS 后端拆分实现和退化路径。 |
-| `handler/flow` 类显式流控工具 | planned | Channel 水位线和 HTTP/2/QUIC flow-control 已存在；通用 handler 需避免和业务 backpressure 语义冲突。 |
 | SCTP、UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
 | in-VM local transport | defer | Go 里可用 memory backend 与嵌入式测试替代；无需复制 Netty 的 JVM 内本地传输模型。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |
