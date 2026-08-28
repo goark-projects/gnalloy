@@ -45,6 +45,7 @@ func (u *Unsafe) readReady() {
 			return
 		}
 		view := buf.WritableBytesView()
+		attempted := len(view)
 		n, again, err := u.rw.Read(u.fd, view)
 		if n > 0 {
 			if advErr := buf.AdvanceWriter(n); advErr != nil {
@@ -75,6 +76,10 @@ func (u *Unsafe) readReady() {
 			}
 			return
 		}
+		if shouldStopAfterShortRead(n, attempted) {
+			u.ch.Pipeline().FireChannelReadComplete()
+			return
+		}
 	}
 	if read {
 		u.ch.Pipeline().FireChannelReadComplete()
@@ -96,6 +101,17 @@ func (u *Unsafe) submitRead() error {
 		buf.Release()
 	}
 	return err
+}
+
+func shouldStopAfterShortRead(n int, attempted int) bool {
+	if n <= 0 || n >= attempted {
+		return false
+	}
+	if attempted > defaultReadBufferSize {
+		return false
+	}
+	// 短读达到缓冲区 1/4 以上时，按 Netty 读循环经验结束本轮，减少 EAGAIN 探测。
+	return n >= (attempted+3)/4
 }
 
 func (u *Unsafe) prepareReadRequest() (transport.IORequest, buffer.ByteBuf, error) {
