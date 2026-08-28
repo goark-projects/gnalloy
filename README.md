@@ -58,6 +58,9 @@ blocks:
   explicit pipeline controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
+- `handler/cors`: HTTP/1 CORS Pipeline handler with request Origin matching,
+  preflight short-circuit responses, credential-safe wildcard behavior, and
+  response header decoration.
 - `handler/flow`: Pipeline-level inbound flow-control handler with explicit
   pause/resume, bounded pending message/byte budgets, read-complete coalescing,
   AutoRead option synchronization, and deterministic release on overflow or
