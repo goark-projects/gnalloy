@@ -59,6 +59,7 @@
 | `HAProxyMessageDecoder/Encoder` | `codec/haproxy` | done | 支持 PROXY protocol v1/v2、TCP/UDP IPv4/IPv6、UNIX 地址和 TLV。 |
 | `SpdyFrameDecoder/Encoder` | `codec/spdy` | done | 支持 SPDY/3 data、SYN、RST、SETTINGS、PING、GOAWAY、HEADERS、WINDOW_UPDATE 和未知控制帧。 |
 | `HttpObjectDecoder/Encoder` | `codec/http1` | done | 支持请求/响应、Content-Length、chunked、trailers、聚合器、100-continue 和 chunked 出站。 |
+| `ClientCookieEncoder/Decoder`、`ServerCookieEncoder/Decoder` | `codec/http1/cookie` | done | 支持 Cookie 请求多值、Set-Cookie 响应属性、Expires、Max-Age、SameSite、Secure、HttpOnly、Partitioned 和 Append 热路径。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |
 | `Http2FrameCodec` | `codec/http2` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame，HPACK header block 编解码保持独立 handler；已覆盖 fuzz smoke。 |
 | `Http2MultiplexHandler` | `codec/http2.StreamMultiplexer` / `StreamChildChannel` | done | 支持 stream 生命周期事件、奇偶性校验、END_STREAM 半关闭、RST/GOAWAY、连接/stream 窗口校验和 Netty 风格 child-channel 入站体验。 |

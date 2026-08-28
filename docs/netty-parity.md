@@ -38,6 +38,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | P2 | LoggingHandler、FlushConsolidationHandler、协议 fuzz smoke、Netty parity 文档、性能预算 benchmark 和回归脚本 | done | `go test ./handler/logging ./handler/flush ./codec/dns ./codec/redis ./codec/http2 ./codec/http3`、`scripts/verify-regression.*` |
 | P3 | RFC9000 QUIC v1 适配、TLS 1.3 packet protection、0-RTT/session resumption、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、HTTP/3 transport binding、WebTransport session binding、QUIC application exchanger、DNS-over-QUIC exchanger、L2 transport 抽象、同机/外部 benchmark baseline、TLS copy reduction/native TLS 评估、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter、跨平台验证矩阵 | done | `go test ./transport/quic/rfc9000 ./transport/quic/application ./resolver/dns/quic ./transport/http3 ./transport/webtransport ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/l2 ./transport/unix ./observability/otel ./benchmarks/parity ./validation/platformmatrix`、`scripts/verify-platform.ps1 -SkipBench`、`go test ./...` |
 | P4 | Netty `FlowControlHandler` 风格入站暂停/恢复、有限队列、AutoRead 同步、溢出释放和 read-complete 合并 | done | `go test ./handler/flow` |
+| P5 | Netty HTTP Cookie/Set-Cookie 编解码体验，含请求多 Cookie、响应属性、SameSite、Expires、Max-Age 和 Append 热路径 | done | `go test ./codec/http1/cookie` |
 
 ## Bootstrap 与 Channel
 
@@ -137,7 +138,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 
 | 范围 | 状态 | 原因 |
 | --- | --- | --- |
-| HTTP multipart/cookie/cors 高级工具 | planned | HTTP/1 基础 codec 已在核心；业务策略、跨域和表单大对象生命周期更适合独立 handler/codec 切片。 |
+| HTTP multipart/cors 高级工具 | planned | HTTP/1 基础 codec 和 Cookie 编解码已覆盖；跨域策略和表单大对象生命周期更适合独立 handler/codec 切片。 |
 | WebSocket extension compression | planned | 基础 WebSocket frame 已覆盖；扩展协商和压缩状态机需要独立语义测试与内存预算。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
 | OCSP、OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
