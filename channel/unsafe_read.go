@@ -24,7 +24,7 @@ func (u *Unsafe) Read() error {
 }
 
 func (u *Unsafe) AutoRead() bool {
-	return OptionAutoRead.Get(u.ch.Options())
+	return u.autoRead.Load()
 }
 
 func (u *Unsafe) InitialInterest() transport.ReadyMask {
@@ -121,7 +121,7 @@ func (u *Unsafe) readInterest() transport.ReadyMask {
 }
 
 func (u *Unsafe) maxMessagesPerRead() int {
-	maxMessages := OptionMaxMessagesPerRead.Get(u.ch.Options())
+	maxMessages := int(u.cachedMaxMessagesPerRead.Load())
 	if maxMessages <= 0 {
 		return 1
 	}

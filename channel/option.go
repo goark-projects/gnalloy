@@ -120,8 +120,11 @@ func (o ChannelOption[T]) Assignment(value T) ChannelOptionAssignment {
 }
 
 type ChannelOptions struct {
-	attrs AttributeMap
+	attrs    AttributeMap
+	observer optionObserver
 }
+
+type optionObserver func(key optionKeyID, value any, present bool)
 
 func NewChannelOptions() *ChannelOptions {
 	return &ChannelOptions{}
@@ -164,8 +167,20 @@ func (o *ChannelOptions) get(key optionKeyID) (any, bool) {
 
 func (o *ChannelOptions) set(key optionKeyID, value any) {
 	o.attrs.set(attributeKeyID(key), value)
+	if o.observer != nil {
+		o.observer(key, value, true)
+	}
 }
 
 func (o *ChannelOptions) remove(key optionKeyID) {
-	o.attrs.remove(attributeKeyID(key))
+	if _, ok := o.attrs.remove(attributeKeyID(key)); ok && o.observer != nil {
+		o.observer(key, nil, false)
+	}
+}
+
+func (o *ChannelOptions) observe(observer optionObserver) {
+	if o == nil {
+		return
+	}
+	o.observer = observer
 }

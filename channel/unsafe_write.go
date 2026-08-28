@@ -203,7 +203,7 @@ func (u *Unsafe) completeWrite(n int) {
 }
 
 func (u *Unsafe) maxWriteSpinCount() int {
-	spinCount := OptionWriteSpinCount.Get(u.ch.Options())
+	spinCount := int(u.writeSpinCount.Load())
 	if spinCount <= 0 {
 		return 1
 	}

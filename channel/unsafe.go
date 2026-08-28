@@ -71,9 +71,12 @@ type Unsafe struct {
 	flushWaiters  []*DefaultPromise
 	closePromise  *DefaultPromise
 
-	writeHighWatermark int64
-	writeLowWatermark  int64
-	writable           atomic.Bool
+	autoRead                 atomic.Bool
+	writeSpinCount           atomic.Int64
+	cachedMaxMessagesPerRead atomic.Int64
+	writeHighWatermark       int64
+	writeLowWatermark        int64
+	writable                 atomic.Bool
 }
 
 type outboundEntry struct {
@@ -105,6 +108,7 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 	}
 	u.writable.Store(true)
 	u.ch = NewLocalChannelWithTimer(cfg.ID, cfg.Allocator, u, cfg.Timer)
+	u.bindOptionCache()
 	OptionReadBufferSize.Set(u.ch.Options(), readBufferSize)
 	OptionWriteBufferWatermark.Set(u.ch.Options(), watermark)
 	OptionWriteSpinCount.Set(u.ch.Options(), OptionWriteSpinCount.Get(u.ch.Options()))
@@ -134,4 +138,64 @@ func (u *Unsafe) PendingOutboundBytes() int64 {
 
 func (u *Unsafe) WriteBufferWatermark() transport.WriteBufferWatermark {
 	return transport.WriteBufferWatermark{Low: int(u.writeLowWatermark), High: int(u.writeHighWatermark)}
+}
+
+func (u *Unsafe) bindOptionCache() {
+	if u == nil || u.ch == nil {
+		return
+	}
+	options := u.ch.Options()
+	options.observe(u.applyOptionUpdate)
+	u.cacheAutoRead(OptionAutoRead.Get(options), true)
+	u.cacheWriteSpinCount(OptionWriteSpinCount.Get(options), true)
+	u.cacheMaxMessagesPerRead(OptionMaxMessagesPerRead.Get(options), true)
+}
+
+func (u *Unsafe) applyOptionUpdate(key optionKeyID, value any, present bool) {
+	switch key {
+	case OptionAutoRead.name:
+		u.cacheAutoRead(value, present)
+	case OptionWriteSpinCount.name:
+		u.cacheWriteSpinCount(value, present)
+	case OptionMaxMessagesPerRead.name:
+		u.cacheMaxMessagesPerRead(value, present)
+	}
+}
+
+func (u *Unsafe) cacheAutoRead(value any, present bool) {
+	if !present {
+		u.autoRead.Store(OptionAutoRead.Default())
+		return
+	}
+	v, ok := value.(bool)
+	if !ok {
+		v = OptionAutoRead.Default()
+	}
+	u.autoRead.Store(v)
+}
+
+func (u *Unsafe) cacheWriteSpinCount(value any, present bool) {
+	v := OptionWriteSpinCount.Default()
+	if present {
+		if typed, ok := value.(int); ok {
+			v = typed
+		}
+	}
+	if v <= 0 {
+		v = 1
+	}
+	u.writeSpinCount.Store(int64(v))
+}
+
+func (u *Unsafe) cacheMaxMessagesPerRead(value any, present bool) {
+	v := OptionMaxMessagesPerRead.Default()
+	if present {
+		if typed, ok := value.(int); ok {
+			v = typed
+		}
+	}
+	if v <= 0 {
+		v = 1
+	}
+	u.cachedMaxMessagesPerRead.Store(int64(v))
 }

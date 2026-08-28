@@ -778,6 +778,43 @@ func TestUnsafeReadinessHonorsMaxMessagesPerRead(t *testing.T) {
 	}
 }
 
+func TestUnsafeOptionCacheTracksSetAndRemove(t *testing.T) {
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:         1,
+		FD:         transport.FDRef{FD: 1},
+		Allocator:  buffer.NewHeapAllocator(),
+		Poller:     &fakeReadyPoller{},
+		ReadWriter: &scriptedReadRW{},
+	})
+
+	OptionAutoRead.Set(ch.Options(), false)
+	if unsafeCh.AutoRead() {
+		t.Fatal("auto read cache still true after set false")
+	}
+	OptionAutoRead.Remove(ch.Options())
+	if !unsafeCh.AutoRead() {
+		t.Fatal("auto read cache did not restore default after remove")
+	}
+
+	OptionWriteSpinCount.Set(ch.Options(), 0)
+	if got := unsafeCh.maxWriteSpinCount(); got != 1 {
+		t.Fatalf("write spin count=%d, want 1 for non-positive value", got)
+	}
+	OptionWriteSpinCount.Remove(ch.Options())
+	if got := unsafeCh.maxWriteSpinCount(); got != OptionWriteSpinCount.Default() {
+		t.Fatalf("write spin count=%d, want default %d", got, OptionWriteSpinCount.Default())
+	}
+
+	OptionMaxMessagesPerRead.Set(ch.Options(), 2)
+	if got := unsafeCh.maxMessagesPerRead(); got != 2 {
+		t.Fatalf("max messages per read=%d, want 2", got)
+	}
+	OptionMaxMessagesPerRead.Remove(ch.Options())
+	if got := unsafeCh.maxMessagesPerRead(); got != OptionMaxMessagesPerRead.Default() {
+		t.Fatalf("max messages per read=%d, want default %d", got, OptionMaxMessagesPerRead.Default())
+	}
+}
+
 func TestUnsafeCompletionWriteKeepsPendingBufferAliveUntilEvent(t *testing.T) {
 	poller := &fakeCompletionPoller{}
 	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
