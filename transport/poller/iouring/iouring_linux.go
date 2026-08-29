@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/transport/poller"
 	"golang.org/x/sys/unix"
 )
@@ -560,21 +561,9 @@ func (p *Poller) prepareAt(userData uint64, req poller.IORequest, tail uint32) (
 			break
 		}
 		if len(req.Bufs) > 0 {
-			vectors := make([]iovec, 0, len(req.Bufs))
-			for _, buf := range req.Bufs {
-				slices := buf.ReadableSlices(nil)
-				for _, data := range slices {
-					if len(data) == 0 {
-						continue
-					}
-					vectors = append(vectors, iovec{
-						base: uintptr(unsafe.Pointer(&data[0])),
-						len:  uintptr(len(data)),
-					})
-				}
-			}
-			if len(vectors) == 0 {
-				return 0, poller.ErrInvalidIORequest
+			vectors, err := makeIOVectors(req)
+			if err != nil {
+				return 0, err
 			}
 			p.writev[userData] = vectors
 			entry.opcode = opWritev
@@ -583,19 +572,33 @@ func (p *Poller) prepareAt(userData uint64, req poller.IORequest, tail uint32) (
 			entry.len = uint32(len(vectors))
 			break
 		}
-		data := req.Buf.Bytes()
-		if len(data) == 0 {
-			return 0, poller.ErrInvalidIORequest
-		}
-		if req.UseFixedBuffer {
-			entry.opcode = opWriteFixed
-			entry.bufIndex = req.FixedBufferIndex
+		if data, ok := buffer.ContiguousReadableBytes(req.Buf); ok {
+			if len(data) == 0 {
+				return 0, poller.ErrInvalidIORequest
+			}
+			if req.UseFixedBuffer {
+				entry.opcode = opWriteFixed
+				entry.bufIndex = req.FixedBufferIndex
+			} else {
+				entry.opcode = opWrite
+			}
+			entry.fd = int32(req.FD.FD)
+			entry.addr = uint64(uintptr(unsafe.Pointer(&data[0])))
+			entry.len = uint32(len(data))
 		} else {
-			entry.opcode = opWrite
+			if req.UseFixedBuffer {
+				return 0, poller.ErrInvalidIORequest
+			}
+			vectors, err := makeIOVectors(req)
+			if err != nil {
+				return 0, err
+			}
+			p.writev[userData] = vectors
+			entry.opcode = opWritev
+			entry.fd = int32(req.FD.FD)
+			entry.addr = uint64(uintptr(unsafe.Pointer(&vectors[0])))
+			entry.len = uint32(len(vectors))
 		}
-		entry.fd = int32(req.FD.FD)
-		entry.addr = uint64(uintptr(unsafe.Pointer(&data[0])))
-		entry.len = uint32(len(data))
 	case poller.OpClose:
 		entry.opcode = opClose
 		entry.fd = int32(req.FD.FD)
@@ -714,30 +717,6 @@ func makeSendMsgContext(req poller.IORequest) (*msgContext, error) {
 		iovlen:  uint64(len(ctx.iov)),
 	}
 	return ctx, nil
-}
-
-func makeIOVectors(req poller.IORequest) ([]iovec, error) {
-	if req.Buf != nil {
-		data := req.Buf.Bytes()
-		if len(data) == 0 {
-			return nil, poller.ErrInvalidIORequest
-		}
-		return []iovec{{base: uintptr(unsafe.Pointer(&data[0])), len: uintptr(len(data))}}, nil
-	}
-	vectors := make([]iovec, 0, len(req.Bufs))
-	for _, buf := range req.Bufs {
-		slices := buf.ReadableSlices(nil)
-		for _, data := range slices {
-			if len(data) == 0 {
-				continue
-			}
-			vectors = append(vectors, iovec{base: uintptr(unsafe.Pointer(&data[0])), len: uintptr(len(data))})
-		}
-	}
-	if len(vectors) == 0 {
-		return nil, poller.ErrInvalidIORequest
-	}
-	return vectors, nil
 }
 
 func makeRawSockaddr(addr poller.SocketAddress) (unix.RawSockaddrAny, uint32, error) {

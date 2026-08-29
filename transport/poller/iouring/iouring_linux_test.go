@@ -300,3 +300,51 @@ func TestSubmitBatchCompletesPipeReadAndWrite(t *testing.T) {
 		t.Fatalf("refs=%d,%d, want 1,1", readBuf.RefCnt(), writeBuf.RefCnt())
 	}
 }
+
+func TestMakeIOVectorsExpandsCompositeWithoutCopy(t *testing.T) {
+	buf := fragmentedWriteBuffer("ab", "cd")
+	defer buf.Release()
+	vectors, err := makeIOVectors(poller.IORequest{Buf: buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vectors) != 2 || vectors[0].len != 2 || vectors[1].len != 2 {
+		t.Fatalf("vectors=%+v, want two 2-byte vectors", vectors)
+	}
+}
+
+func BenchmarkMakeIOVectorsComposite(b *testing.B) {
+	buf := fragmentedWriteBuffer("abcd", "efgh", "ijkl", "mnop")
+	defer buf.Release()
+	req := poller.IORequest{Buf: buf}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		vectors, err := makeIOVectors(req)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if vectorBytes(vectors) != 16 {
+			b.Fatalf("vectors=%+v", vectors)
+		}
+	}
+}
+
+func vectorBytes(vectors []iovec) uintptr {
+	var total uintptr
+	for _, vector := range vectors {
+		total += vector.len
+	}
+	return total
+}
+
+func fragmentedWriteBuffer(parts ...string) buffer.ByteBuf {
+	c := buffer.NewCompositeByteBuf()
+	for _, part := range parts {
+		buf := buffer.NewHeapBuffer(len(part))
+		_, _ = buf.WriteBytes([]byte(part))
+		c.Append(buf)
+	}
+	return c
+}

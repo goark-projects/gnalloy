@@ -59,6 +59,41 @@ func TestMakeWriteBuffersUsesInlineStorageForSingleBuffer(t *testing.T) {
 	}
 }
 
+func TestMakeWriteBuffersExpandsCompositeWithoutCopy(t *testing.T) {
+	buf := fragmentedWriteBuffer("ab", "cd")
+	defer buf.Release()
+	var inline [8]windows.WSABuf
+	wsabufs, err := makeWriteBuffers(poller.IORequest{Buf: buf}, inline[:0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wsabufs) != 2 || wsabufs[0].Len != 2 || wsabufs[1].Len != 2 {
+		t.Fatalf("wsabufs=%+v, want two 2-byte vectors", wsabufs)
+	}
+	if &wsabufs[0] != &inline[0] {
+		t.Fatal("composite write should reuse inline WSABuf storage")
+	}
+}
+
+func BenchmarkMakeWriteBuffersComposite(b *testing.B) {
+	buf := fragmentedWriteBuffer("abcd", "efgh", "ijkl", "mnop")
+	defer buf.Release()
+	req := poller.IORequest{Buf: buf}
+	var inline [8]windows.WSABuf
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		wsabufs, err := makeWriteBuffers(req, inline[:0])
+		if err != nil {
+			b.Fatal(err)
+		}
+		if writeBufferBytes(wsabufs) != 16 {
+			b.Fatalf("wsabufs=%+v", wsabufs)
+		}
+	}
+}
+
 func TestPendingRequestOverlappedRoundTrip(t *testing.T) {
 	if offset := unsafe.Offsetof(pendingRequest{}.ov); offset != 0 {
 		t.Fatalf("overlapped offset=%d, want zero", offset)
@@ -149,4 +184,22 @@ func TestCompletionBatchHelpers(t *testing.T) {
 func ensureWSAStartup() error {
 	var data windows.WSAData
 	return windows.WSAStartup(0x202, &data)
+}
+
+func writeBufferBytes(wsabufs []windows.WSABuf) uint32 {
+	var total uint32
+	for _, buf := range wsabufs {
+		total += buf.Len
+	}
+	return total
+}
+
+func fragmentedWriteBuffer(parts ...string) buffer.ByteBuf {
+	c := buffer.NewCompositeByteBuf()
+	for _, part := range parts {
+		buf := buffer.NewHeapBuffer(len(part))
+		_, _ = buf.WriteBytes([]byte(part))
+		c.Append(buf)
+	}
+	return c
 }

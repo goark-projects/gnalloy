@@ -130,7 +130,7 @@ func (u *Unsafe) writeReadyBatch() (int, bool, error) {
 	if u.outHead.next == nil {
 		buf := u.outHead.buf
 		if _, ok := buf.(*buffer.DirectByteBuf); ok {
-			return u.rw.Write(u.fd, buf.Bytes())
+			return u.rw.Write(u.fd, readableWriteBytes(buf))
 		}
 	}
 	if vector := u.vectorWriter; vector != nil {
@@ -141,7 +141,14 @@ func (u *Unsafe) writeReadyBatch() (int, bool, error) {
 		}
 	}
 	buf := u.outHead.buf
-	return u.rw.Write(u.fd, buf.Bytes())
+	return u.rw.Write(u.fd, readableWriteBytes(buf))
+}
+
+func readableWriteBytes(buf buffer.ByteBuf) []byte {
+	if data, ok := buffer.ContiguousReadableBytes(buf); ok {
+		return data
+	}
+	return buf.Bytes()
 }
 
 func (u *Unsafe) submitWrite() error {

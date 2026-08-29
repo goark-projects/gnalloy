@@ -15,7 +15,7 @@ type pendingRequest struct {
 	req     poller.IORequest
 	accept  *acceptContext
 	wsabufs []windows.WSABuf
-	wsabuf  [1]windows.WSABuf
+	wsabuf  [8]windows.WSABuf
 	from    windows.RawSockaddrAny
 	fromLen int32
 	to      windows.RawSockaddrAny

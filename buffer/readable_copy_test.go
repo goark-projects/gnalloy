@@ -87,6 +87,27 @@ func TestWriteReadableBytesCopiesCompositeWithoutAdvancing(t *testing.T) {
 	}
 }
 
+func TestForEachReadableSliceVisitsCompositeWithoutAdvancing(t *testing.T) {
+	src := NewCompositeByteBuf()
+	src.Append(testBuffer("ab"))
+	src.Append(testBuffer("cd"))
+	defer src.Release()
+
+	var got string
+	if !ForEachReadableSlice(src, func(data []byte) bool {
+		got += string(data)
+		return true
+	}) {
+		t.Fatal("iteration should complete")
+	}
+	if got != "abcd" {
+		t.Fatalf("got=%q, want abcd", got)
+	}
+	if src.ReaderIndex() != 0 {
+		t.Fatalf("readerIndex=%d, want 0", src.ReaderIndex())
+	}
+}
+
 func BenchmarkCopyReadableBytesComposite(b *testing.B) {
 	src := NewCompositeByteBuf()
 	for i := 0; i < 32; i++ {

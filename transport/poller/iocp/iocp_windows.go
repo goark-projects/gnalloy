@@ -352,29 +352,6 @@ func (p *Poller) submitWrite(req poller.IORequest, ov *windows.Overlapped, wsabu
 	return windows.WSASend(windows.Handle(uintptr(req.FD.FD)), &wsabufs[0], uint32(len(wsabufs)), &sent, 0, ov, nil)
 }
 
-func makeWriteBuffers(req poller.IORequest, dst []windows.WSABuf) ([]windows.WSABuf, error) {
-	if req.Buf != nil {
-		data := req.Buf.Bytes()
-		if len(data) == 0 {
-			return nil, poller.ErrInvalidIORequest
-		}
-		return append(dst, windows.WSABuf{Len: uint32(len(data)), Buf: &data[0]}), nil
-	}
-	for _, buf := range req.Bufs {
-		slices := buf.ReadableSlices(nil)
-		for _, data := range slices {
-			if len(data) == 0 {
-				continue
-			}
-			dst = append(dst, windows.WSABuf{Len: uint32(len(data)), Buf: &data[0]})
-		}
-	}
-	if len(dst) == 0 {
-		return nil, poller.ErrInvalidIORequest
-	}
-	return dst, nil
-}
-
 func (p *Poller) submitClose(req poller.IORequest, ov *windows.Overlapped) error {
 	err := windows.Closesocket(windows.Handle(uintptr(req.FD.FD)))
 	if err != nil {
