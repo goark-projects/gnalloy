@@ -27,56 +27,36 @@ func (d *FrameDecoder) Decode(_ *channel.HandlerContext, in *buffer.CompositeByt
 		return nil, nil
 	}
 	reader := in.ReaderIndex()
-	magic, ok := in.GetByte(reader)
-	if !ok || (magic != MagicRequest && magic != MagicResponse) {
+	header, err := decodeBinaryHeader(in, reader)
+	if err != nil {
+		return nil, err
+	}
+	if header.magic != MagicRequest && header.magic != MagicResponse {
 		return nil, ErrInvalidFrame
 	}
-	opcodeByte, _ := in.GetByte(reader + 1)
-	keyLength, err := in.ReadUnsigned(reader+2, 2, buffer.BigEndian)
-	if err != nil {
-		return nil, err
-	}
-	extrasLengthByte, _ := in.GetByte(reader + 4)
-	dataType, _ := in.GetByte(reader + 5)
-	vbucketOrStatus, err := in.ReadUnsigned(reader+6, 2, buffer.BigEndian)
-	if err != nil {
-		return nil, err
-	}
-	bodyLength, err := in.ReadUnsigned(reader+8, 4, buffer.BigEndian)
-	if err != nil {
-		return nil, err
-	}
-	opaque, err := in.ReadUnsigned(reader+12, 4, buffer.BigEndian)
-	if err != nil {
-		return nil, err
-	}
-	cas, err := in.ReadUnsigned(reader+16, 8, buffer.BigEndian)
-	if err != nil {
-		return nil, err
-	}
-	totalLength := HeaderLength + int(bodyLength)
+	totalLength := HeaderLength + int(header.bodyLength)
 	if totalLength > d.maxFrameLength {
 		return nil, codec.ErrFrameTooLong
 	}
 	if in.ReadableBytes() < totalLength {
 		return nil, nil
 	}
-	keyLen := int(keyLength)
-	extrasLen := int(extrasLengthByte)
-	if extrasLen+keyLen > int(bodyLength) {
+	keyLen := int(header.keyLength)
+	extrasLen := int(header.extrasLength)
+	if extrasLen+keyLen > int(header.bodyLength) {
 		return nil, ErrInvalidFrame
 	}
 	frame := Frame{
-		Magic:    magic,
-		Opcode:   Opcode(opcodeByte),
-		DataType: dataType,
-		Opaque:   uint32(opaque),
-		CAS:      cas,
+		Magic:    header.magic,
+		Opcode:   Opcode(header.opcode),
+		DataType: header.dataType,
+		Opaque:   header.opaque,
+		CAS:      header.cas,
 	}
-	if magic == MagicResponse {
-		frame.Status = Status(vbucketOrStatus)
+	if header.magic == MagicResponse {
+		frame.Status = Status(header.vbucketOrStatus)
 	} else {
-		frame.VBucket = uint16(vbucketOrStatus)
+		frame.VBucket = header.vbucketOrStatus
 	}
 	bodyStart := reader + HeaderLength
 	frame.Extras, err = slicePart(in, bodyStart, extrasLen)
@@ -88,7 +68,7 @@ func (d *FrameDecoder) Decode(_ *channel.HandlerContext, in *buffer.CompositeByt
 		frame.Release()
 		return nil, err
 	}
-	valueLen := int(bodyLength) - extrasLen - keyLen
+	valueLen := int(header.bodyLength) - extrasLen - keyLen
 	frame.Value, err = slicePart(in, bodyStart+extrasLen+keyLen, valueLen)
 	if err != nil {
 		frame.Release()

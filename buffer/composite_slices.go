@@ -33,6 +33,14 @@ func (c *CompositeByteBuf) ReadableSlices(dst [][]byte) [][]byte {
 	return dst
 }
 
+// ReadableSpan 返回指定可读区间的连续底层视图；跨组件时返回 false。
+func (c *CompositeByteBuf) ReadableSpan(index int, length int) ([]byte, bool) {
+	if c.refs.Load() <= 0 || length < 0 || index < c.readerIndex || index > c.writerIndex-length {
+		return nil, false
+	}
+	return c.readableSpan(index, length)
+}
+
 func appendPartialReadableSlice(dst [][]byte, comp *component, from int, to int) [][]byte {
 	part, err := comp.buf.Slice(comp.buf.ReaderIndex()+from-comp.start, to-from)
 	if err != nil {

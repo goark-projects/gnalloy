@@ -134,6 +134,28 @@ func TestCompositeReadableSlicesPreservePartialViews(t *testing.T) {
 	c.Release()
 }
 
+func TestCompositeReadableSpan(t *testing.T) {
+	c := NewCompositeByteBuf()
+	c.Append(testBuffer("ping"))
+	c.Append(testBuffer("pong"))
+	defer c.Release()
+
+	span, ok := c.ReadableSpan(1, 2)
+	if !ok || string(span) != "in" {
+		t.Fatalf("span=%q ok=%v", span, ok)
+	}
+	if _, ok := c.ReadableSpan(3, 2); ok {
+		t.Fatal("cross-component span unexpectedly succeeded")
+	}
+	if err := c.SkipBytes(4); err != nil {
+		t.Fatal(err)
+	}
+	span, ok = c.ReadableSpan(4, 4)
+	if !ok || string(span) != "pong" {
+		t.Fatalf("span=%q ok=%v", span, ok)
+	}
+}
+
 func BenchmarkCompositeReadableSlicesFullComponents(b *testing.B) {
 	a := NewHeapBuffer(8)
 	c := NewCompositeByteBuf()

@@ -46,6 +46,40 @@ func TestFrameDecoderParsesBinaryRequestZeroCopyParts(t *testing.T) {
 	}
 }
 
+func TestFrameDecoderParsesFragmentedBinaryHeader(t *testing.T) {
+	decoder, err := NewFrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := []byte{
+		0x81, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x00, 0x08, 0x01, 0x02, 0x03, 0x04,
+		0x00, 0x00, 0x00, 0x00, 0xca, 0xfe, 0xba, 0xbe,
+		'k', 'e', 'y', 'v', 'a', 'l', 'u', 'e',
+	}
+	comp := buffer.NewCompositeByteBuf()
+	first := buffer.NewHeapBuffer(7)
+	_, _ = first.WriteBytes(wire[:7])
+	comp.Append(first)
+	second := buffer.NewHeapBuffer(len(wire) - 7)
+	_, _ = second.WriteBytes(wire[7:])
+	comp.Append(second)
+	defer comp.Release()
+
+	out, err := decoder.Decode(nil, comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := out.(Frame)
+	defer frame.Release()
+	if frame.Magic != MagicResponse || frame.Status != StatusKeyNotFound || frame.Opaque != 0x01020304 || frame.CAS != 0xcafebabe {
+		t.Fatalf("frame=%+v", frame)
+	}
+	if string(frame.Key.Bytes()) != "key" || string(frame.Value.Bytes()) != "value" {
+		t.Fatalf("key=%q value=%q", frame.Key.Bytes(), frame.Value.Bytes())
+	}
+}
+
 func TestFrameEncoderWritesHeaderAndBodyParts(t *testing.T) {
 	sink := &captureSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
