@@ -69,6 +69,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `CorsHandler` | `handler/cors` | done | 支持 HTTP/1 Origin 匹配、预检响应、credentials 安全 wildcard、允许方法/头、暴露头和 Max-Age。 |
 | `LoggingHandler` | `handler/logging` | done | 基于标准库 `slog`，记录生命周期、读写、flush、close 和异常事件，不接管消息所有权。 |
 | `FlushConsolidationHandler` | `handler/flush` | done | 读循环内合并 flush，支持阈值强制下发、无读循环延迟合并和 Future 完成传播。 |
+| `SslHandler` OCSP stapling | `handler/tls.OCSPConfig` | done | 支持要求 stapled OCSP 响应、握手后 `OCSPEvent`、自定义 validator 和证书 staple helper；在线 OCSP 查询仍由业务或扩展包控制，避免阻塞 I/O 热路径。 |
 | Netty 风格 pipeline initializer | `recipes` | done | 使用 per-channel handler factory 装配 ByteBuf echo、length-field、HTTP/1、HTTP/2、WebSocket、MQTT 和 HTTP/3 stream pipeline，避免复用有状态 codec。 |
 | `RuleBasedIpFilter` | `handler/ipfilter` | done | 支持有序 allow/deny 规则、CIDR、单 IP、UDP/raw typed message 和业务 RemoteIPProvider。 |
 | `PcapWriteHandler` | `handler/pcap` | done | 支持 Pipeline 级 libpcap 捕获，默认 LINKTYPE_USER0，不接管消息所有权。 |
@@ -144,7 +145,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | HTTP multipart 高级工具 | `codec/http1/multipart` done | 提供 Content-Type boundary 提取、受限流式解码、ByteBuf/Request 适配和 append-style form-data 编码；part 数量、头部、单 part 和总正文都有预算保护。 |
 | WebSocket extension compression | `codec/websocket/deflate` done | 支持 permessage-deflate 协商参数、RSV1 显式 decoder 配置、data message 压缩/解压、分片最终聚合、控制帧透传和解压膨胀预算。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
-| OCSP、OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
+| OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
 | true sendfile/splice 零拷贝文件传输 | `transport/zerocopy` done | Linux/macOS `sendfile` 和 Windows `TransmitFile` 可直接传输 `DefaultFileRegion` backed by `*os.File`；TCP `Unsafe` 出站默认接入该 writer，非原生 region 明确返回 unsupported，保留 `Copy` 与 `FileRegionEncoder` fallback。 |
 | SCTP、UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
 | in-VM local transport | defer | Go 里可用 memory backend 与嵌入式测试替代；无需复制 Netty 的 JVM 内本地传输模型。 |

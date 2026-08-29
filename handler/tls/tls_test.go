@@ -167,6 +167,128 @@ func TestServerConfigWithSNISelectsDomainConfig(t *testing.T) {
 	}
 }
 
+func TestHandlerEmitsStapledOCSPResponse(t *testing.T) {
+	staple := []byte{0x30, 0x03, 0x0a, 0x01, 0x00}
+	cert, err := CertificateWithOCSPStaple(testCertificate(t), staple)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientSink := &pipeSink{}
+	serverSink := &pipeSink{}
+	client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+	server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+	clientSink.peer = server.Pipeline()
+	serverSink.peer = client.Pipeline()
+
+	validatorCalled := false
+	clientRecv := &plainRecorder{}
+	serverEcho := &plainEcho{}
+	clientTLS := Client(Config{
+		OCSP: OCSPConfig{
+			RequireStaple: true,
+			EmitEvent:     true,
+			Validator: OCSPValidatorFunc(func(state cryptotls.ConnectionState, response []byte) error {
+				validatorCalled = true
+				if state.ServerName != "gnalloy.local" {
+					t.Fatalf("serverName=%q, want gnalloy.local", state.ServerName)
+				}
+				if !bytes.Equal(response, staple) {
+					t.Fatalf("ocsp=%x, want %x", response, staple)
+				}
+				return nil
+			}),
+		},
+		TLS: &cryptotls.Config{
+			ServerName:         "gnalloy.local",
+			InsecureSkipVerify: true,
+			NextProtos:         []string{"h2"},
+		},
+	})
+	serverTLS := Server(Config{
+		TLS: &cryptotls.Config{
+			Certificates: []cryptotls.Certificate{cert},
+			NextProtos:   []string{"h2"},
+		},
+	})
+	if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Pipeline().AddLast("recorder", clientRecv); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("echo", serverEcho); err != nil {
+		t.Fatal(err)
+	}
+
+	server.Pipeline().FireChannelActive()
+	client.Pipeline().FireChannelActive()
+	writePlain(t, client, "ocsp")
+
+	clientRecv.waitString(t, "ocsp")
+	if !validatorCalled {
+		t.Fatal("OCSP validator was not called")
+	}
+	if len(clientRecv.ocsp) != 1 {
+		t.Fatalf("ocsp events=%d, want 1", len(clientRecv.ocsp))
+	}
+	event := clientRecv.ocsp[0]
+	if !event.Stapled || !event.Validated || !bytes.Equal(event.Response, staple) {
+		t.Fatalf("ocsp event=%+v", event)
+	}
+	staple[0] = 0xff
+	if event.Response[0] == 0xff {
+		t.Fatal("OCSP event response aliases caller memory")
+	}
+}
+
+func TestHandlerRequiresOCSPStapleRejectsMissingResponse(t *testing.T) {
+	cert := testCertificate(t)
+	clientSink := &pipeSink{}
+	serverSink := &pipeSink{}
+	client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+	server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+	clientSink.peer = server.Pipeline()
+	serverSink.peer = client.Pipeline()
+
+	errorsSeen := &errorRecorder{ch: make(chan error, 4)}
+	clientTLS := Client(Config{
+		OCSP: OCSPConfig{RequireStaple: true},
+		TLS: &cryptotls.Config{
+			ServerName:         "gnalloy.local",
+			InsecureSkipVerify: true,
+		},
+	})
+	serverTLS := Server(Config{TLS: &cryptotls.Config{Certificates: []cryptotls.Certificate{cert}}})
+	if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Pipeline().AddLast("errors", errorsSeen); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("echo", plainEcho{}); err != nil {
+		t.Fatal(err)
+	}
+
+	server.Pipeline().FireChannelActive()
+	client.Pipeline().FireChannelActive()
+	writePlain(t, client, "ping")
+
+	select {
+	case err := <-errorsSeen.ch:
+		if !errors.Is(err, ErrOCSPStapleRequired) {
+			t.Fatalf("err=%v, want ErrOCSPStapleRequired", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for OCSP required error")
+	}
+}
+
 func TestHandlerVerifyPeerNameRejectsMismatchedCertificate(t *testing.T) {
 	cert := testCertificate(t)
 	clientSink := &pipeSink{}
@@ -251,6 +373,7 @@ func (s *pipeSink) Close() error { return nil }
 type plainRecorder struct {
 	buf      bytes.Buffer
 	protocol string
+	ocsp     []OCSPEvent
 }
 
 func (r *plainRecorder) ChannelRead(_ *channel.HandlerContext, msg any) {
@@ -263,8 +386,11 @@ func (r *plainRecorder) ChannelRead(_ *channel.HandlerContext, msg any) {
 }
 
 func (r *plainRecorder) UserEventTriggered(ctx *channel.HandlerContext, event any) {
-	if ev, ok := event.(HandshakeEvent); ok {
+	switch ev := event.(type) {
+	case HandshakeEvent:
 		r.protocol = ev.NegotiatedProtocol
+	case OCSPEvent:
+		r.ocsp = append(r.ocsp, ev)
 	}
 	ctx.FireUserEventTriggered(event)
 }

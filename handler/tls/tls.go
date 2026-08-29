@@ -30,6 +30,8 @@ type Config struct {
 	StartTLS bool
 	// VerifyPeerName 在握手完成后对对端证书执行主机名校验，空值表示不额外校验。
 	VerifyPeerName string
+	// OCSP 控制 stapled OCSP 响应的强制要求、校验和事件发射。
+	OCSP OCSPConfig
 	// BytePool 复用 TLS 中转切片；nil 时使用默认池化实现。
 	BytePool BytePool
 }
@@ -58,7 +60,7 @@ type Handler struct {
 	ready     chan struct{}
 	plain     chan byteChunk
 	app       chan byteChunk
-	events    chan HandshakeEvent
+	events    chan any
 	errs      chan error
 	notify    chan struct{}
 	bytePool  BytePool
@@ -84,7 +86,7 @@ func newHandler(mode Mode, cfg Config) *Handler {
 		ready:    make(chan struct{}),
 		plain:    make(chan byteChunk, 32),
 		app:      make(chan byteChunk, 32),
-		events:   make(chan HandshakeEvent, 4),
+		events:   make(chan any, 8),
 		errs:     make(chan error, 8),
 		notify:   make(chan struct{}, 1),
 		bytePool: normalizeBytePool(cfg.BytePool),
@@ -222,12 +224,20 @@ func (h *Handler) runHandshake() {
 			return
 		}
 	}
+	ocspEvent, emitOCSPEvent, err := h.cfg.OCSP.evaluate(state)
+	if err != nil {
+		h.sendErr(err)
+		return
+	}
 	h.events <- HandshakeEvent{
 		ServerName:         state.ServerName,
 		NegotiatedProtocol: state.NegotiatedProtocol,
 		DidResume:          state.DidResume,
 		CipherSuite:        state.CipherSuite,
 		Version:            state.Version,
+	}
+	if emitOCSPEvent {
+		h.events <- ocspEvent
 	}
 	close(h.ready)
 	h.notifyDrain()
@@ -322,9 +332,11 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 		select {
 		case event := <-h.events:
 			drained = true
-			h.handshake = true
+			if _, ok := event.(HandshakeEvent); ok {
+				h.handshake = true
+			}
 			ctx.FireUserEventTriggered(event)
-			if !h.active {
+			if h.handshake && !h.active {
 				h.active = true
 				ctx.FireChannelActive()
 			}
