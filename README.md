@@ -44,10 +44,11 @@ blocks:
   blocks, HTTP/3 control/QPACK stream pipelines, WebTransport SETTINGS and
   extended CONNECT helpers, Protobuf varint32 frames, MQTT frames, Redis RESP
   frames, WebSocket frames, and permessage-deflate extension compression.
-- `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`, and
-  `FileRegion` fallback encoding with optional native source metadata; the
-  `Unsafe` bridge normalizes readiness/completion events before they enter
-  business handlers.
+- `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`,
+  direct `FileRegion` outbound writes through a pluggable native writer, and
+  fallback chunk encoding with optional native source metadata; the `Unsafe`
+  bridge normalizes readiness/completion events before they enter business
+  handlers.
 - `channel/pool`: `SimplePool`, `FixedPool`, and `Map` Channel reuse
   primitives with explicit factory, health check, lifecycle callback, return,
   discard, timeout, and close semantics.
@@ -96,6 +97,7 @@ blocks:
 - `transport/tcp`: native TCP lifecycle backed by platform socket APIs:
   Linux `socket/bind/listen/accept4`, macOS/BSD `socket/bind/listen/accept`,
   and Windows `WSASocket/bind/listen` with IOCP `AcceptEx` request support.
+  TCP channels inject `transport/zerocopy` as the default `FileRegion` writer.
   Linux/macOS/BSD can enable `SO_REUSEPORT` to create one listen socket per
   Boss `EventLoop`.
 - `transport/udp`: native datagram transport with server endpoints, connected

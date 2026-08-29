@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"reflect"
 	"runtime"
 	"sync"
@@ -114,6 +115,28 @@ func TestNativeTCPRepeatedConnectClose(t *testing.T) {
 	recorder.waitCount(t, "inactive", clients)
 	if recorder.count("active") != clients || recorder.count("read") != clients {
 		t.Fatalf("events=%v", recorder.snapshot())
+	}
+}
+
+func TestTCPFileRegionWritesNativeFileToSocket(t *testing.T) {
+	skipUnsupportedTCPFileRegion(t)
+	path := writeTCPFileRegionSource(t, "0123456789abcdef")
+	server := startTCPServer(t, func(ch channel.Channel) error {
+		return ch.Pipeline().AddLast("file-region", &fileRegionOnActiveHandler{
+			path:   path,
+			offset: 3,
+			count:  8,
+		})
+	})
+
+	conn := dialTCP(t, server.Addr())
+	defer conn.Close()
+	got := make([]byte, 8)
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "3456789a" {
+		t.Fatalf("file region=%q, want 3456789a", got)
 	}
 }
 
@@ -746,12 +769,68 @@ func skipUnsupportedReusePort(t *testing.T) {
 	}
 }
 
+func skipUnsupportedTCPFileRegion(t *testing.T) {
+	t.Helper()
+	switch runtime.GOOS {
+	case "linux", "darwin", "windows":
+	default:
+		t.Skipf("native tcp file region is unsupported on %s", runtime.GOOS)
+	}
+}
+
+func writeTCPFileRegionSource(t *testing.T, data string) string {
+	t.Helper()
+	file, err := os.CreateTemp(t.TempDir(), "file-region-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(data); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return file.Name()
+}
+
 type discardHandler struct{}
 
 func (discardHandler) ChannelRead(_ *channel.HandlerContext, msg any) {
 	if buf, ok := msg.(buffer.ByteBuf); ok {
 		buf.Release()
 	}
+}
+
+type fileRegionOnActiveHandler struct {
+	path   string
+	offset int64
+	count  int64
+}
+
+func (h *fileRegionOnActiveHandler) ChannelActive(ctx *channel.HandlerContext) {
+	file, err := os.Open(h.path)
+	if err != nil {
+		ctx.FireExceptionCaught(err)
+		return
+	}
+	region, err := channel.NewFileRegion(file, h.offset, h.count)
+	if err != nil {
+		_ = file.Close()
+		ctx.FireExceptionCaught(err)
+		return
+	}
+	future := ctx.WriteFuture(region)
+	future.AddListener(func(done channel.Future) {
+		_ = file.Close()
+		if done.Err() != nil {
+			ctx.FireExceptionCaught(done.Err())
+		}
+	})
+	if err := ctx.Flush(); err != nil {
+		ctx.FireExceptionCaught(err)
+	}
+	ctx.FireChannelActive()
 }
 
 type countingAllocator struct {

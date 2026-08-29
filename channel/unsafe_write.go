@@ -7,61 +7,55 @@ import (
 
 func (u *Unsafe) Write(msg any) error {
 	if u.closed.Load() {
-		if buf, ok := msg.(buffer.ByteBuf); ok {
-			buf.Release()
-		}
+		releaseWriteMessage(msg)
 		return ErrPromiseFailed
 	}
-	buf, ok := msg.(buffer.ByteBuf)
-	if !ok {
-		return ErrInvalidMessage
+	out, err := u.prepareOutboundMessage(msg)
+	if err != nil {
+		return err
 	}
-	if buf.ReadableBytes() == 0 {
-		buf.Release()
+	if out.bytes == 0 {
+		out.release()
 		return nil
 	}
-	u.enqueueOutbound(buf, nil)
+	u.enqueueOutboundMessage(out, nil)
 	return nil
 }
 
 func (u *Unsafe) WriteAndFlush(msg any) error {
 	if u.closed.Load() {
-		if buf, ok := msg.(buffer.ByteBuf); ok {
-			buf.Release()
-		}
+		releaseWriteMessage(msg)
 		return ErrPromiseFailed
 	}
-	buf, ok := msg.(buffer.ByteBuf)
-	if !ok {
-		return ErrInvalidMessage
+	out, err := u.prepareOutboundMessage(msg)
+	if err != nil {
+		return err
 	}
-	if buf.ReadableBytes() == 0 {
-		buf.Release()
+	if out.bytes == 0 {
+		out.release()
 		u.ch.Pipeline().FireFlushComplete()
 		return nil
 	}
-	u.enqueueOutbound(buf, nil)
+	u.enqueueOutboundMessage(out, nil)
 	return u.flushOutbound()
 }
 
 func (u *Unsafe) WriteFuture(msg any) Future {
 	if u.closed.Load() {
-		if buf, ok := msg.(buffer.ByteBuf); ok {
-			buf.Release()
-		}
+		releaseWriteMessage(msg)
 		return FailedFuture(ErrPromiseFailed)
 	}
-	buf, ok := msg.(buffer.ByteBuf)
-	if !ok {
-		return FailedFuture(ErrInvalidMessage)
+	out, err := u.prepareOutboundMessage(msg)
+	if err != nil {
+		return FailedFuture(err)
 	}
 	promise := u.newPromise()
-	if buf.ReadableBytes() == 0 {
-		buf.Release()
+	if out.bytes == 0 {
+		out.release()
 		promise.SetSuccess()
 		return promise
 	}
-	u.enqueueOutbound(buf, promise)
+	u.enqueueOutboundMessage(out, promise)
 	return promise
 }
 
@@ -98,15 +92,15 @@ func (u *Unsafe) flushOutbound() error {
 			u.deferredFlush = true
 			return nil
 		}
+		if u.hasFileRegionHead() {
+			return u.flushReady()
+		}
 		return u.submitWrite()
 	}
 	return u.flushReady()
 }
 
 func (u *Unsafe) flushReady() error {
-	if u.rw == nil {
-		return ErrNoOutboundSink
-	}
 	spinCount := u.maxWriteSpinCount()
 	for spins := 0; u.outHead != nil && spins < spinCount; spins++ {
 		n, again, err := u.writeReadyBatch()
@@ -126,22 +120,31 @@ func (u *Unsafe) flushReady() error {
 	return u.disableWriteInterest()
 }
 
-func (u *Unsafe) writeReadyBatch() (int, bool, error) {
+func (u *Unsafe) writeReadyBatch() (int64, bool, error) {
+	if u.outHead.region != nil {
+		return u.writeFileRegion(u.outHead.region)
+	}
+	if u.rw == nil {
+		return 0, false, ErrNoOutboundSink
+	}
 	if u.outHead.next == nil {
 		buf := u.outHead.buf
 		if _, ok := buf.(*buffer.DirectByteBuf); ok {
-			return u.rw.Write(u.fd, readableWriteBytes(buf))
+			n, again, err := u.rw.Write(u.fd, readableWriteBytes(buf))
+			return int64(n), again, err
 		}
 	}
 	if vector := u.vectorWriter; vector != nil {
 		u.writeSlices = u.writeSlices[:0]
 		u.collectOutboundSlices(maxGatheringBuffers)
 		if len(u.writeSlices) > 1 {
-			return vector.Writev(u.fd, u.writeSlices)
+			n, again, err := vector.Writev(u.fd, u.writeSlices)
+			return int64(n), again, err
 		}
 	}
 	buf := u.outHead.buf
-	return u.rw.Write(u.fd, readableWriteBytes(buf))
+	n, again, err := u.rw.Write(u.fd, readableWriteBytes(buf))
+	return int64(n), again, err
 }
 
 func readableWriteBytes(buf buffer.ByteBuf) []byte {
@@ -186,23 +189,28 @@ func (u *Unsafe) prepareWriteRequest() (transport.IORequest, bool) {
 	return req, true
 }
 
-func (u *Unsafe) completeWrite(n int) {
+func (u *Unsafe) completeWrite(n int64) {
 	if u.outHead == nil {
 		return
 	}
 	for n > 0 && u.outHead != nil {
+		if u.outHead.region != nil {
+			u.completeFileRegionWrite(n)
+			n = 0
+			continue
+		}
 		buf := u.outHead.buf
 		readable := buf.ReadableBytes()
 		if readable == 0 {
 			u.dequeueOutbound()
 			continue
 		}
-		consume := n
-		if consume > readable {
-			consume = readable
+		consume := int64(readable)
+		if n < consume {
+			consume = n
 		}
-		_ = buf.SkipBytes(consume)
-		u.outboundBytes.Add(-int64(consume))
+		_ = buf.SkipBytes(int(consume))
+		u.outboundBytes.Add(-consume)
 		n -= consume
 		if buf.ReadableBytes() == 0 {
 			u.dequeueOutbound()
@@ -213,6 +221,51 @@ func (u *Unsafe) completeWrite(n int) {
 		u.completeFlushWaiters(nil)
 		u.ch.Pipeline().FireFlushComplete()
 	}
+}
+
+func (u *Unsafe) prepareOutboundMessage(msg any) (outboundMessage, error) {
+	out, err := newOutboundMessage(msg)
+	if err != nil {
+		return outboundMessage{}, err
+	}
+	if out.bytes == 0 || out.region == nil {
+		return out, nil
+	}
+	if u.fileRegionWriter == nil {
+		return outboundMessage{}, ErrNoOutboundSink
+	}
+	return out, nil
+}
+
+func (u *Unsafe) writeFileRegion(region FileRegion) (int64, bool, error) {
+	if u.fileRegionWriter == nil {
+		return 0, false, ErrNoOutboundSink
+	}
+	before := region.Transferred()
+	remaining := region.Count() - before
+	n, again, err := u.fileRegionWriter.WriteFileRegion(u.fd, region)
+	if n < 0 || n > remaining {
+		return 0, false, ErrInvalidFileRegion
+	}
+	if delta := region.Transferred() - before; delta != n {
+		return 0, false, ErrInvalidFileRegion
+	}
+	return n, again, err
+}
+
+func (u *Unsafe) completeFileRegionWrite(n int64) {
+	u.outboundBytes.Add(-n)
+	region := u.outHead.region
+	if region == nil {
+		return
+	}
+	if region.Transferred() >= region.Count() {
+		u.dequeueOutbound()
+	}
+}
+
+func (u *Unsafe) hasFileRegionHead() bool {
+	return u.outHead != nil && u.outHead.region != nil
 }
 
 func (u *Unsafe) maxWriteSpinCount() int {

@@ -125,7 +125,7 @@ func (u *Unsafe) handleCompletion(ev transport.PollEvent) {
 			u.fail(ev.Err)
 			return
 		}
-		u.completeWrite(ev.N)
+		u.completeWrite(int64(ev.N))
 		if !u.closed.Load() {
 			if err := u.flushOutbound(); err != nil {
 				u.fail(err)

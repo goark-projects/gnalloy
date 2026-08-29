@@ -1,9 +1,6 @@
 package channel
 
-import (
-	"goark.dev/gnalloy/buffer"
-	"goark.dev/gnalloy/transport"
-)
+import "goark.dev/gnalloy/transport"
 
 func (u *Unsafe) collectOutboundBatch() {
 	u.writeBatch = u.writeBatch[:0]
@@ -12,7 +9,10 @@ func (u *Unsafe) collectOutboundBatch() {
 		limit = 1
 	}
 	for e := u.outHead; e != nil && len(u.writeBatch) < limit; e = e.next {
-		if e.buf.ReadableBytes() == 0 {
+		if e.region != nil {
+			break
+		}
+		if e.buf == nil || e.buf.ReadableBytes() == 0 {
 			continue
 		}
 		u.writeBatch = append(u.writeBatch, e.buf)
@@ -21,7 +21,10 @@ func (u *Unsafe) collectOutboundBatch() {
 
 func (u *Unsafe) collectOutboundSlices(limit int) {
 	for e := u.outHead; e != nil && len(u.writeSlices) < limit; e = e.next {
-		if e.buf.ReadableBytes() == 0 {
+		if e.region != nil {
+			break
+		}
+		if e.buf == nil || e.buf.ReadableBytes() == 0 {
 			continue
 		}
 		before := len(u.writeSlices)
@@ -36,8 +39,8 @@ func (u *Unsafe) collectOutboundSlices(limit int) {
 	}
 }
 
-func (u *Unsafe) enqueueOutbound(buf buffer.ByteBuf, promise Promise) {
-	e := u.acquireOutboundEntry(buf, promise)
+func (u *Unsafe) enqueueOutboundMessage(msg outboundMessage, promise Promise) {
+	e := u.acquireOutboundEntry(msg, promise)
 	if u.outTail == nil {
 		u.outHead = e
 		u.outTail = e
@@ -45,7 +48,7 @@ func (u *Unsafe) enqueueOutbound(buf buffer.ByteBuf, promise Promise) {
 		u.outTail.next = e
 		u.outTail = e
 	}
-	u.outboundBytes.Add(int64(buf.ReadableBytes()))
+	u.outboundBytes.Add(msg.bytes)
 	u.updateWritability()
 }
 
@@ -58,7 +61,7 @@ func (u *Unsafe) dequeueOutbound() {
 	if u.outHead == nil {
 		u.outTail = nil
 	}
-	e.buf.Release()
+	e.releaseMessage()
 	if e.promise != nil {
 		e.promise.SetSuccess()
 	}
@@ -66,13 +69,14 @@ func (u *Unsafe) dequeueOutbound() {
 	u.updateWritability()
 }
 
-func (u *Unsafe) acquireOutboundEntry(buf buffer.ByteBuf, promise Promise) *outboundEntry {
+func (u *Unsafe) acquireOutboundEntry(msg outboundMessage, promise Promise) *outboundEntry {
 	if u.outFree == nil {
-		return &outboundEntry{buf: buf, promise: promise}
+		return &outboundEntry{buf: msg.buf, region: msg.region, promise: promise}
 	}
 	e := u.outFree
 	u.outFree = e.next
-	e.buf = buf
+	e.buf = msg.buf
+	e.region = msg.region
 	e.promise = promise
 	e.next = nil
 	return e
@@ -80,6 +84,7 @@ func (u *Unsafe) acquireOutboundEntry(buf buffer.ByteBuf, promise Promise) *outb
 
 func (u *Unsafe) releaseOutboundEntry(e *outboundEntry) {
 	e.buf = nil
+	e.region = nil
 	e.promise = nil
 	e.next = u.outFree
 	u.outFree = e
@@ -131,7 +136,7 @@ func (u *Unsafe) releaseOutbound() {
 		if u.outHead == nil {
 			u.outTail = nil
 		}
-		e.buf.Release()
+		e.releaseMessage()
 		if e.promise != nil {
 			e.promise.SetFailure(ErrPromiseFailed)
 		}
@@ -143,5 +148,14 @@ func (u *Unsafe) releaseOutbound() {
 		e := u.outFree
 		u.outFree = e.next
 		e.next = nil
+	}
+}
+
+func (e *outboundEntry) releaseMessage() {
+	if e.buf != nil {
+		e.buf.Release()
+	}
+	if e.region != nil {
+		_ = e.region.Close()
 	}
 }

@@ -105,6 +105,11 @@ func (r *DefaultFileRegion) Close() error {
 	return nil
 }
 
+// Release 兼容通用消息释放路径。
+func (r *DefaultFileRegion) Release() bool {
+	return r.Close() == nil
+}
+
 // FileRegionEncoder 是 sendfile 不可用时的跨平台 fallback。
 type FileRegionEncoder struct {
 	chunkSize int

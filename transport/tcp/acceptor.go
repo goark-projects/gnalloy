@@ -100,6 +100,7 @@ func (a *acceptor) acceptChild(fd transport.FDRef) {
 		Allocator:            alloc,
 		Poller:               worker.Poller(),
 		ReadWriter:           newNativeReadWriter(),
+		FileRegionWriter:     newFileRegionWriter(),
 		CloseHook:            a.closeChildHook(worker),
 		ReadBufferSize:       a.server.options.readBufferSize,
 		WriteBufferWatermark: a.server.options.writeBufferWatermark,

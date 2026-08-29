@@ -2,6 +2,7 @@ package channel
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
@@ -105,5 +106,32 @@ func TestLocalChannelWriteFutureReleasesMessageWhenOwnerLoopRejectsTask(t *testi
 	}
 	if buf.RefCnt() != 0 {
 		t.Fatalf("ref=%d, want released buffer", buf.RefCnt())
+	}
+}
+
+func TestLocalChannelWriteFutureReleasesFileRegionWhenOwnerLoopRejectsTask(t *testing.T) {
+	poller := memory.New()
+	loop, err := transport.NewEventLoop(transport.EventLoopConfig{ID: 1, Poller: poller, StartMillis: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &ownerLoopSink{id: 9, fd: transport.FDRef{FD: 99}}
+	ch := NewLocalChannelWithTimer(sink.id, buffer.NewHeapAllocator(), sink, loop.Timer())
+	sink.ch = ch
+	ch.BindEventExecutor(loop)
+	if err := loop.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	region, err := NewFileRegion(strings.NewReader("payload"), 0, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	future := ch.WriteFuture(region)
+	if !errors.Is(future.Err(), transport.ErrEventLoopClosed) {
+		t.Fatalf("err=%v, want %v", future.Err(), transport.ErrEventLoopClosed)
+	}
+	if _, err := region.Read(make([]byte, 1)); !errors.Is(err, ErrFileRegionClosed) {
+		t.Fatalf("err=%v, want closed region", err)
 	}
 }

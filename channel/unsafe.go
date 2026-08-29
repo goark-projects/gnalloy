@@ -34,6 +34,7 @@ type UnsafeConfig struct {
 	Allocator            buffer.Allocator
 	Poller               transport.Poller
 	ReadWriter           FDReadWriter
+	FileRegionWriter     FileRegionWriter
 	CloseHook            func(*Unsafe)
 	ReadBufferSize       int
 	WriteBufferWatermark transport.WriteBufferWatermark
@@ -45,16 +46,17 @@ type UnsafeConfig struct {
 
 // Unsafe 是底层 I/O 事件与业务 Pipeline 的分界线。
 type Unsafe struct {
-	ch             *LocalChannel
-	fd             transport.FDRef
-	poller         transport.Poller
-	rw             FDReadWriter
-	closeHook      func(*Unsafe)
-	readBufferSize int
-	fixedBuffers   bool
-	registered     atomic.Bool
-	closed         atomic.Bool
-	inactiveFired  atomic.Bool
+	ch               *LocalChannel
+	fd               transport.FDRef
+	poller           transport.Poller
+	rw               FDReadWriter
+	fileRegionWriter FileRegionWriter
+	closeHook        func(*Unsafe)
+	readBufferSize   int
+	fixedBuffers     bool
+	registered       atomic.Bool
+	closed           atomic.Bool
+	inactiveFired    atomic.Bool
 
 	outHead       *outboundEntry
 	outTail       *outboundEntry
@@ -82,6 +84,7 @@ type Unsafe struct {
 
 type outboundEntry struct {
 	buf     buffer.ByteBuf
+	region  FileRegion
 	promise Promise
 	next    *outboundEntry
 }
@@ -100,6 +103,7 @@ func NewUnsafeChannel(cfg UnsafeConfig) (*LocalChannel, *Unsafe) {
 		fd:                 cfg.FD,
 		poller:             cfg.Poller,
 		rw:                 cfg.ReadWriter,
+		fileRegionWriter:   cfg.FileRegionWriter,
 		closeHook:          cfg.CloseHook,
 		readBufferSize:     readBufferSize,
 		fixedBuffers:       cfg.FixedBuffers,

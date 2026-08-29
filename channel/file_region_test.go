@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"strings"
@@ -128,6 +129,37 @@ func TestFileRegionEncoderIgnoresEmptyRegion(t *testing.T) {
 	}
 }
 
+func BenchmarkFileRegionEncoderChunks(b *testing.B) {
+	payload := bytes.Repeat([]byte("0123456789abcdef"), 4096)
+	encoder, err := NewFileRegionEncoder(32 << 10)
+	if err != nil {
+		b.Fatal(err)
+	}
+	sink := &benchmarkFileRegionSink{}
+	ch := NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("file", encoder); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		region, err := NewFileRegion(bytes.NewReader(payload), 0, int64(len(payload)))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := ch.Write(region); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.StopTimer()
+
+	want := int64(len(payload)) * int64(b.N)
+	if sink.bytes != want {
+		b.Fatalf("bytes=%d, want %d", sink.bytes, want)
+	}
+}
+
 type fileRegionSink struct {
 	writes []buffer.ByteBuf
 }
@@ -163,4 +195,26 @@ func (s *fileRegionSink) release() {
 			buf.Release()
 		}
 	}
+}
+
+type benchmarkFileRegionSink struct {
+	bytes int64
+}
+
+func (s *benchmarkFileRegionSink) Write(msg any) error {
+	buf, ok := msg.(buffer.ByteBuf)
+	if !ok {
+		return ErrInvalidMessage
+	}
+	s.bytes += int64(buf.ReadableBytes())
+	buf.Release()
+	return nil
+}
+
+func (s *benchmarkFileRegionSink) Flush() error {
+	return nil
+}
+
+func (s *benchmarkFileRegionSink) Close() error {
+	return nil
 }

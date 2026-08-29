@@ -1,6 +1,8 @@
 package channel
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"goark.dev/gnalloy/buffer"
@@ -118,6 +120,12 @@ type writeStep struct {
 	again bool
 }
 
+type fileRegionWriteStep struct {
+	n     int64
+	again bool
+	err   error
+}
+
 type partialWriteRW struct {
 	steps  []writeStep
 	writes []string
@@ -205,6 +213,51 @@ func (rw *vectorWriteRW) Writev(_ transport.FDRef, src [][]byte) (int, bool, err
 
 func (rw *vectorWriteRW) Close(transport.FDRef) error {
 	return nil
+}
+
+type recordingFileRegionWriter struct {
+	steps   []fileRegionWriteStep
+	calls   int
+	fd      transport.FDRef
+	bytes   int64
+	regions []FileRegion
+}
+
+type advancingFileRegion interface {
+	Advance(int64) error
+}
+
+func (w *recordingFileRegionWriter) WriteFileRegion(fd transport.FDRef, region FileRegion) (int64, bool, error) {
+	w.calls++
+	w.fd = fd
+	w.regions = append(w.regions, region)
+	if len(w.steps) == 0 {
+		n := region.Count() - region.Transferred()
+		if n > 0 {
+			if err := advanceFileRegion(region, n); err != nil {
+				return 0, false, err
+			}
+			w.bytes += n
+		}
+		return n, false, nil
+	}
+	step := w.steps[0]
+	w.steps = w.steps[1:]
+	if step.n > 0 {
+		if err := advanceFileRegion(region, step.n); err != nil {
+			return 0, false, err
+		}
+		w.bytes += step.n
+	}
+	return step.n, step.again, step.err
+}
+
+func advanceFileRegion(region FileRegion, n int64) error {
+	advancing, ok := region.(advancingFileRegion)
+	if !ok {
+		return ErrInvalidFileRegion
+	}
+	return advancing.Advance(n)
 }
 
 type writabilityRecorder struct {
@@ -354,6 +407,98 @@ func TestUnsafeWriteAndFlushUseNoPromiseFastPath(t *testing.T) {
 	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
 	if buf.RefCnt() != 0 || ch.PendingOutboundBytes() != 0 {
 		t.Fatalf("ref=%d pending=%d, want drained", buf.RefCnt(), ch.PendingOutboundBytes())
+	}
+}
+
+func TestUnsafeWriteAndFlushFileRegionUsesFileRegionWriter(t *testing.T) {
+	writer := &recordingFileRegionWriter{}
+	ch, _ := NewUnsafeChannel(UnsafeConfig{
+		ID:               1,
+		FD:               transport.FDRef{FD: 7},
+		Allocator:        buffer.NewHeapAllocator(),
+		Poller:           &fakeReadyPoller{},
+		FileRegionWriter: writer,
+	})
+	recorder := &flushCompleteRecorder{}
+	if err := ch.Pipeline().AddLast("flush", recorder); err != nil {
+		t.Fatal(err)
+	}
+	region, err := NewFileRegion(strings.NewReader("abcdefgh"), 0, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ch.WriteAndFlush(region); err != nil {
+		t.Fatal(err)
+	}
+	if writer.calls != 1 || writer.fd.FD != 7 || writer.bytes != 8 {
+		t.Fatalf("writer calls=%d fd=%d bytes=%d, want 1/7/8", writer.calls, writer.fd.FD, writer.bytes)
+	}
+	if ch.PendingOutboundBytes() != 0 {
+		t.Fatalf("pending outbound bytes=%d, want 0", ch.PendingOutboundBytes())
+	}
+	if region.Transferred() != 8 {
+		t.Fatalf("transferred=%d, want 8", region.Transferred())
+	}
+	if _, err := region.Read(make([]byte, 1)); !errors.Is(err, ErrFileRegionClosed) {
+		t.Fatalf("err=%v, want closed region", err)
+	}
+	if recorder.count != 1 {
+		t.Fatalf("flush complete count=%d, want 1", recorder.count)
+	}
+}
+
+func TestUnsafeFileRegionPartialWriteKeepsFuturePendingUntilDrain(t *testing.T) {
+	poller := &fakeReadyPoller{}
+	writer := &recordingFileRegionWriter{
+		steps: []fileRegionWriteStep{{n: 3, again: true}, {n: 5}},
+	}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:                 1,
+		FD:                 transport.FDRef{FD: 9},
+		Allocator:          buffer.NewHeapAllocator(),
+		Poller:             poller,
+		FileRegionWriter:   writer,
+		WriteHighWatermark: 8,
+		WriteLowWatermark:  1,
+	})
+	region, err := NewFileRegion(strings.NewReader("abcdefgh"), 0, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	future := ch.WriteFuture(region)
+	if future.IsDone() {
+		t.Fatal("write future completed before flush")
+	}
+	if err := ch.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if future.IsDone() {
+		t.Fatal("write future completed before region drained")
+	}
+	if got := ch.PendingOutboundBytes(); got != 5 {
+		t.Fatalf("pending outbound bytes=%d, want 5", got)
+	}
+	if len(poller.modified) != 1 || poller.modified[0] != transport.ReadyRead|transport.ReadyWrite {
+		t.Fatalf("modified=%v, want write interest", poller.modified)
+	}
+
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
+	if !future.IsSuccess() {
+		t.Fatalf("future success=%v err=%v", future.IsSuccess(), future.Err())
+	}
+	if ch.PendingOutboundBytes() != 0 {
+		t.Fatalf("pending outbound bytes=%d, want 0", ch.PendingOutboundBytes())
+	}
+	if region.Transferred() != 8 {
+		t.Fatalf("transferred=%d, want 8", region.Transferred())
+	}
+	if len(poller.modified) != 2 || poller.modified[1] != transport.ReadyRead {
+		t.Fatalf("modified=%v, want write interest cleared", poller.modified)
+	}
+	if _, err := region.Read(make([]byte, 1)); !errors.Is(err, ErrFileRegionClosed) {
+		t.Fatalf("err=%v, want closed region", err)
 	}
 }
 

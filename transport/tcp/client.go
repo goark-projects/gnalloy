@@ -45,6 +45,7 @@ func (t *Transport) Dial(ctx context.Context, cfg bootstrap.ClientConfig) (chann
 		Allocator:            alloc,
 		Poller:               loop.Poller(),
 		ReadWriter:           newNativeReadWriter(),
+		FileRegionWriter:     newFileRegionWriter(),
 		ReadBufferSize:       opts.readBufferSize,
 		WriteBufferWatermark: opts.writeBufferWatermark,
 		Timer:                loop.Timer(),

@@ -6,14 +6,20 @@ func (u *Unsafe) submitAfterReadCompletion() error {
 	flush := u.deferredFlush
 	u.deferredFlush = false
 	read := u.AutoRead()
-	if flush && read && !u.readPending {
+	if flush && read && !u.readPending && !u.hasFileRegionHead() {
 		if batcher, ok := u.poller.(transport.BatchSubmitter); ok {
 			return u.submitWriteAndReadBatch(batcher)
 		}
 	}
 	if flush {
-		if err := u.submitWrite(); err != nil {
-			return err
+		if u.hasFileRegionHead() {
+			if err := u.flushReady(); err != nil {
+				return err
+			}
+		} else {
+			if err := u.submitWrite(); err != nil {
+				return err
+			}
 		}
 	}
 	if read {
