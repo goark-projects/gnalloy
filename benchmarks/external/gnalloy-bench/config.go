@@ -101,7 +101,9 @@ func (c *config) resolve() error {
 }
 
 func (c config) validate() error {
-	if strings.TrimSpace(c.Protocol) != "tcp-echo" {
+	switch strings.TrimSpace(c.Protocol) {
+	case "tcp-echo", "http1":
+	default:
 		return fmt.Errorf("%w: %s", errUnsupportedProtocol, c.Protocol)
 	}
 	if strings.TrimSpace(c.Addr) == "" {

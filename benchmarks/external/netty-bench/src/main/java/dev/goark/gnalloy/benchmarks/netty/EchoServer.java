@@ -7,6 +7,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.codec.http.HttpServerCodec;
 
 import java.net.InetSocketAddress;
 
@@ -31,6 +32,11 @@ final class EchoServer implements AutoCloseable {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) {
+                            if ("http1".equals(config.protocol())) {
+                                ch.pipeline().addLast(new HttpServerCodec());
+                                ch.pipeline().addLast(new Http1ServerHandler(config.payload()));
+                                return;
+                            }
                             ch.pipeline().addLast(new EchoHandler());
                         }
                     });

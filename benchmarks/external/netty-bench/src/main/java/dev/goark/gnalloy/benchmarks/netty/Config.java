@@ -35,7 +35,7 @@ record Config(
     }
 
     void validate() {
-        if (!Objects.equals(protocol, "tcp-echo")) {
+        if (!Objects.equals(protocol, "tcp-echo") && !Objects.equals(protocol, "http1")) {
             throw new IllegalArgumentException("netty-bench: unsupported protocol " + protocol);
         }
         if (backend == null) {

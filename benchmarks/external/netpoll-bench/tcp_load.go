@@ -9,86 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"goark.dev/gnalloy/benchmarks/external/internal/benchhttp"
 )
-
-type benchResult struct {
-	TotalRequests int64
-	Errors        int64
-	Elapsed       time.Duration
-	Throughput    float64
-	NsPerOp       float64
-	Protocol      string
-	Latency       latencySummary
-	Resources     resourceDelta
-}
-
-func runBenchmark(parent context.Context, cfg config) (benchResult, error) {
-	if err := (&cfg).resolve(); err != nil {
-		return benchResult{}, err
-	}
-	if parent == nil {
-		parent = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(parent, cfg.Timeout)
-	defer cancel()
-
-	switch cfg.Protocol {
-	case "http1":
-		return runHTTP1Benchmark(ctx, cfg)
-	}
-	server, err := startEchoServer(ctx, cfg)
-	if err != nil {
-		return benchResult{}, err
-	}
-	defer server.stop()
-
-	resourcesBefore := captureResourceSnapshot()
-	result, err := runTCPEchoLoad(ctx, server.addr, cfg)
-	result.Resources = resourceDeltaSince(resourcesBefore, captureResourceSnapshot())
-	if err != nil {
-		return result, err
-	}
-	return result, nil
-}
-
-func runHTTP1Benchmark(ctx context.Context, cfg config) (benchResult, error) {
-	server, err := startHTTP1Server(ctx, cfg)
-	if err != nil {
-		return benchResult{}, err
-	}
-	defer server.stop()
-
-	resourcesBefore := captureResourceSnapshot()
-	result, err := benchhttp.RunLoad(ctx, benchhttp.Config{
-		Addr:              server.addr,
-		Payload:           cfg.Payload,
-		Connections:       cfg.Connections,
-		Messages:          cfg.Messages,
-		Timeout:           cfg.Timeout,
-		LatencySampleRate: cfg.LatencySampleRate,
-		WarmupMessages:    cfg.WarmupMessages,
-	})
-	out := benchResult{
-		TotalRequests: result.TotalRequests,
-		Errors:        result.Errors,
-		Elapsed:       result.Elapsed,
-		Throughput:    result.Throughput,
-		NsPerOp:       result.NsPerOp,
-		Protocol:      result.NegotiatedProtocol,
-		Latency: latencySummary{
-			Samples: result.Latency.Samples,
-			P50:     result.Latency.P50,
-			P95:     result.Latency.P95,
-			P99:     result.Latency.P99,
-			P999:    result.Latency.P999,
-			Max:     result.Latency.Max,
-		},
-		Resources: resourceDeltaSince(resourcesBefore, captureResourceSnapshot()),
-	}
-	return out, err
-}
 
 func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResult, error) {
 	ctx, cancel := context.WithCancel(parent)
@@ -167,7 +88,7 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 	}
 	expected := int64(cfg.Connections * cfg.Messages)
 	if total != expected {
-		return result, fmt.Errorf("gnalloy-bench: completed %d requests, want %d", total, expected)
+		return result, fmt.Errorf("netpoll-bench: completed %d requests, want %d", total, expected)
 	}
 	return result, nil
 }
@@ -279,48 +200,13 @@ func runClientMessages(ctx context.Context, client tcpClient, cfg config, client
 			return err
 		}
 		if !bytes.Equal(client.reply, client.payload) {
-			return fmt.Errorf("gnalloy-bench: echo mismatch")
+			return fmt.Errorf("netpoll-bench: echo mismatch")
 		}
 		if recordLatency && latencySamples != nil {
 			*latencySamples = append(*latencySamples, elapsedLatencyNanos(requestStarted))
 		}
 		if successes != nil {
 			successes.Add(1)
-		}
-	}
-	return nil
-}
-
-func estimateLatencySampleCount(connections int, messages int, rate int) int {
-	if connections <= 0 || messages <= 0 || rate <= 0 {
-		return 0
-	}
-	perConnection := messages / rate
-	if messages%rate != 0 {
-		perConnection++
-	}
-	return connections * perConnection
-}
-
-func makePayload(size int, clientID int) []byte {
-	payload := make([]byte, size)
-	for i := range payload {
-		payload[i] = byte(clientID + i)
-	}
-	return payload
-}
-
-func writeAll(w io.Writer, src []byte) error {
-	for len(src) > 0 {
-		n, err := w.Write(src)
-		if n > 0 {
-			src = src[n:]
-		}
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return io.ErrShortWrite
 		}
 	}
 	return nil

@@ -108,6 +108,32 @@ func TestRunBenchmarkTCPEcho(t *testing.T) {
 	}
 }
 
+func TestRunBenchmarkHTTP1(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("CloudWeGo netpoll v0.7.5 在 Windows 上游为空实现")
+	}
+	cfg := config{
+		Protocol:          "http1",
+		Addr:              "127.0.0.1:0",
+		Payload:           16,
+		Connections:       1,
+		Messages:          2,
+		Timeout:           5 * time.Second,
+		LatencySampleRate: 1,
+		WarmupMessages:    1,
+	}
+	result, err := runBenchmark(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalRequests != 2 || result.Errors != 0 || result.NsPerOp <= 0 {
+		t.Fatalf("result=%+v", result)
+	}
+	if result.Latency.Samples != 2 || result.Latency.P50 <= 0 || result.Resources.Goroutines <= 0 {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
 func TestRunBenchmarkReportsUnsupportedPlatform(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("仅校验 Windows 上游空实现保护")

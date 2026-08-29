@@ -7,8 +7,6 @@ import (
 	"os"
 )
 
-const benchmarkName = "BenchmarkGnalloyTCPEcho"
-
 func main() {
 	if err := runCLI(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -26,4 +24,13 @@ func runCLI(args []string, stdout io.Writer) error {
 		writeBenchmarkResult(stdout, cfg, result)
 	}
 	return err
+}
+
+func benchmarkName(protocol string) string {
+	switch protocol {
+	case "http1":
+		return "BenchmarkGnalloyHTTP1"
+	default:
+		return "BenchmarkGnalloyTCPEcho"
+	}
 }

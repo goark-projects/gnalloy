@@ -1,8 +1,6 @@
 package dev.goark.gnalloy.benchmarks.netty;
 
 final class BenchmarkOutput {
-    private static final String BENCHMARK_NAME = "BenchmarkNettyTCPEcho";
-
     private BenchmarkOutput() {
     }
 
@@ -36,9 +34,16 @@ final class BenchmarkOutput {
                 result.throughput());
         System.out.printf(
                 "%s-%d %d %.0f ns/op%n",
-                BENCHMARK_NAME,
+                benchmarkName(config.protocol()),
                 Runtime.getRuntime().availableProcessors(),
                 result.totalRequests(),
                 result.nsPerOp());
+    }
+
+    private static String benchmarkName(String protocol) {
+        if ("http1".equals(protocol)) {
+            return "BenchmarkNettyHTTP1";
+        }
+        return "BenchmarkNettyTCPEcho";
     }
 }

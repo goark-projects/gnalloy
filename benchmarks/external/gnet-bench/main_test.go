@@ -105,3 +105,27 @@ func TestRunBenchmarkTCPEcho(t *testing.T) {
 		t.Fatalf("result=%+v", result)
 	}
 }
+
+func TestRunBenchmarkHTTP1(t *testing.T) {
+	cfg := config{
+		Protocol:          "http1",
+		Addr:              "127.0.0.1:0",
+		Payload:           16,
+		Connections:       1,
+		Messages:          2,
+		Timeout:           5 * time.Second,
+		EventLoops:        1,
+		LatencySampleRate: 1,
+		WarmupMessages:    1,
+	}
+	result, err := runBenchmark(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalRequests != 2 || result.Errors != 0 || result.NsPerOp <= 0 {
+		t.Fatalf("result=%+v", result)
+	}
+	if result.Latency.Samples != 2 || result.Latency.P50 <= 0 || result.Resources.Goroutines <= 0 {
+		t.Fatalf("result=%+v", result)
+	}
+}
