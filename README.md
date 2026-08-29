@@ -71,8 +71,9 @@ blocks:
   close.
 - `handler/pcap`: pipeline-level libpcap capture for inbound and outbound
   payloads without taking message ownership.
-- `handler/proxy`: HTTP CONNECT client handler plus SOCKS5 and HAProxy v1/v2
-  wire helpers for proxy negotiation and source-address metadata.
+- `handler/proxy`: HTTP CONNECT and SOCKS5 client handlers plus SOCKS5 and
+  HAProxy v1/v2 wire helpers for proxy negotiation and source-address
+  metadata.
 - `handler/metrics` and `observability`: vendor-neutral Channel metrics
   contracts, an atomic low-overhead recorder, a Pipeline handler for lifecycle,
   read/write byte, flush, close, and exception counters, plus Prometheus text

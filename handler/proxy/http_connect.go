@@ -113,18 +113,7 @@ func (h *HTTPConnectClient) ChannelActive(ctx *channel.HandlerContext) {
 		ctx.FireExceptionCaught(err)
 		return
 	}
-	out, err := ctx.Channel().Allocator().Acquire(len(payload))
-	if err != nil {
-		ctx.FireExceptionCaught(err)
-		return
-	}
-	if _, err := out.WriteBytes(payload); err != nil {
-		out.Release()
-		ctx.FireExceptionCaught(err)
-		return
-	}
-	if err := ctx.Channel().WriteAndFlush(out); err != nil {
-		out.Release()
+	if err := writeProxyPayload(ctx, payload); err != nil {
 		ctx.FireExceptionCaught(err)
 		return
 	}
