@@ -526,18 +526,3 @@ func (a *HTTPObjectAggregator) release() {
 func findHeaderEndFrom(in *buffer.CompositeByteBuf, start int) (int, bool) {
 	return in.Index(start, headerEndBytes)
 }
-
-func parseTrailerHeaders(src string) (Headers, error) {
-	headers := Headers{}
-	for _, line := range strings.Split(src, "\r\n") {
-		if line == "" {
-			break
-		}
-		k, v, ok := strings.Cut(line, ":")
-		if !ok {
-			return nil, codec.ErrInvalidFrameLength
-		}
-		headers[strings.TrimSpace(k)] = strings.TrimSpace(v)
-	}
-	return headers, nil
-}
