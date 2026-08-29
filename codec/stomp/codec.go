@@ -1,7 +1,6 @@
 package stomp
 
 import (
-	"strconv"
 	"strings"
 
 	"goark.dev/gnalloy/buffer"
@@ -156,13 +155,18 @@ func (e *Encoder) Write(ctx *channel.HandlerContext, msg any) error {
 		frame.Release()
 		return ErrInvalidFrame
 	}
-	headerBytes := buildHeader(frame)
-	header, err := ctx.Channel().Allocator().Acquire(len(headerBytes))
+	bodyLen := 0
+	if frame.Body != nil {
+		bodyLen = frame.Body.ReadableBytes()
+	}
+	hasContentLength := frame.Headers.Has("content-length")
+	headerSize := encodedHeaderSize(frame, bodyLen, hasContentLength)
+	header, err := ctx.Channel().Allocator().Acquire(headerSize)
 	if err != nil {
 		frame.Release()
 		return err
 	}
-	if _, err := header.WriteBytes(headerBytes); err != nil {
+	if err := writeHeader(header, frame, bodyLen, hasContentLength); err != nil {
 		header.Release()
 		frame.Release()
 		return err
@@ -207,37 +211,6 @@ func readHeaders(in *buffer.CompositeByteBuf, start int, maxHeaderBytes int) (He
 		}
 		headers.Add(unescape(name), unescape(value))
 	}
-}
-
-func buildHeader(frame Frame) []byte {
-	bodyLen := 0
-	if frame.Body != nil {
-		bodyLen = frame.Body.ReadableBytes()
-	}
-	size := len(frame.Command) + 2
-	hasContentLength := frame.Headers.Has("content-length")
-	for _, header := range frame.Headers {
-		size += escapedLen(header.Name) + 1 + escapedLen(header.Value) + 1
-	}
-	if frame.Body != nil && !hasContentLength {
-		size += len("content-length:") + len(strconv.Itoa(bodyLen)) + 1
-	}
-	out := make([]byte, 0, size)
-	out = append(out, string(frame.Command)...)
-	out = append(out, '\n')
-	for _, header := range frame.Headers {
-		out = appendEscaped(out, header.Name)
-		out = append(out, ':')
-		out = appendEscaped(out, header.Value)
-		out = append(out, '\n')
-	}
-	if frame.Body != nil && !hasContentLength {
-		out = append(out, "content-length:"...)
-		out = strconv.AppendInt(out, int64(bodyLen), 10)
-		out = append(out, '\n')
-	}
-	out = append(out, '\n')
-	return out
 }
 
 func findLF(in *buffer.CompositeByteBuf, start int) (int, bool) {
