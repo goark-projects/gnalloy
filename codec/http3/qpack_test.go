@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/channel/embedded"
 )
@@ -121,6 +122,92 @@ func TestHeaderDecoderEnforcesHeaderListSize(t *testing.T) {
 	if err, ok := got.(error); !ok || !errors.Is(err, ErrHeaderListTooLarge) {
 		t.Fatalf("msg=%v, want ErrHeaderListTooLarge", got)
 	}
+}
+
+func TestHeaderDecoderUsesReadableSlicesInsteadOfBytes(t *testing.T) {
+	frame := encodedHeadersFrame(t, []HeaderField{{Name: ":path", Value: "/items"}})
+	frame.HeaderBlock = noBytesByteBuf{ByteBuf: frame.HeaderBlock}
+
+	inbound, err := embedded.New(NewHeaderDecoder(HeaderCodecConfig{}))
+	if err != nil {
+		frame.Release()
+		t.Fatal(err)
+	}
+	defer inbound.FinishAndReleaseAll()
+	if _, err := inbound.WriteInbound(frame); err != nil {
+		t.Fatal(err)
+	}
+	decoded, ok := inbound.ReadInbound()
+	if !ok {
+		t.Fatal("missing decoded headers")
+	}
+	headers := decoded.(HeadersBlock)
+	if len(headers.Fields) != 1 || headers.Fields[0].Value != "/items" {
+		t.Fatalf("headers=%+v", headers)
+	}
+}
+
+func BenchmarkHeaderDecoderFragmentedBlock(b *testing.B) {
+	frame := encodedHeadersFrame(b, []HeaderField{
+		{Name: ":method", Value: "GET"},
+		{Name: ":path", Value: "/items"},
+		{Name: "x-trace", Value: "abcdef0123456789"},
+	})
+	data := append([]byte(nil), frame.HeaderBlock.Bytes()...)
+	frame.Release()
+
+	block := fragmentedHeaderBlock(data)
+	defer block.Release()
+	decoder := NewHeaderDecoder(HeaderCodecConfig{})
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		fields, err := decoder.decodeFields(block)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(fields) != 3 {
+			b.Fatalf("fields=%d, want 3", len(fields))
+		}
+	}
+}
+
+func encodedHeadersFrame(tb testing.TB, fields []HeaderField) HeadersFrame {
+	tb.Helper()
+	encoder := NewHeaderEncoder()
+	outbound, err := embedded.New(encoder)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer outbound.FinishAndReleaseAll()
+	if _, err := outbound.WriteOutbound(HeadersBlock{Fields: fields}); err != nil {
+		tb.Fatal(err)
+	}
+	msg, ok := outbound.ReadOutbound()
+	if !ok {
+		tb.Fatal("missing headers frame")
+	}
+	frame, ok := msg.(HeadersFrame)
+	if !ok {
+		tb.Fatalf("msg=%T, want HeadersFrame", msg)
+	}
+	return frame
+}
+
+func fragmentedHeaderBlock(data []byte) buffer.ByteBuf {
+	mid := len(data) / 2
+	comp := buffer.NewCompositeByteBuf()
+	comp.Append(testBuf(data[:mid]))
+	comp.Append(testBuf(data[mid:]))
+	return comp
+}
+
+type noBytesByteBuf struct {
+	buffer.ByteBuf
+}
+
+func (b noBytesByteBuf) Bytes() []byte {
+	panic("Bytes must not be called")
 }
 
 type http3ExceptionCapture struct{}

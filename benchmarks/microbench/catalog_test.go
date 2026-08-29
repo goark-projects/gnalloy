@@ -17,7 +17,7 @@ func TestLookupHotPathSuiteBuildsStableBenchdiffInputs(t *testing.T) {
 		}
 	}
 	bench := suite.BenchmarkRegexp()
-	for _, want := range []string{"BenchmarkPooledAllocatorAcquireRelease", "BenchmarkPipelineInboundNoop", "BenchmarkFrameScanner"} {
+	for _, want := range []string{"BenchmarkPooledAllocatorAcquireRelease", "BenchmarkPipelineInboundNoop", "BenchmarkFrameScanner", "BenchmarkHeaderDecoderFragmentedBlock"} {
 		if !strings.Contains(bench, want) {
 			t.Fatalf("bench=%s, want %s", bench, want)
 		}

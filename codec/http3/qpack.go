@@ -111,7 +111,7 @@ func (d *HeaderDecoder) decodeFields(block buffer.ByteBuf) ([]HeaderField, error
 	if block == nil {
 		return nil, nil
 	}
-	decode := d.decoder.Decode(block.Bytes())
+	decode := d.decoder.Decode(headerBlockBytes(block))
 	fields := make([]HeaderField, 0, 8)
 	var size uint64
 	for {

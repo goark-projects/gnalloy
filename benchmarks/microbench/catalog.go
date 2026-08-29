@@ -69,7 +69,10 @@ var catalog = []Suite{
 				"BenchmarkRequestDecoderChunkedFragmentedBody",
 			}, Tags: []string{"http1"}},
 			{Name: "http2", Package: "./codec/http2", Benchmarks: []string{"BenchmarkStreamMultiplexerReadData"}, Tags: []string{"http2"}},
-			{Name: "http3", Package: "./codec/http3", Benchmarks: []string{"BenchmarkDecoderDataFrame"}, Tags: []string{"http3"}},
+			{Name: "http3", Package: "./codec/http3", Benchmarks: []string{
+				"BenchmarkDecoderDataFrame",
+				"BenchmarkHeaderDecoderFragmentedBlock",
+			}, Tags: []string{"http3"}},
 			{Name: "websocket", Package: "./codec/websocket", Benchmarks: []string{
 				"BenchmarkFrameEncoderMaskedCompositePayload",
 				"BenchmarkFrameDecoderMaskedFragmentedPayload",
