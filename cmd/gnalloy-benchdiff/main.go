@@ -4,17 +4,21 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
 	"goark.dev/gnalloy/benchmarks/benchdiff"
+	"goark.dev/gnalloy/benchmarks/microbench"
 )
 
 func main() {
 	baseRef := flag.String("base", "HEAD", "git ref used as baseline")
-	packages := flag.String("packages", "./buffer", "comma-separated package list")
-	bench := flag.String("bench", ".", "go benchmark regexp")
+	suite := flag.String("suite", "", "microbenchmark suite name")
+	listSuites := flag.Bool("list-suites", false, "list available microbenchmark suites")
+	packages := flag.String("packages", "", "comma-separated package list")
+	bench := flag.String("bench", "", "go benchmark regexp")
 	count := flag.Int("count", 5, "sample count for each version")
 	benchtime := flag.String("benchtime", "", "optional go test -benchtime value")
 	timeout := flag.Duration("timeout", 10*time.Minute, "overall comparison timeout")
@@ -23,13 +27,22 @@ func main() {
 	gitCommand := flag.String("git", "git", "git command")
 	flag.Parse()
 
+	if *listSuites {
+		writeSuites(os.Stdout)
+		return
+	}
+	selectedPackages, selectedBench, err := resolveBenchmarkSelection(*suite, *packages, *bench)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	report, err := benchdiff.Runner{
 		BaseRef:   *baseRef,
 		Go:        *goCommand,
 		Git:       *gitCommand,
-		Bench:     *bench,
+		Bench:     selectedBench,
 		Benchtime: *benchtime,
-		Packages:  splitCSV(*packages),
+		Packages:  selectedPackages,
 		Count:     *count,
 		Timeout:   *timeout,
 	}.Run(context.Background())
@@ -40,6 +53,36 @@ func main() {
 	if err := writeReport(*outPath, report); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+func resolveBenchmarkSelection(suiteName string, packageCSV string, bench string) ([]string, string, error) {
+	packages := splitCSV(packageCSV)
+	bench = strings.TrimSpace(bench)
+	if strings.TrimSpace(suiteName) != "" {
+		suite, ok := microbench.Lookup(suiteName)
+		if !ok {
+			return nil, "", fmt.Errorf("unknown microbenchmark suite %q", suiteName)
+		}
+		if len(packages) == 0 {
+			packages = suite.Packages()
+		}
+		if bench == "" {
+			bench = suite.BenchmarkRegexp()
+		}
+	}
+	if len(packages) == 0 {
+		packages = []string{"./buffer"}
+	}
+	if bench == "" {
+		bench = "."
+	}
+	return packages, bench, nil
+}
+
+func writeSuites(w io.Writer) {
+	for _, suite := range microbench.Suites() {
+		fmt.Fprintf(w, "%s\t%s\n", suite.Name, suite.Description)
 	}
 }
 

@@ -166,6 +166,8 @@ Netty parity:
 - Transport completion 支持矩阵见 `docs/transport-completion-matrix.md`。
 - Benchmark parity 口径见 `docs/benchmark-parity.md`。
 - Production runbook 见 `docs/production-runbook.md`。
+- Microbenchmark suites 见 `benchmarks/microbench`，并通过
+  `go run ./cmd/gnalloy-benchdiff -suite hotpath` 执行上一版本对比。
 
 Verification:
 
@@ -179,6 +181,8 @@ ALLOW_SKIP=1 ./scripts/verify-privileged.sh
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/tcp-matrix.json
 GROUPS=codec,queue,timer ./scripts/verify-bench.sh
+go run ./cmd/gnalloy-benchdiff -list-suites
+go run ./cmd/gnalloy-benchdiff -base HEAD~1 -suite hotpath -count 5 -benchtime 500ms
 ```
 
 PowerShell:
@@ -195,6 +199,8 @@ go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/tcp-matrix.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/windows-tcp.json
 .\scripts\verify-bench.ps1 -Groups codec,queue,timer
+go run ./cmd/gnalloy-benchdiff -list-suites
+go run ./cmd/gnalloy-benchdiff -base HEAD~1 -suite hotpath -count 5 -benchtime 500ms
 ```
 
 Example flags shared by the TCP examples:

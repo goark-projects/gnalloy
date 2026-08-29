@@ -136,6 +136,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | OpenTelemetry adapter | `observability/otel` | done | OTel 以独立 adapter 接入，核心 recorder 契约仍保持轻量。 |
 | 协议 fuzz smoke | `Fuzz*` tests | done | 覆盖 length-field、line、delimiter、HTTP/1、WebSocket、MQTT、DNS、Redis、HTTP/2、HTTP/3、QUIC header/frame。 |
 | 回归脚本 | `scripts/verify-regression.*` | done | 全量测试、代表性 fuzz smoke、热路径基准和平台专项检查。 |
+| Netty microbench 风格套件 | `benchmarks/microbench`、`cmd/gnalloy-benchdiff -suite` | done | 维护稳定 suite 目录，支持 `hotpath` 和 `native-io` 场景展开，并复用 benchdiff 输出上一版本/当前工作树的同机中位数对比。 |
 | 外部对标基线 | `benchmarks/parity/baseline.json`、`examples/parity-bench` | done | 默认可 dry-run；Netty、gnet、netpoll 外部 harness 默认 skip，安装后打开并保留原始命令、机器信息和 benchmark metrics。 |
 | 跨平台门禁矩阵 | `scripts/platform-matrix.json`、`validation/platformmatrix`、`.github/workflows/validation.yml` | done | Windows/Linux/macOS 目标、readiness/completion 后端、native tests、cross-compile、source scan 和 skipped bench 均有机器可读结果。 |
 
