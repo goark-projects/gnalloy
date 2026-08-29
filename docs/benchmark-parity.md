@@ -143,6 +143,47 @@ UDP 表格中记录为不适用，不把失败命令伪造成性能结果。
 `%TEMP%\gnalloy-udp-local-20260829-233828.json`；Linux 报告路径为
 `/tmp/gnalloy-linux-udp-20260829-234423.json`。
 
+HTTP/2 stream 对标矩阵:
+
+```bash
+./scripts/build-external-bench.sh
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/linux-http2-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/linux-http2-matrix.json -out http2-matrix-report.md
+```
+
+Windows:
+
+```powershell
+.\scripts\build-external-bench.ps1
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/http2-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/http2-matrix.json -out http2-matrix-report.md
+```
+
+HTTP/2 矩阵覆盖 h2c 明文和 TLS 1.3 + ALPN `h2` 密文，负载模型为 64 条连接、
+每连接 5000 个顺序 stream、每场景 1 次 warmup 和 3 次正式采样。Gnalloy 使用
+`codec/http2`、`handler/tls` 和平台 native TCP 后端；Netty 使用
+`Http2FrameCodec`、`SslHandler` 和对应平台 transport。gnet 与 CloudWeGo netpoll
+当前没有等价完整 HTTP/2 协议栈，HTTP/2 表格中记录为不适用，不把 TCP echo 结果
+混入 HTTP/2 结论。
+
+2026-08-30 HTTP/2 stream 实测样本:
+
+| 平台 | 场景 | median ops/s | median p99 ns | 结论 |
+| --- | --- | ---: | ---: | --- |
+| Windows/amd64 | gnalloy IOCP h2c 128B | 242,992 | 1,033,400 | 吞吐超过 Netty NIO h2c 173,117。 |
+| Windows/amd64 | gnalloy IOCP h2c 1KiB | 239,331 | 1,013,400 | 吞吐超过 Netty NIO h2c 180,774。 |
+| Windows/amd64 | gnalloy IOCP h2 TLS 128B | 174,807 | 1,177,100 | 吞吐超过 Netty NIO h2 TLS 139,255。 |
+| Windows/amd64 | gnalloy IOCP h2 TLS 1KiB | 171,053 | 1,221,100 | 吞吐超过 Netty NIO h2 TLS 134,112。 |
+| Linux/amd64 | gnalloy epoll h2c 128B | 98,947 | 2,677,422 | 吞吐超过 Netty epoll h2c 72,836。 |
+| Linux/amd64 | gnalloy epoll h2c 1KiB | 98,660 | 2,790,365 | 吞吐超过 Netty epoll h2c 75,421。 |
+| Linux/amd64 | gnalloy epoll h2 TLS 128B | 65,950 | 2,575,618 | 吞吐超过 Netty epoll h2 TLS 45,916。 |
+| Linux/amd64 | gnalloy epoll h2 TLS 1KiB | 66,258 | 2,262,359 | 吞吐超过 Netty epoll h2 TLS 42,255。 |
+
+这些数据只对同机、同 payload、64 条 TCP 连接、每连接 5000 个顺序 HTTP/2 stream、
+延迟采样率 1/64 的 request/response 场景有效。Windows 报告路径为
+`%TEMP%\gnalloy-http2-local-20260830-010041.json`；Linux 报告路径为
+`/tmp/gnalloy-http2-linux-20260830-0109.json`。
+
 harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；
 该目录是本机构建产物，不提交到仓库。Netty 使用独立 Maven 工程，
 gnalloy/gnet/netpoll 使用独立 Go module，避免把对标依赖引入 gnalloy 根 `go.mod`。

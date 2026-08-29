@@ -3,7 +3,6 @@ package tls
 import (
 	"errors"
 	"io"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,9 +16,6 @@ import (
 
 // drainWaitTimeout 限制同步 drain 等待后台 TLS 协程产物的最长时间。
 const drainWaitTimeout = 100 * time.Millisecond
-
-// drainProgressSpins 在已经 drain 到产物后短暂让出调度，避免每次 I/O 尾部等待固定超时。
-const drainProgressSpins = 64
 
 type Mode uint8
 
@@ -68,6 +64,11 @@ type Handler struct {
 	errs      chan error
 	notify    chan struct{}
 	bytePool  BytePool
+	pending   atomic.Int64
+	ctx       atomic.Pointer[channel.HandlerContext]
+	draining  atomic.Int32
+	scheduled atomic.Bool
+	activated atomic.Bool
 
 	handshake bool
 	active    bool
@@ -97,7 +98,8 @@ func newHandler(mode Mode, cfg Config) *Handler {
 	}
 }
 
-func (h *Handler) HandlerAdded(*channel.HandlerContext) error {
+func (h *Handler) HandlerAdded(ctx *channel.HandlerContext) error {
+	h.ctx.Store(ctx)
 	if h.mode != ModeClient && h.mode != ModeServer {
 		return ErrInvalidConfig
 	}
@@ -107,14 +109,21 @@ func (h *Handler) HandlerAdded(*channel.HandlerContext) error {
 	return nil
 }
 
+func (h *Handler) HandlerRemoved(*channel.HandlerContext) error {
+	h.ctx.Store(nil)
+	h.close()
+	return nil
+}
+
 func (h *Handler) ChannelActive(ctx *channel.HandlerContext) {
 	if h.cfg.StartTLS && !h.started.Load() {
 		h.active = true
 		ctx.FireChannelActive()
 		return
 	}
+	h.activated.Store(true)
 	h.ensureStarted()
-	h.drain(ctx, true, h.mode == ModeClient)
+	h.drain(ctx, drainOptions{flush: true, wait: h.mode == ModeClient, plain: true})
 }
 
 func (h *Handler) ChannelRead(ctx *channel.HandlerContext, msg any) {
@@ -139,7 +148,7 @@ func (h *Handler) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		h.fail(ctx, err)
 		return
 	}
-	h.drain(ctx, true, true)
+	h.drain(ctx, drainOptions{flush: true, wait: true, plain: true})
 }
 
 func (h *Handler) ChannelInactive(ctx *channel.HandlerContext) {
@@ -162,13 +171,15 @@ func (h *Handler) Write(ctx *channel.HandlerContext, msg any) error {
 	}
 	chunk := newByteChunk(data, h.bytePool)
 	h.ensureStarted()
+	h.pending.Add(1)
 	select {
 	case h.app <- chunk:
 	case <-h.closed:
+		h.pending.Add(-1)
 		chunk.releaseOwned()
 		return io.ErrClosedPipe
 	}
-	h.drain(ctx, false, true)
+	h.drain(ctx, drainOptions{})
 	return nil
 }
 
@@ -176,14 +187,15 @@ func (h *Handler) Flush(ctx *channel.HandlerContext) error {
 	if h.cfg.StartTLS && !h.started.Load() {
 		return ctx.Flush()
 	}
-	h.drain(ctx, false, false)
+	h.drain(ctx, drainOptions{wait: true})
 	return ctx.Flush()
 }
 
 func (h *Handler) UserEventTriggered(ctx *channel.HandlerContext, event any) {
 	if _, ok := event.(StartEvent); ok {
+		h.activated.Store(true)
 		h.ensureStarted()
-		h.drain(ctx, true, h.mode == ModeClient)
+		h.drain(ctx, drainOptions{flush: true, wait: h.mode == ModeClient, plain: true})
 		return
 	}
 	ctx.FireUserEventTriggered(event)
@@ -194,7 +206,7 @@ func (h *Handler) Close(ctx *channel.HandlerContext) error {
 	if !h.started.Load() {
 		return ctx.Close()
 	}
-	h.drain(ctx, true, false)
+	h.drain(ctx, drainOptions{flush: true})
 	return ctx.Close()
 }
 
@@ -291,26 +303,40 @@ func (h *Handler) runWriter() {
 		case chunk := <-h.app:
 			if _, err := h.conn.Write(chunk.data); err != nil {
 				chunk.releaseOwned()
+				h.pending.Add(-1)
 				h.sendErr(err)
 				return
 			}
 			chunk.releaseOwned()
+			h.pending.Add(-1)
+			h.notifyDrain()
 		case <-h.closed:
 			return
 		}
 	}
 }
 
-func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
+type drainOptions struct {
+	flush bool
+	wait  bool
+	plain bool
+}
+
+func (h *Handler) drain(ctx *channel.HandlerContext, opts drainOptions) {
+	h.draining.Add(1)
+	defer func() {
+		if h.draining.Add(-1) == 0 && h.hasQueuedDrain() {
+			h.scheduleDrain()
+		}
+	}()
 	if !h.started.Load() || h.raw == nil {
-		if flush {
+		if opts.flush {
 			_ = ctx.Flush()
 		}
 		return
 	}
 	deadline := time.Now().Add(drainWaitTimeout)
 	progressed := false
-	spins := 0
 	for {
 		drained := false
 		select {
@@ -324,16 +350,18 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 			chunk.releaseOwned()
 		default:
 		}
-		select {
-		case chunk := <-h.plain:
-			drained = true
-			if err := h.firePlain(ctx, chunk.data); err != nil {
+		if opts.plain {
+			select {
+			case chunk := <-h.plain:
+				drained = true
+				if err := h.firePlain(ctx, chunk.data); err != nil {
+					chunk.releaseOwned()
+					h.fail(ctx, err)
+					return
+				}
 				chunk.releaseOwned()
-				h.fail(ctx, err)
-				return
+			default:
 			}
-			chunk.releaseOwned()
-		default:
 		}
 		select {
 		case event := <-h.events:
@@ -356,19 +384,20 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 		}
 		if drained {
 			progressed = true
-			spins = 0
 			continue
 		}
-		if !wait || time.Now().After(deadline) {
+		if !opts.wait || time.Now().After(deadline) {
 			break
 		}
-		if progressed {
-			if spins >= drainProgressSpins {
+		if h.pending.Load() == 0 {
+			select {
+			case <-h.notify:
+				continue
+			default:
+			}
+			if progressed || !opts.plain {
 				break
 			}
-			spins++
-			runtime.Gosched()
-			continue
 		}
 		select {
 		case <-h.notify:
@@ -377,7 +406,7 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 			return
 		}
 	}
-	if flush {
+	if opts.flush {
 		_ = ctx.Flush()
 	}
 }
@@ -392,7 +421,9 @@ func (h *Handler) writeCipher(ctx *channel.HandlerContext, data []byte) error {
 		return err
 	}
 	if err := ctx.Write(out); err != nil {
-		out.Release()
+		if out.RefCnt() > 0 {
+			out.Release()
+		}
 		return err
 	}
 	return nil
@@ -426,6 +457,35 @@ func (h *Handler) notifyDrain() {
 	case h.notify <- struct{}{}:
 	default:
 	}
+	if h.activated.Load() && h.draining.Load() == 0 {
+		h.scheduleDrain()
+	}
+}
+
+func (h *Handler) scheduleDrain() {
+	ctx := h.ctx.Load()
+	if ctx == nil || !h.scheduled.CompareAndSwap(false, true) {
+		return
+	}
+	err := ctx.Execute(func() {
+		h.drain(ctx, drainOptions{flush: true, plain: true})
+		h.scheduled.Store(false)
+		if h.hasQueuedDrain() && h.draining.Load() == 0 {
+			h.scheduleDrain()
+		}
+	})
+	if err != nil {
+		h.scheduled.Store(false)
+	}
+}
+
+func (h *Handler) hasQueuedDrain() bool {
+	if h.raw != nil && len(h.raw.out) > 0 {
+		return true
+	}
+	return len(h.plain) > 0 ||
+		len(h.events) > 0 ||
+		len(h.errs) > 0
 }
 
 func (h *Handler) close() {

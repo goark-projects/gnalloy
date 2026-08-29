@@ -8,6 +8,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
 import io.netty.handler.ssl.SslContext;
 
 import java.net.InetSocketAddress;
@@ -40,6 +41,14 @@ final class EchoServer implements AutoCloseable {
                                 }
                                 ch.pipeline().addLast(new HttpServerCodec());
                                 ch.pipeline().addLast(new Http1ServerHandler(config.payload()));
+                                return;
+                            }
+                            if (config.http2Family()) {
+                                if (sslContext != null) {
+                                    ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
+                                }
+                                ch.pipeline().addLast(Http2FrameCodecBuilder.forServer().build());
+                                ch.pipeline().addLast(new Http2ServerHandler(config.payload()));
                                 return;
                             }
                             ch.pipeline().addLast(new EchoHandler());

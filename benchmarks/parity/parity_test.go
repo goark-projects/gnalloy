@@ -209,6 +209,77 @@ func TestLinuxHTTPS1ALPNMatrixSpecLoads(t *testing.T) {
 	}
 }
 
+func TestHTTP2MatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("http2-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 8 {
+		t.Fatalf("scenarios=%d, want http2 matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if scenario.Protocol != "http2" && scenario.Protocol != "https2" {
+			t.Fatalf("scenario=%+v", scenario)
+		}
+		if scenario.Protocol == "https2" && !strings.Contains(command, "-alpn ${ALPN}") {
+			t.Fatalf("https2 command missing h2 ALPN: %q", command)
+		}
+		if scenario.Framework == "gnalloy" && scenario.Backend != "iocp" {
+			t.Fatalf("gnalloy backend=%q, want iocp", scenario.Backend)
+		}
+		if scenario.Framework == "netty" && scenario.Backend != "nio" {
+			t.Fatalf("netty backend=%q, want nio", scenario.Backend)
+		}
+		if scenario.Framework != "gnalloy" && scenario.Framework != "netty" {
+			t.Fatalf("framework=%q, want gnalloy or netty", scenario.Framework)
+		}
+		if scenario.Warmup != 1 || scenario.Repeat != 3 {
+			t.Fatalf("scenario %q warmup=%d repeat=%d, want 1/3", scenario.Name, scenario.Warmup, scenario.Repeat)
+		}
+	}
+}
+
+func TestLinuxHTTP2MatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("linux-http2-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 8 {
+		t.Fatalf("scenarios=%d, want linux http2 matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if scenario.Protocol != "http2" && scenario.Protocol != "https2" {
+			t.Fatalf("scenario=%+v", scenario)
+		}
+		if scenario.Backend != "epoll" {
+			t.Fatalf("backend=%q, want epoll", scenario.Backend)
+		}
+		if scenario.Protocol == "https2" && !strings.Contains(command, "-alpn ${ALPN}") {
+			t.Fatalf("https2 command missing h2 ALPN: %q", command)
+		}
+		if scenario.Framework != "gnalloy" && scenario.Framework != "netty" {
+			t.Fatalf("framework=%q, want gnalloy or netty", scenario.Framework)
+		}
+		if scenario.Warmup != 1 || scenario.Repeat != 3 {
+			t.Fatalf("scenario %q warmup=%d repeat=%d, want 1/3", scenario.Name, scenario.Warmup, scenario.Repeat)
+		}
+	}
+}
+
 func TestUDPEchoMatrixSpecLoads(t *testing.T) {
 	file, err := os.Open("udp-matrix.json")
 	if err != nil {

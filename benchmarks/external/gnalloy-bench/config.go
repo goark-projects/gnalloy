@@ -74,7 +74,7 @@ func parseConfig(args []string) (config, error) {
 	fs.BoolVar(&cfg.IOUringSQPoll, "iouring-sqpoll", cfg.IOUringSQPoll, "enable io_uring SQPOLL")
 	fs.IntVar(&cfg.LatencySampleRate, "latency-sample-rate", cfg.LatencySampleRate, "record one round-trip latency sample every N messages per connection; 0 disables latency sampling")
 	fs.IntVar(&cfg.WarmupMessages, "warmup-messages", cfg.WarmupMessages, "messages per connection sent before timed measurement; 0 disables in-process warmup")
-	fs.StringVar(&cfg.ALPN, "alpn", cfg.ALPN, "comma-separated TLS ALPN protocols for https1")
+	fs.StringVar(&cfg.ALPN, "alpn", cfg.ALPN, "comma-separated TLS ALPN protocols for HTTPS protocols")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -90,6 +90,9 @@ func (c *config) resolve() error {
 		return err
 	}
 	c.Backend = backend
+	if c.Protocol == "https2" && c.ALPN == "http/1.1" {
+		c.ALPN = "h2"
+	}
 	if c.Workers == 0 {
 		c.Workers = defaultWorkerCount(workerSizingInput{
 			GOOS:       runtime.GOOS,
@@ -105,7 +108,7 @@ func (c *config) resolve() error {
 
 func (c config) validate() error {
 	switch strings.TrimSpace(c.Protocol) {
-	case "tcp-echo", "udp-echo", "http1", "https1":
+	case "tcp-echo", "udp-echo", "http1", "https1", "http2", "https2":
 	default:
 		return fmt.Errorf("%w: %s", errUnsupportedProtocol, c.Protocol)
 	}

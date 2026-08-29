@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"goark.dev/gnalloy/benchmarks/external/internal/benchh2"
 	"goark.dev/gnalloy/benchmarks/external/internal/benchhttp"
 )
 
@@ -37,6 +38,8 @@ func runBenchmark(parent context.Context, cfg config) (benchResult, error) {
 	switch cfg.Protocol {
 	case "http1", "https1":
 		return runHTTP1Benchmark(ctx, cfg)
+	case "http2", "https2":
+		return runHTTP2Benchmark(ctx, cfg)
 	case "udp-echo":
 		return runUDPEchoBenchmark(ctx, cfg)
 	}
@@ -77,6 +80,48 @@ func runHTTP1Benchmark(ctx context.Context, cfg config) (benchResult, error) {
 		httpConfig.TLS = clientTLSConfig(cfg)
 	}
 	result, err := benchhttp.RunLoad(ctx, httpConfig)
+	out := benchResult{
+		TotalRequests: result.TotalRequests,
+		Errors:        result.Errors,
+		Elapsed:       result.Elapsed,
+		Throughput:    result.Throughput,
+		NsPerOp:       result.NsPerOp,
+		Protocol:      result.NegotiatedProtocol,
+		Latency: latencySummary{
+			Samples: result.Latency.Samples,
+			P50:     result.Latency.P50,
+			P95:     result.Latency.P95,
+			P99:     result.Latency.P99,
+			P999:    result.Latency.P999,
+			Max:     result.Latency.Max,
+		},
+		Resources: resourceDeltaSince(resourcesBefore, captureResourceSnapshot()),
+	}
+	return out, err
+}
+
+func runHTTP2Benchmark(ctx context.Context, cfg config) (benchResult, error) {
+	server, err := startHTTP2Server(ctx, cfg)
+	if err != nil {
+		return benchResult{}, err
+	}
+	defer server.stop()
+
+	resourcesBefore := captureResourceSnapshot()
+	h2Config := benchh2.Config{
+		Addr:              server.addr,
+		ServerName:        tlsServerName(),
+		Payload:           cfg.Payload,
+		Connections:       cfg.Connections,
+		Messages:          cfg.Messages,
+		Timeout:           cfg.Timeout,
+		LatencySampleRate: cfg.LatencySampleRate,
+		WarmupMessages:    cfg.WarmupMessages,
+	}
+	if cfg.Protocol == "https2" {
+		h2Config.TLS = clientTLSConfig(cfg)
+	}
+	result, err := benchh2.RunLoad(ctx, h2Config)
 	out := benchResult{
 		TotalRequests: result.TotalRequests,
 		Errors:        result.Errors,

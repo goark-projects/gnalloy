@@ -1,0 +1,116 @@
+{
+  "name": "gnalloy http2 parity matrix",
+  "notes": "Windows/local HTTP/2 对标矩阵。覆盖 h2c 明文和 TLS 1.3 + ALPN h2 密文；Gnalloy 使用 IOCP + codec/http2/handler/tls，Netty 使用 NIO + Http2FrameCodec/SslHandler。gnet/netpoll 没有等价 HTTP/2 协议栈，不纳入本矩阵。",
+  "variables": {
+    "REPO_ROOT": ".",
+    "CONNECTIONS": "64",
+    "MESSAGES": "5000",
+    "LATENCY_SAMPLE_RATE": "64",
+    "WARMUP_MESSAGES": "500",
+    "ALPN": "h2",
+    "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
+    "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar"
+  },
+  "scenarios": [
+    {
+      "name": "gnalloy iocp h2c 128B",
+      "framework": "gnalloy",
+      "protocol": "http2",
+      "backend": "iocp",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "http2", "-backend", "iocp", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "http2", "h2c", "payload-128"]
+    },
+    {
+      "name": "gnalloy iocp h2c 1KiB",
+      "framework": "gnalloy",
+      "protocol": "http2",
+      "backend": "iocp",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "http2", "-backend", "iocp", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "http2", "h2c", "payload-1024"]
+    },
+    {
+      "name": "gnalloy iocp h2 tls 128B",
+      "framework": "gnalloy",
+      "protocol": "https2",
+      "backend": "iocp",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https2", "-backend", "iocp", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "https2", "tls13", "alpn", "payload-128"]
+    },
+    {
+      "name": "gnalloy iocp h2 tls 1KiB",
+      "framework": "gnalloy",
+      "protocol": "https2",
+      "backend": "iocp",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https2", "-backend", "iocp", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "https2", "tls13", "alpn", "payload-1024"]
+    },
+    {
+      "name": "netty nio h2c 128B",
+      "framework": "netty",
+      "protocol": "http2",
+      "backend": "nio",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "http2", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "http2", "h2c", "payload-128"]
+    },
+    {
+      "name": "netty nio h2c 1KiB",
+      "framework": "netty",
+      "protocol": "http2",
+      "backend": "nio",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "http2", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "http2", "h2c", "payload-1024"]
+    },
+    {
+      "name": "netty nio h2 tls 128B",
+      "framework": "netty",
+      "protocol": "https2",
+      "backend": "nio",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https2", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "https2", "tls13", "alpn", "payload-128"]
+    },
+    {
+      "name": "netty nio h2 tls 1KiB",
+      "framework": "netty",
+      "protocol": "https2",
+      "backend": "nio",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https2", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "https2", "tls13", "alpn", "payload-1024"]
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 package channel
 
+import "goark.dev/gnalloy/transport"
+
 type writeAndFlushSink interface {
 	WriteAndFlush(msg any) error
 }
@@ -32,6 +34,30 @@ func (c *HandlerContext) Pipeline() *Pipeline {
 
 func (c *HandlerContext) Handler() Handler {
 	return c.handler
+}
+
+// EventExecutor 返回当前 Channel 绑定的 owner EventLoop 执行器。
+func (c *HandlerContext) EventExecutor() FutureListenerExecutor {
+	if c == nil || c.pipeline == nil {
+		return nil
+	}
+	ch, ok := c.pipeline.ch.(*LocalChannel)
+	if !ok {
+		return nil
+	}
+	return ch.ownerExecutor()
+}
+
+// Execute 在 owner EventLoop 上执行任务；未绑定 EventLoop 的本地 Channel 直接执行。
+func (c *HandlerContext) Execute(task transport.Task) error {
+	if task == nil {
+		return nil
+	}
+	if executor := c.EventExecutor(); executor != nil {
+		return executor.Submit(task)
+	}
+	task()
+	return nil
 }
 
 func (c *HandlerContext) FireChannelRegistered() {

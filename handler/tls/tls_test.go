@@ -15,6 +15,8 @@ import (
 
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
+	"goark.dev/gnalloy/transport"
+	"goark.dev/gnalloy/transport/poller/memory"
 )
 
 func TestHandlerNegotiatesAndPassesPlaintext(t *testing.T) {
@@ -62,6 +64,90 @@ func TestHandlerNegotiatesAndPassesPlaintext(t *testing.T) {
 	if clientRecv.protocol != "h2" {
 		t.Fatalf("alpn=%q, want h2 clientHandshake=%v serverHandshake=%v", clientRecv.protocol, clientTLS.handshake, serverTLS.handshake)
 	}
+}
+
+func TestHandlerFlushesRepeatedApplicationWrites(t *testing.T) {
+	cert := testCertificate(t)
+	clientSink := &pipeSink{}
+	serverSink := &pipeSink{}
+	client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+	server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+	clientSink.peer = server.Pipeline()
+	serverSink.peer = client.Pipeline()
+
+	clientRecv := &plainRecorder{}
+	serverEcho := &plainEcho{}
+	clientTLS := Client(Config{
+		TLS: &cryptotls.Config{
+			ServerName:         "gnalloy.local",
+			InsecureSkipVerify: true,
+			NextProtos:         []string{"h2"},
+		},
+	})
+	serverTLS := Server(Config{
+		TLS: &cryptotls.Config{
+			Certificates: []cryptotls.Certificate{cert},
+			NextProtos:   []string{"h2"},
+		},
+	})
+	if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Pipeline().AddLast("recorder", clientRecv); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Pipeline().AddLast("echo", serverEcho); err != nil {
+		t.Fatal(err)
+	}
+
+	server.Pipeline().FireChannelActive()
+	client.Pipeline().FireChannelActive()
+	chunk := bytes.Repeat([]byte("x"), 1024)
+	want := make([]byte, 0, len(chunk)*128)
+	for i := 0; i < 128; i++ {
+		chunk[0] = byte(i)
+		want = append(want, chunk...)
+		writePlainBytes(t, client, chunk)
+	}
+
+	clientRecv.waitBytes(t, want)
+}
+
+func TestHandlerSchedulesBackgroundDrainOnOwnerLoop(t *testing.T) {
+	poller := memory.New()
+	loop, err := transport.NewEventLoop(transport.EventLoopConfig{ID: 1, Poller: poller, StartMillis: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loop.Close()
+
+	sink := &pipeSink{}
+	ch := channel.NewLocalChannelWithTimer(11, buffer.NewHeapAllocator(), sink, loop.Timer())
+	ch.BindEventExecutor(loop)
+	recorder := &plainRecorder{}
+	handler := newHandler(ModeServer, Config{StartTLS: true})
+	if err := ch.Pipeline().AddLast("tls", handler); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("recorder", recorder); err != nil {
+		t.Fatal(err)
+	}
+	handler.raw = newMemoryConn(handler.bytePool, handler.notifyDrain)
+	handler.started.Store(true)
+	handler.activated.Store(true)
+
+	handler.plain <- newByteChunk(copyBytes([]byte("late"), handler.bytePool), handler.bytePool)
+	handler.notifyDrain()
+	if recorder.buf.Len() != 0 {
+		t.Fatalf("drain ran outside owner loop: len=%d", recorder.buf.Len())
+	}
+	if err := loop.RunOnce(0); err != nil {
+		t.Fatal(err)
+	}
+	recorder.waitString(t, "late")
 }
 
 func TestStartTLSPassesPlaintextUntilStartEvent(t *testing.T) {
@@ -336,11 +422,16 @@ func TestHandlerVerifyPeerNameRejectsMismatchedCertificate(t *testing.T) {
 
 func writePlain(t *testing.T, ch channel.Channel, src string) {
 	t.Helper()
+	writePlainBytes(t, ch, []byte(src))
+}
+
+func writePlainBytes(t *testing.T, ch channel.Channel, src []byte) {
+	t.Helper()
 	out, err := ch.Allocator().Acquire(len(src))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := out.WriteBytes([]byte(src)); err != nil {
+	if _, err := out.WriteBytes(src); err != nil {
 		out.Release()
 		t.Fatal(err)
 	}
@@ -401,14 +492,19 @@ func (r *plainRecorder) String() string {
 
 func (r *plainRecorder) waitString(t *testing.T, want string) {
 	t.Helper()
+	r.waitBytes(t, []byte(want))
+}
+
+func (r *plainRecorder) waitBytes(t *testing.T, want []byte) {
+	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if r.String() == want {
+		if bytes.Equal(r.buf.Bytes(), want) {
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatalf("plaintext=%q, want %q", r.String(), want)
+	t.Fatalf("plaintext length=%d, want %d", r.buf.Len(), len(want))
 }
 
 type plainEcho struct{}

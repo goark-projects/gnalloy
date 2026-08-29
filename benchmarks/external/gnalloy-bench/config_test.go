@@ -58,6 +58,24 @@ func TestParseConfigSupportsHTTPS1ALPN(t *testing.T) {
 	}
 }
 
+func TestParseConfigSupportsHTTP2Family(t *testing.T) {
+	cfg, err := parseConfig([]string{"-protocol", "http2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Protocol != "http2" {
+		t.Fatalf("protocol=%q, want http2", cfg.Protocol)
+	}
+
+	cfg, err = parseConfig([]string{"-protocol", "https2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Protocol != "https2" || cfg.ALPN != "h2" {
+		t.Fatalf("cfg=%+v, want https2 with h2 ALPN", cfg)
+	}
+}
+
 func TestParseConfigSupportsUDPEcho(t *testing.T) {
 	cfg, err := parseConfig([]string{
 		"-protocol", "udp-echo",

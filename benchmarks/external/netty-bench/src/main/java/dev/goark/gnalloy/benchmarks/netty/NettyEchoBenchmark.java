@@ -26,6 +26,9 @@ public final class NettyEchoBenchmark {
             if (config.http1Family()) {
                 return Http1LoadGenerator.run(address, config);
             }
+            if (config.http2Family()) {
+                return Http2LoadGenerator.run(address, config);
+            }
             return LoadGenerator.run(address, config);
         }
     }

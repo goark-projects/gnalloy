@@ -75,6 +75,41 @@ func TestFrameEncoderWritesHeaderThenPayload(t *testing.T) {
 	}
 }
 
+func TestFrameEncoderCoalescesHeaderAndPayload(t *testing.T) {
+	sink := &captureSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("h2", NewFrameEncoderWithConfig(FrameEncoderConfig{CoalescePayload: true})); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := ch.Allocator().Acquire(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = payload.WriteBytes([]byte("pong"))
+	if err := ch.Write(Frame{Type: FrameData, Flags: FlagEndStream, StreamID: 3, Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.messages) != 1 {
+		t.Fatalf("writes=%d, want coalesced frame", len(sink.messages))
+	}
+	out := sink.messages[0].(buffer.ByteBuf)
+	defer out.Release()
+	decoded, err := ParseFrameHeader(out.Bytes()[:FrameHeaderSize])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Length != 4 || decoded.Type != FrameData || decoded.Flags != FlagEndStream || decoded.StreamID != 3 {
+		t.Fatalf("header=%+v", decoded)
+	}
+	if string(out.Bytes()[FrameHeaderSize:]) != "pong" {
+		t.Fatalf("body=%q, want pong", out.Bytes()[FrameHeaderSize:])
+	}
+	if refs := payload.RefCnt(); refs != 0 {
+		payload.Release()
+		t.Fatalf("payload refs=%d, want 0", refs)
+	}
+}
+
 func TestSettingsAckHasNoPayload(t *testing.T) {
 	frame := SettingsAck()
 	if frame.Type != FrameSettings || frame.Flags != FlagAck || frame.StreamID != 0 || frame.Payload != nil {

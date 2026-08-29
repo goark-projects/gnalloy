@@ -160,10 +160,21 @@ func (d *FrameDecoder) Decode(_ *channel.HandlerContext, in *buffer.CompositeByt
 	return Frame{Type: header.Type, Flags: header.Flags, StreamID: header.StreamID, Payload: payload}, nil
 }
 
-type FrameEncoder struct{}
+type FrameEncoderConfig struct {
+	// CoalescePayload 将帧头和 payload 合并为单个 ByteBuf；TLS 等非 writev 路径可减少小写次数。
+	CoalescePayload bool
+}
+
+type FrameEncoder struct {
+	coalescePayload bool
+}
 
 func NewFrameEncoder() *FrameEncoder {
 	return &FrameEncoder{}
+}
+
+func NewFrameEncoderWithConfig(cfg FrameEncoderConfig) *FrameEncoder {
+	return &FrameEncoder{coalescePayload: cfg.CoalescePayload}
 }
 
 func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
@@ -175,6 +186,9 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	if err != nil {
 		frame.Release()
 		return err
+	}
+	if e.coalescePayload && frame.Payload != nil && frame.Payload.ReadableBytes() > 0 {
+		return e.writeCoalesced(ctx, frame, header)
 	}
 	out, err := ctx.Channel().Allocator().Acquire(FrameHeaderSize)
 	if err != nil {
@@ -195,4 +209,25 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		return nil
 	}
 	return codec.WriteOutboundBuffer(ctx, frame.Payload)
+}
+
+func (e *FrameEncoder) writeCoalesced(ctx *channel.HandlerContext, frame Frame, header []byte) error {
+	payloadBytes := frame.Payload.ReadableBytes()
+	out, err := ctx.Channel().Allocator().Acquire(FrameHeaderSize + payloadBytes)
+	if err != nil {
+		frame.Release()
+		return err
+	}
+	if _, err := out.WriteBytes(header); err != nil {
+		out.Release()
+		frame.Release()
+		return err
+	}
+	if err := buffer.WriteReadableBytes(out, frame.Payload); err != nil {
+		out.Release()
+		frame.Release()
+		return err
+	}
+	frame.Release()
+	return codec.WriteOutboundBuffer(ctx, out)
 }

@@ -35,11 +35,16 @@ record Config(
                 Args.intValue(values, "event-loops", Runtime.getRuntime().availableProcessors()),
                 Args.intValue(values, "latency-sample-rate", 0),
                 Args.intValue(values, "warmup-messages", 0),
-                values.getOrDefault("alpn", "http/1.1"));
+                defaultAlpn(values));
     }
 
     void validate() {
-        if (!Objects.equals(protocol, "tcp-echo") && !Objects.equals(protocol, "udp-echo") && !Objects.equals(protocol, "http1") && !Objects.equals(protocol, "https1")) {
+        if (!Objects.equals(protocol, "tcp-echo")
+                && !Objects.equals(protocol, "udp-echo")
+                && !Objects.equals(protocol, "http1")
+                && !Objects.equals(protocol, "https1")
+                && !Objects.equals(protocol, "http2")
+                && !Objects.equals(protocol, "https2")) {
             throw new IllegalArgumentException("netty-bench: unsupported protocol " + protocol);
         }
         if (backend == null) {
@@ -72,12 +77,16 @@ record Config(
         return Objects.equals(protocol, "http1") || Objects.equals(protocol, "https1");
     }
 
+    boolean http2Family() {
+        return Objects.equals(protocol, "http2") || Objects.equals(protocol, "https2");
+    }
+
     boolean udpEcho() {
         return Objects.equals(protocol, "udp-echo");
     }
 
     boolean tlsEnabled() {
-        return Objects.equals(protocol, "https1");
+        return Objects.equals(protocol, "https1") || Objects.equals(protocol, "https2");
     }
 
     List<String> alpnProtocols() {
@@ -93,6 +102,17 @@ record Config(
             }
         }
         return protocols;
+    }
+
+    private static String defaultAlpn(Map<String, String> values) {
+        String configured = values.get("alpn");
+        if (configured != null) {
+            return configured;
+        }
+        if (Objects.equals(values.get("protocol"), "https2")) {
+            return "h2";
+        }
+        return "http/1.1";
     }
 
     private static Duration durationValue(Map<String, String> values, String key, Duration fallback) {
