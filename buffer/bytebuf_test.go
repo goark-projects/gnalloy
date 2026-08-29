@@ -131,6 +131,10 @@ func TestCompositeReadableSlicesPreservePartialViews(t *testing.T) {
 	if len(slices) != 2 || string(slices[0]) != "b" || string(slices[1]) != "cd" {
 		t.Fatalf("slices=%q", slices)
 	}
+	slices[0][0] = 'B'
+	if got := string(c.Bytes()); got != "Bcd" {
+		t.Fatalf("bytes=%q, want Bcd", got)
+	}
 	c.Release()
 }
 
@@ -168,6 +172,27 @@ func BenchmarkCompositeReadableSlicesFullComponents(b *testing.B) {
 		slices := c.ReadableSlices(stack[:0])
 		if len(slices) != 1 || len(slices[0]) != 4 {
 			b.Fatalf("slices=%d", len(slices))
+		}
+	}
+	c.Release()
+}
+
+func BenchmarkCompositeReadableSlicesPartialComponents(b *testing.B) {
+	c := NewCompositeByteBuf()
+	for i := 0; i < 8; i++ {
+		c.Append(testBuffer("abcdefghijklmnop"))
+	}
+	if err := c.SkipBytes(1); err != nil {
+		b.Fatal(err)
+	}
+	var stack [8][]byte
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		slices := c.ReadableSlices(stack[:0])
+		if len(slices) != 8 || len(slices[0]) != 15 || len(slices[7]) != 16 {
+			b.Fatalf("slices=%d first=%d last=%d", len(slices), len(slices[0]), len(slices[7]))
 		}
 	}
 	c.Release()

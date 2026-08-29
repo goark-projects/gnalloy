@@ -42,6 +42,13 @@ func (c *CompositeByteBuf) ReadableSpan(index int, length int) ([]byte, bool) {
 }
 
 func appendPartialReadableSlice(dst [][]byte, comp *component, from int, to int) [][]byte {
+	if data, ok := componentBytes(comp.buf); ok {
+		offset := from - comp.start
+		length := to - from
+		if offset >= 0 && length > 0 && offset+length <= len(data) {
+			return append(dst, data[offset:offset+length])
+		}
+	}
 	part, err := comp.buf.Slice(comp.buf.ReaderIndex()+from-comp.start, to-from)
 	if err != nil {
 		return dst
