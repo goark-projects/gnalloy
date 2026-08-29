@@ -7,8 +7,8 @@ func writeFutureFrom(c *HandlerContext, msg any) Future {
 		}); ok {
 			return h.WriteFuture(n, msg)
 		}
-		if h, ok := n.handler.(WriteHandler); ok {
-			err := h.Write(n, msg)
+		if n.write != nil {
+			err := n.write.Write(n, msg)
 			if err != nil {
 				return FailedFuture(err)
 			}
@@ -35,8 +35,8 @@ func flushFutureFrom(c *HandlerContext) Future {
 		}); ok {
 			return h.FlushFuture(n)
 		}
-		if h, ok := n.handler.(FlushHandler); ok {
-			err := h.Flush(n)
+		if n.flush != nil {
+			err := n.flush.Flush(n)
 			if err != nil {
 				return FailedFuture(err)
 			}

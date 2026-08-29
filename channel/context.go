@@ -10,6 +10,12 @@ type HandlerContext struct {
 	handler  Handler
 	prev     *HandlerContext
 	next     *HandlerContext
+
+	channelRead         ChannelReadHandler
+	channelReadComplete ChannelReadCompleteHandler
+	exceptionCaught     ExceptionCaughtHandler
+	write               WriteHandler
+	flush               FlushHandler
 }
 
 func (c *HandlerContext) Name() string {
@@ -57,8 +63,8 @@ func (c *HandlerContext) FireChannelActive() {
 
 func (c *HandlerContext) FireChannelRead(msg any) {
 	for n := c.next; n != nil; n = n.next {
-		if h, ok := n.handler.(ChannelReadHandler); ok {
-			h.ChannelRead(n, msg)
+		if n.channelRead != nil {
+			n.channelRead.ChannelRead(n, msg)
 			return
 		}
 	}
@@ -66,8 +72,8 @@ func (c *HandlerContext) FireChannelRead(msg any) {
 
 func (c *HandlerContext) FireChannelReadComplete() {
 	for n := c.next; n != nil; n = n.next {
-		if h, ok := n.handler.(ChannelReadCompleteHandler); ok {
-			h.ChannelReadComplete(n)
+		if n.channelReadComplete != nil {
+			n.channelReadComplete.ChannelReadComplete(n)
 			return
 		}
 	}
@@ -111,8 +117,8 @@ func (c *HandlerContext) FireFlushComplete() {
 
 func (c *HandlerContext) FireExceptionCaught(err error) {
 	for n := c.next; n != nil; n = n.next {
-		if h, ok := n.handler.(ExceptionCaughtHandler); ok {
-			h.ExceptionCaught(n, err)
+		if n.exceptionCaught != nil {
+			n.exceptionCaught.ExceptionCaught(n, err)
 			return
 		}
 	}
@@ -124,8 +130,8 @@ func (c *HandlerContext) WriteFuture(msg any) Future {
 
 func (c *HandlerContext) Write(msg any) error {
 	for n := c.prev; n != nil; n = n.prev {
-		if h, ok := n.handler.(WriteHandler); ok {
-			return h.Write(n, msg)
+		if n.write != nil {
+			return n.write.Write(n, msg)
 		}
 	}
 	if c.pipeline.sink == nil {
@@ -140,8 +146,8 @@ func (c *HandlerContext) FlushFuture() Future {
 
 func (c *HandlerContext) Flush() error {
 	for n := c.prev; n != nil; n = n.prev {
-		if h, ok := n.handler.(FlushHandler); ok {
-			return h.Flush(n)
+		if n.flush != nil {
+			return n.flush.Flush(n)
 		}
 	}
 	if c.pipeline.sink == nil {

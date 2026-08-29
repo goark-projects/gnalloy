@@ -21,8 +21,8 @@ func NewPipeline(ch Channel, sink OutboundSink) *Pipeline {
 	if sink, ok := sink.(writeAndFlushSink); ok {
 		p.writeAndFlush = sink
 	}
-	p.head = &HandlerContext{pipeline: p, name: "$head", handler: headHandler{}}
-	p.tail = &HandlerContext{pipeline: p, name: "$tail", handler: tailHandler{}}
+	p.head = newHandlerContext(p, "$head", headHandler{})
+	p.tail = newHandlerContext(p, "$tail", tailHandler{})
 	p.head.next = p.tail
 	p.tail.prev = p.head
 	return p
@@ -36,7 +36,7 @@ func (p *Pipeline) AddLast(name string, h Handler) error {
 	if err := p.validateNewHandler(name, h); err != nil {
 		return err
 	}
-	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
+	ctx := newHandlerContext(p, name, h)
 	prev := p.tail.prev
 	p.linkBetween(prev, p.tail, ctx)
 	if err := p.callHandlerAdded(ctx); err != nil {
@@ -50,7 +50,7 @@ func (p *Pipeline) AddFirst(name string, h Handler) error {
 	if err := p.validateNewHandler(name, h); err != nil {
 		return err
 	}
-	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
+	ctx := newHandlerContext(p, name, h)
 	next := p.head.next
 	p.linkBetween(p.head, next, ctx)
 	if err := p.callHandlerAdded(ctx); err != nil {
@@ -69,7 +69,7 @@ func (p *Pipeline) AddBefore(baseName string, name string, h Handler) error {
 	if err := p.validateNewHandler(name, h); err != nil {
 		return err
 	}
-	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
+	ctx := newHandlerContext(p, name, h)
 	p.linkBetween(base.prev, base, ctx)
 	if err := p.callHandlerAdded(ctx); err != nil {
 		_ = p.unlink(ctx)
@@ -87,7 +87,7 @@ func (p *Pipeline) AddAfter(baseName string, name string, h Handler) error {
 	if err := p.validateNewHandler(name, h); err != nil {
 		return err
 	}
-	ctx := &HandlerContext{pipeline: p, name: name, handler: h}
+	ctx := newHandlerContext(p, name, h)
 	p.linkBetween(base, base.next, ctx)
 	if err := p.callHandlerAdded(ctx); err != nil {
 		_ = p.unlink(ctx)
@@ -110,7 +110,7 @@ func (p *Pipeline) Replace(oldName string, newName string, h Handler) error {
 			return ErrDuplicateHandler
 		}
 	}
-	replacement := &HandlerContext{pipeline: p, name: newName, handler: h}
+	replacement := newHandlerContext(p, newName, h)
 	prev, next := old.prev, old.next
 	prev.next = replacement
 	next.prev = replacement
