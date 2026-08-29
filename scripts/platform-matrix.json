@@ -27,7 +27,7 @@
           "nativeOnly": true
         }
       ],
-      "unsupported": ["epoll", "kqueue", "iouring", "unix-socket"]
+      "unsupported": ["epoll", "kqueue", "iouring", "unix-socket", "resolver-dns-native-macos"]
     },
     {
       "name": "linux-amd64",
@@ -49,7 +49,7 @@
           "nativeOnly": true
         }
       ],
-      "unsupported": ["kqueue", "iocp"]
+      "unsupported": ["kqueue", "iocp", "resolver-dns-native-macos"]
     },
     {
       "name": "linux-arm64",
@@ -71,7 +71,7 @@
           "nativeOnly": true
         }
       ],
-      "unsupported": ["kqueue", "iocp"]
+      "unsupported": ["kqueue", "iocp", "resolver-dns-native-macos"]
     },
     {
       "name": "darwin-arm64",

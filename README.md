@@ -87,6 +87,9 @@ blocks:
   exchanger hooks, UDP query support, TCP fallback, hosts override,
   search-domain/ndots expansion, bounded CNAME follow, cache clearing, and
   A/AAAA lookup helpers.
+- `resolver/dns/native/macos`: macOS system DNS configuration provider backed
+  by `scutil --dns`, mapping native nameserver/search-domain snapshots into
+  the Go-native resolver.
 - `resolver/dns/quic`: DNS-over-QUIC exchanger using RFC 9250 ALPN `doq`,
   default port `853`, and length-prefixed DNS messages over QUIC streams.
 - `timer`: local hashed wheel timer for idle and heartbeat checks.

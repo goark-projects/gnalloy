@@ -95,6 +95,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | hosts/search/ndots | `resolver/dns.StaticHosts`, `Config.SearchDomains`, `Config.Ndots` | done | 静态 hosts 优先，支持相对域名搜索顺序和去重。 |
 | CNAME follow | `resolver/dns` | done | A/AAAA 查询支持受限深度 CNAME 递归，避免别名链无限循环。 |
 | DNS TCP fallback | `resolver/dns.TCPExchanger` | done | UDP 响应截断时可回退 TCP 查询，避免大响应被静默截断。 |
+| `resolver-dns-native-macos` | `resolver/dns/native/macos` | done | darwin 上通过 `scutil --dns` 读取系统 nameserver/search-domain 快照并转换为 `resolver/dns.Config`；非 macOS 显式返回 unsupported，运行时验证必须在 macOS 主机执行。 |
 | DNS-over-QUIC | `resolver/dns/quic.Exchanger` | done | 默认 ALPN `doq` 和端口 `853`，复用 QUIC stream length-prefixed application exchanger。 |
 | `SimpleChannelPool` | `channel/pool.SimplePool` | done | 无总连接数限制、保留 idle 上限和生命周期回调。 |
 | `FixedChannelPool` | `channel/pool.FixedPool` | done | 支持最大连接数、最大等待队列、获取超时、健康检查、生命周期回调和统计快照。 |

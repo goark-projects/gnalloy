@@ -35,12 +35,18 @@ func TestLoadDefaultMatrix(t *testing.T) {
 	if !contains(windows.L2Drivers, "npcap") {
 		t.Fatalf("windows l2Drivers=%v, want npcap", windows.L2Drivers)
 	}
+	if !contains(windows.Unsupported, "resolver-dns-native-macos") {
+		t.Fatalf("windows unsupported=%v, want resolver-dns-native-macos", windows.Unsupported)
+	}
 	if !hasGate(windows.Gates, "protocol-gate") {
 		t.Fatalf("windows gates=%v, want protocol-gate", windows.Gates)
 	}
 	darwin, _ := matrix.Target("darwin", "arm64")
 	if !contains(darwin.L2Drivers, "bpf") {
 		t.Fatalf("darwin l2Drivers=%v, want bpf", darwin.L2Drivers)
+	}
+	if contains(darwin.Unsupported, "resolver-dns-native-macos") {
+		t.Fatalf("darwin unsupported=%v, must not contain resolver-dns-native-macos", darwin.Unsupported)
 	}
 	if !hasGate(darwin.Gates, "protocol-gate") {
 		t.Fatalf("darwin gates=%v, want protocol-gate", darwin.Gates)
