@@ -77,6 +77,30 @@ func TestStreamMultiplexerClosesAfterBothHalfCloses(t *testing.T) {
 	recorder.release()
 }
 
+func TestStreamMultiplexerAllowsServerResponseOnClientStream(t *testing.T) {
+	mux, err := NewStreamMultiplexer(MultiplexerConfig{Server: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &recordingSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("mux", mux); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelRead(HeadersBlock{StreamID: 1, Fields: []HeaderField{{Name: ":method", Value: "GET"}}, EndStream: true})
+	if err := ch.Write(HeadersBlock{StreamID: 1, Fields: []HeaderField{{Name: ":status", Value: "200"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Write(DataFrame{StreamID: 1, Flags: FlagEndStream, Data: testHTTP2Buf(t, "ok")}); err != nil {
+		t.Fatal(err)
+	}
+	if mux.ActiveStreams() != 0 {
+		t.Fatalf("active streams=%d, want 0", mux.ActiveStreams())
+	}
+	sink.release()
+}
+
 func TestStreamMultiplexerRejectsOutboundFlowControlViolation(t *testing.T) {
 	mux, err := NewStreamMultiplexer(MultiplexerConfig{
 		Server:                  false,

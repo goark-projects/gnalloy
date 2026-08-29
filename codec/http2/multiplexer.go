@@ -228,7 +228,13 @@ func (m *StreamMultiplexer) writeHeaders(frame HeadersFrame) error {
 	if err != nil {
 		return err
 	}
-	return stream.openLocal(frame.Flags&FlagEndStream != 0)
+	if err := stream.openLocal(frame.Flags&FlagEndStream != 0); err != nil {
+		return err
+	}
+	if stream.state == StreamClosed {
+		m.closeStream(frame.StreamID)
+	}
+	return nil
 }
 
 func (m *StreamMultiplexer) writeHeadersBlock(frame HeadersBlock) error {
@@ -236,7 +242,13 @@ func (m *StreamMultiplexer) writeHeadersBlock(frame HeadersBlock) error {
 	if err != nil {
 		return err
 	}
-	return stream.openLocal(frame.EndStream)
+	if err := stream.openLocal(frame.EndStream); err != nil {
+		return err
+	}
+	if stream.state == StreamClosed {
+		m.closeStream(frame.StreamID)
+	}
+	return nil
 }
 
 func (m *StreamMultiplexer) writeData(frame DataFrame) error {
@@ -251,7 +263,12 @@ func (m *StreamMultiplexer) writeData(frame DataFrame) error {
 	m.connSendWindow -= int32(size)
 	stream.sendWindow -= int32(size)
 	if frame.Flags&FlagEndStream != 0 {
-		return stream.halfCloseLocal()
+		if err := stream.halfCloseLocal(); err != nil {
+			return err
+		}
+		if stream.state == StreamClosed {
+			m.closeStream(frame.StreamID)
+		}
 	}
 	return nil
 }
@@ -267,11 +284,14 @@ func (m *StreamMultiplexer) applyInboundWindowUpdate(frame WindowUpdateFrame) {
 }
 
 func (m *StreamMultiplexer) stream(id StreamID, local bool) (*multiplexedStream, bool, error) {
-	if !id.Valid() || !m.validInitiator(id, local) {
+	if !id.Valid() {
 		return nil, false, ErrInvalidStreamID
 	}
 	if stream := m.streams[id]; stream != nil {
 		return stream, false, nil
+	}
+	if !m.validInitiator(id, local) {
+		return nil, false, ErrInvalidStreamID
 	}
 	if m.cfg.MaxActiveStreams > 0 && len(m.streams) >= m.cfg.MaxActiveStreams {
 		return nil, false, ErrInvalidStreamState
