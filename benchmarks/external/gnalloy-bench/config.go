@@ -33,6 +33,7 @@ type config struct {
 	IOUringMultishotAccept bool
 	IOUringSQPoll          bool
 	LatencySampleRate      int
+	WarmupMessages         int
 }
 
 func parseConfig(args []string) (config, error) {
@@ -70,6 +71,7 @@ func parseConfig(args []string) (config, error) {
 	fs.BoolVar(&cfg.IOUringMultishotAccept, "iouring-multishot-accept", cfg.IOUringMultishotAccept, "enable io_uring multishot accept")
 	fs.BoolVar(&cfg.IOUringSQPoll, "iouring-sqpoll", cfg.IOUringSQPoll, "enable io_uring SQPOLL")
 	fs.IntVar(&cfg.LatencySampleRate, "latency-sample-rate", cfg.LatencySampleRate, "record one round-trip latency sample every N messages per connection; 0 disables latency sampling")
+	fs.IntVar(&cfg.WarmupMessages, "warmup-messages", cfg.WarmupMessages, "messages per connection sent before timed measurement; 0 disables in-process warmup")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -137,6 +139,9 @@ func (c config) validate() error {
 	}
 	if c.LatencySampleRate < 0 {
 		return fmt.Errorf("%w: latency-sample-rate must not be negative", errInvalidConfig)
+	}
+	if c.WarmupMessages < 0 {
+		return fmt.Errorf("%w: warmup-messages must not be negative", errInvalidConfig)
 	}
 	return nil
 }

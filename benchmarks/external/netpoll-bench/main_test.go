@@ -19,6 +19,7 @@ func TestParseConfig(t *testing.T) {
 		"-messages", "3",
 		"-timeout", "2s",
 		"-latency-sample-rate", "2",
+		"-warmup-messages", "7",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -28,6 +29,9 @@ func TestParseConfig(t *testing.T) {
 	}
 	if cfg.LatencySampleRate != 2 {
 		t.Fatalf("latencySampleRate=%d, want 2", cfg.LatencySampleRate)
+	}
+	if cfg.WarmupMessages != 7 {
+		t.Fatalf("warmupMessages=%d, want 7", cfg.WarmupMessages)
 	}
 }
 
@@ -45,9 +49,16 @@ func TestParseConfigRejectsNegativeLatencySampleRate(t *testing.T) {
 	}
 }
 
+func TestParseConfigRejectsNegativeWarmupMessages(t *testing.T) {
+	_, err := parseConfig([]string{"-warmup-messages", "-1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
 func TestWriteBenchmarkResult(t *testing.T) {
 	var out bytes.Buffer
-	writeBenchmarkResult(&out, config{Protocol: "tcp-echo", Payload: 8, Connections: 1, Messages: 2, LatencySampleRate: 2}, benchResult{
+	writeBenchmarkResult(&out, config{Protocol: "tcp-echo", Payload: 8, Connections: 1, Messages: 2, LatencySampleRate: 2, WarmupMessages: 3}, benchResult{
 		TotalRequests: 2,
 		Elapsed:       4 * time.Microsecond,
 		Throughput:    500000,
@@ -64,7 +75,7 @@ func TestWriteBenchmarkResult(t *testing.T) {
 		},
 	})
 	text := out.String()
-	for _, want := range []string{"framework=netpoll", "backend=poller", "latencySampleRate=2", "latencySamples=1", "p50LatencyNs=1000", "p99LatencyNs=2000", "heapAllocBytes=1024", "gcCount=1", "goroutines=2", "total=2", "BenchmarkNetpollTCPEcho-", "2 2000 ns/op"} {
+	for _, want := range []string{"framework=netpoll", "backend=poller", "latencySampleRate=2", "warmupMessages=3", "latencySamples=1", "p50LatencyNs=1000", "p99LatencyNs=2000", "heapAllocBytes=1024", "gcCount=1", "goroutines=2", "total=2", "BenchmarkNetpollTCPEcho-", "2 2000 ns/op"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}
@@ -83,6 +94,7 @@ func TestRunBenchmarkTCPEcho(t *testing.T) {
 		Messages:          2,
 		Timeout:           5 * time.Second,
 		LatencySampleRate: 1,
+		WarmupMessages:    1,
 	}
 	result, err := runBenchmark(context.Background(), cfg)
 	if err != nil {

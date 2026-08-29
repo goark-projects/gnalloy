@@ -27,6 +27,7 @@ final class LoadGenerator {
                 : new long[0][];
         ClientSession[] clients = prepareClients(address, config);
         try {
+            runWarmup(clients, config);
             ExecutorService pool = Executors.newFixedThreadPool(config.connections());
             ResourceSnapshot resourcesBefore = ResourceSnapshot.capture();
             long started = System.nanoTime();
@@ -67,6 +68,31 @@ final class LoadGenerator {
         } finally {
             closeClients(clients);
         }
+    }
+
+    private static void runWarmup(ClientSession[] clients, Config config) throws Exception {
+        if (config.warmupMessages() <= 0) {
+            return;
+        }
+        AtomicReference<Throwable> firstError = new AtomicReference<>();
+        ExecutorService pool = Executors.newFixedThreadPool(config.connections());
+        for (int i = 0; i < clients.length; i++) {
+            final int clientId = i;
+            pool.execute(() -> {
+                try {
+                    runClientMessages(config, clientId, clients[clientId], config.warmupMessages(), null, new long[0]);
+                } catch (Throwable t) {
+                    firstError.compareAndSet(null, t);
+                }
+            });
+        }
+        pool.shutdown();
+        boolean finished = pool.awaitTermination(config.timeout().toNanos(), TimeUnit.NANOSECONDS);
+        if (!finished) {
+            pool.shutdownNow();
+            firstError.compareAndSet(null, new IOException("netty-bench: warmup timeout"));
+        }
+        rethrowFirstError(firstError.get());
     }
 
     private static ClientSession[] prepareClients(InetSocketAddress address, Config config) throws IOException {
@@ -125,14 +151,25 @@ final class LoadGenerator {
             ClientSession client,
             AtomicLong successes,
             long[] latencySamples) throws IOException {
+        runClientMessages(config, clientId, client, config.messages(), successes, latencySamples);
+    }
+
+    private static void runClientMessages(
+            Config config,
+            int clientId,
+            ClientSession client,
+            int messageCount,
+            AtomicLong successes,
+            long[] latencySamples) throws IOException {
         byte[] payload = client.payload();
         byte[] reply = client.reply();
         OutputStream out = client.socket().getOutputStream();
         InputStream in = client.socket().getInputStream();
         int sampleIndex = 0;
-        for (int i = 0; i < config.messages(); i++) {
+        for (int i = 0; i < messageCount; i++) {
             payload[0] = (byte) (clientId + i);
-            boolean recordLatency = LatencyRecorder.shouldRecord(i, config.latencySampleRate());
+            boolean recordLatency = latencySamples.length > 0
+                    && LatencyRecorder.shouldRecord(i, config.latencySampleRate());
             long requestStarted = recordLatency ? System.nanoTime() : 0L;
             out.write(payload);
             readFully(in, reply);
@@ -142,7 +179,9 @@ final class LoadGenerator {
             if (recordLatency && sampleIndex < latencySamples.length) {
                 latencySamples[sampleIndex++] = LatencyRecorder.elapsedNanos(requestStarted);
             }
-            successes.incrementAndGet();
+            if (successes != null) {
+                successes.incrementAndGet();
+            }
         }
     }
 

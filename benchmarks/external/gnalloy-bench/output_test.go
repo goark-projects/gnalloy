@@ -20,6 +20,7 @@ func TestWriteBenchmarkResult(t *testing.T) {
 		Connections:       1,
 		Messages:          2,
 		LatencySampleRate: 1,
+		WarmupMessages:    3,
 	}, benchResult{
 		TotalRequests: 2,
 		Elapsed:       4 * time.Microsecond,
@@ -44,7 +45,7 @@ func TestWriteBenchmarkResult(t *testing.T) {
 		},
 	})
 	text := out.String()
-	for _, want := range []string{"framework=gnalloy", "backend=std", "boss=1", "workers=2", "latencySampleRate=1", "latencySamples=2", "p99LatencyNs=200000", "rssBytes=4096", "gcCount=1", "total=2", "BenchmarkGnalloyTCPEcho-", "2 2000 ns/op"} {
+	for _, want := range []string{"framework=gnalloy", "backend=std", "boss=1", "workers=2", "latencySampleRate=1", "warmupMessages=3", "latencySamples=2", "p99LatencyNs=200000", "rssBytes=4096", "gcCount=1", "total=2", "BenchmarkGnalloyTCPEcho-", "2 2000 ns/op"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

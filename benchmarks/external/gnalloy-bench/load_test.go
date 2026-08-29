@@ -16,6 +16,7 @@ func TestRunBenchmarkTCPEcho(t *testing.T) {
 		"-timeout", "5s",
 		"-workers", "1",
 		"-latency-sample-rate", "1",
+		"-warmup-messages", "1",
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -32,6 +32,7 @@ type config struct {
 	Messages          int
 	Timeout           time.Duration
 	LatencySampleRate int
+	WarmupMessages    int
 }
 
 type benchResult struct {
@@ -81,6 +82,7 @@ func parseConfig(args []string) (config, error) {
 	fs.IntVar(&cfg.Messages, "messages", cfg.Messages, "messages per connection")
 	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "overall timeout")
 	fs.IntVar(&cfg.LatencySampleRate, "latency-sample-rate", cfg.LatencySampleRate, "record one round-trip latency sample every N messages per connection; 0 disables latency sampling")
+	fs.IntVar(&cfg.WarmupMessages, "warmup-messages", cfg.WarmupMessages, "messages per connection sent before timed measurement; 0 disables in-process warmup")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -102,6 +104,9 @@ func (c config) validate() error {
 	}
 	if c.LatencySampleRate < 0 {
 		return fmt.Errorf("%w: latency-sample-rate must not be negative", errInvalidConfig)
+	}
+	if c.WarmupMessages < 0 {
+		return fmt.Errorf("%w: warmup-messages must not be negative", errInvalidConfig)
 	}
 	return nil
 }
@@ -140,6 +145,9 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 		return benchResult{Errors: 1}, err
 	}
 	defer closeTCPClients(clients)
+	if err := warmupTCPClients(ctx, clients, cfg); err != nil {
+		return benchResult{Errors: 1}, err
+	}
 
 	var (
 		successes atomic.Int64
@@ -233,6 +241,37 @@ func prepareTCPClients(ctx context.Context, addr string, cfg config) ([]tcpClien
 	return clients, nil
 }
 
+func warmupTCPClients(ctx context.Context, clients []tcpClient, cfg config) error {
+	if cfg.WarmupMessages <= 0 {
+		return nil
+	}
+	var (
+		firstErr error
+		once     sync.Once
+		wg       sync.WaitGroup
+	)
+	recordError := func(err error) {
+		if err == nil {
+			return
+		}
+		once.Do(func() {
+			firstErr = err
+		})
+	}
+	startCh := make(chan struct{})
+	for i := range clients {
+		clientID := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			recordError(runClientMessages(ctx, clients[clientID], cfg, clientID, startCh, cfg.WarmupMessages, nil, nil))
+		}()
+	}
+	close(startCh)
+	wg.Wait()
+	return firstErr
+}
+
 func dialTCPClient(ctx context.Context, addr string, cfg config) (net.Conn, error) {
 	dialer := net.Dialer{Timeout: cfg.Timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
@@ -258,19 +297,23 @@ func closeTCPClients(clients []tcpClient) {
 }
 
 func runClient(ctx context.Context, client tcpClient, cfg config, clientID int, startCh <-chan struct{}, successes *atomic.Int64, latencySamples *[]int64) error {
+	return runClientMessages(ctx, client, cfg, clientID, startCh, cfg.Messages, successes, latencySamples)
+}
+
+func runClientMessages(ctx context.Context, client tcpClient, cfg config, clientID int, startCh <-chan struct{}, messageCount int, successes *atomic.Int64, latencySamples *[]int64) error {
 	select {
 	case <-startCh:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	for i := 0; i < cfg.Messages; i++ {
+	for i := 0; i < messageCount; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 		client.payload[0] = byte(clientID + i)
-		recordLatency := shouldRecordLatency(i, cfg.LatencySampleRate)
+		recordLatency := latencySamples != nil && shouldRecordLatency(i, cfg.LatencySampleRate)
 		var requestStarted time.Time
 		if recordLatency {
 			requestStarted = time.Now()
@@ -287,7 +330,9 @@ func runClient(ctx context.Context, client tcpClient, cfg config, clientID int, 
 		if recordLatency && latencySamples != nil {
 			*latencySamples = append(*latencySamples, elapsedLatencyNanos(requestStarted))
 		}
-		successes.Add(1)
+		if successes != nil {
+			successes.Add(1)
+		}
 	}
 	return nil
 }
@@ -307,8 +352,8 @@ func writeBenchmarkResult(w io.Writer, cfg config, result benchResult) {
 	if w == nil {
 		return
 	}
-	fmt.Fprintf(w, "framework=netpoll protocol=%s backend=poller latencySampleRate=%d latencySamples=%d p50LatencyNs=%d p95LatencyNs=%d p99LatencyNs=%d p999LatencyNs=%d maxLatencyNs=%d rssBytes=%d heapAllocBytes=%d heapSysBytes=%d heapObjects=%d gcCount=%d gcPauseNs=%d goroutines=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s\n",
-		cfg.Protocol, cfg.LatencySampleRate, result.Latency.Samples, result.Latency.P50.Nanoseconds(), result.Latency.P95.Nanoseconds(), result.Latency.P99.Nanoseconds(), result.Latency.P999.Nanoseconds(), result.Latency.Max.Nanoseconds(), result.Resources.RSSBytes, result.Resources.HeapAllocBytes, result.Resources.HeapSysBytes, result.Resources.HeapObjects, result.Resources.GCCount, result.Resources.GCPauseNanos, result.Resources.Goroutines, cfg.Payload, cfg.Connections, cfg.Messages, result.TotalRequests, result.Errors, result.Elapsed, result.Throughput)
+	fmt.Fprintf(w, "framework=netpoll protocol=%s backend=poller latencySampleRate=%d warmupMessages=%d latencySamples=%d p50LatencyNs=%d p95LatencyNs=%d p99LatencyNs=%d p999LatencyNs=%d maxLatencyNs=%d rssBytes=%d heapAllocBytes=%d heapSysBytes=%d heapObjects=%d gcCount=%d gcPauseNs=%d goroutines=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s\n",
+		cfg.Protocol, cfg.LatencySampleRate, cfg.WarmupMessages, result.Latency.Samples, result.Latency.P50.Nanoseconds(), result.Latency.P95.Nanoseconds(), result.Latency.P99.Nanoseconds(), result.Latency.P999.Nanoseconds(), result.Latency.Max.Nanoseconds(), result.Resources.RSSBytes, result.Resources.HeapAllocBytes, result.Resources.HeapSysBytes, result.Resources.HeapObjects, result.Resources.GCCount, result.Resources.GCPauseNanos, result.Resources.Goroutines, cfg.Payload, cfg.Connections, cfg.Messages, result.TotalRequests, result.Errors, result.Elapsed, result.Throughput)
 	fmt.Fprintf(w, "%s-%d %d %.0f ns/op\n", benchmarkName, runtime.GOMAXPROCS(0), result.TotalRequests, result.NsPerOp)
 }
 

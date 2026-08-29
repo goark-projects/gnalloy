@@ -14,7 +14,8 @@ record Config(
         int messages,
         Duration timeout,
         int eventLoops,
-        int latencySampleRate) {
+        int latencySampleRate,
+        int warmupMessages) {
 
     static Config parse(String[] args) {
         Map<String, String> values = Args.parse(args);
@@ -29,7 +30,8 @@ record Config(
                 Args.intValue(values, "messages", 100000),
                 durationValue(values, "timeout", Duration.ofMinutes(5)),
                 Args.intValue(values, "event-loops", Runtime.getRuntime().availableProcessors()),
-                Args.intValue(values, "latency-sample-rate", 0));
+                Args.intValue(values, "latency-sample-rate", 0),
+                Args.intValue(values, "warmup-messages", 0));
     }
 
     void validate() {
@@ -56,6 +58,9 @@ record Config(
         }
         if (latencySampleRate < 0) {
             throw new IllegalArgumentException("netty-bench: latency-sample-rate must not be negative");
+        }
+        if (warmupMessages < 0) {
+            throw new IllegalArgumentException("netty-bench: warmup-messages must not be negative");
         }
     }
 

@@ -23,6 +23,7 @@ func TestParseConfig(t *testing.T) {
 		"-workers", "2",
 		"-read-buffer-size", "8192",
 		"-reuseport",
+		"-warmup-messages", "7",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +36,9 @@ func TestParseConfig(t *testing.T) {
 	}
 	if !cfg.ReusePort {
 		t.Fatalf("reuseport=%v, want true", cfg.ReusePort)
+	}
+	if cfg.WarmupMessages != 7 {
+		t.Fatalf("warmupMessages=%d, want 7", cfg.WarmupMessages)
 	}
 }
 
@@ -185,6 +189,13 @@ func TestParseConfigRejectsNegativeReadBufferSize(t *testing.T) {
 
 func TestParseConfigRejectsNegativeLatencySampleRate(t *testing.T) {
 	_, err := parseConfig([]string{"-latency-sample-rate", "-1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
+func TestParseConfigRejectsNegativeWarmupMessages(t *testing.T) {
+	_, err := parseConfig([]string{"-warmup-messages", "-1"})
 	if !errors.Is(err, errInvalidConfig) {
 		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
 	}

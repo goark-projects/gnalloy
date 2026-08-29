@@ -55,6 +55,9 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 		return benchResult{Errors: 1}, err
 	}
 	defer closeTCPClients(clients)
+	if err := warmupTCPClients(ctx, clients, cfg); err != nil {
+		return benchResult{Errors: 1}, err
+	}
 
 	var (
 		successes atomic.Int64
@@ -148,6 +151,37 @@ func prepareTCPClients(ctx context.Context, addr string, cfg config) ([]tcpClien
 	return clients, nil
 }
 
+func warmupTCPClients(ctx context.Context, clients []tcpClient, cfg config) error {
+	if cfg.WarmupMessages <= 0 {
+		return nil
+	}
+	var (
+		firstErr error
+		once     sync.Once
+		wg       sync.WaitGroup
+	)
+	recordError := func(err error) {
+		if err == nil {
+			return
+		}
+		once.Do(func() {
+			firstErr = err
+		})
+	}
+	startCh := make(chan struct{})
+	for i := range clients {
+		clientID := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			recordError(runClientMessages(ctx, clients[clientID], cfg, clientID, startCh, cfg.WarmupMessages, nil, nil))
+		}()
+	}
+	close(startCh)
+	wg.Wait()
+	return firstErr
+}
+
 func dialTCPClient(ctx context.Context, addr string, cfg config) (net.Conn, error) {
 	dialer := net.Dialer{Timeout: cfg.Timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
@@ -173,19 +207,23 @@ func closeTCPClients(clients []tcpClient) {
 }
 
 func runClient(ctx context.Context, client tcpClient, cfg config, clientID int, startCh <-chan struct{}, successes *atomic.Int64, latencySamples *[]int64) error {
+	return runClientMessages(ctx, client, cfg, clientID, startCh, cfg.Messages, successes, latencySamples)
+}
+
+func runClientMessages(ctx context.Context, client tcpClient, cfg config, clientID int, startCh <-chan struct{}, messageCount int, successes *atomic.Int64, latencySamples *[]int64) error {
 	select {
 	case <-startCh:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	for i := 0; i < cfg.Messages; i++ {
+	for i := 0; i < messageCount; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 		client.payload[0] = byte(clientID + i)
-		recordLatency := shouldRecordLatency(i, cfg.LatencySampleRate)
+		recordLatency := latencySamples != nil && shouldRecordLatency(i, cfg.LatencySampleRate)
 		var requestStarted time.Time
 		if recordLatency {
 			requestStarted = time.Now()
@@ -202,7 +240,9 @@ func runClient(ctx context.Context, client tcpClient, cfg config, clientID int, 
 		if recordLatency && latencySamples != nil {
 			*latencySamples = append(*latencySamples, elapsedLatencyNanos(requestStarted))
 		}
-		successes.Add(1)
+		if successes != nil {
+			successes.Add(1)
+		}
 	}
 	return nil
 }
