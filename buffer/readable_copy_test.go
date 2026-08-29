@@ -87,6 +87,34 @@ func TestWriteReadableBytesCopiesCompositeWithoutAdvancing(t *testing.T) {
 	}
 }
 
+func TestReadableStringAtCopiesCompositeRangeWithoutAdvancing(t *testing.T) {
+	src := NewCompositeByteBuf()
+	src.Append(testBuffer("ab"))
+	src.Append(testBuffer("cdef"))
+	src.Append(testBuffer("gh"))
+	defer src.Release()
+
+	value, err := ReadableStringAt(src, 1, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "bcdefg" {
+		t.Fatalf("value=%q, want bcdefg", value)
+	}
+	if src.ReaderIndex() != 0 {
+		t.Fatalf("readerIndex=%d, want 0", src.ReaderIndex())
+	}
+	if _, err := ReadableStringAt(src, 7, 2); err != ErrInvalidIndex {
+		t.Fatalf("err=%v, want ErrInvalidIndex", err)
+	}
+	if _, err := ReadableStringAt(src, 0, -1); err != ErrInvalidIndex {
+		t.Fatalf("negative length err=%v, want ErrInvalidIndex", err)
+	}
+	if _, err := ReadableStringAt(src, src.WriterIndex()+1, 0); err != ErrInvalidIndex {
+		t.Fatalf("empty out-of-range err=%v, want ErrInvalidIndex", err)
+	}
+}
+
 func TestForEachReadableSliceVisitsCompositeWithoutAdvancing(t *testing.T) {
 	src := NewCompositeByteBuf()
 	src.Append(testBuffer("ab"))

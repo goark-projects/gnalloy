@@ -614,12 +614,7 @@ func findHeaderEnd(in *buffer.CompositeByteBuf) (int, bool) {
 }
 
 func stringSlice(in *buffer.CompositeByteBuf, index int, length int) (string, error) {
-	part, err := in.Slice(index, length)
-	if err != nil {
-		return "", err
-	}
-	defer part.Release()
-	return buffer.ReadableString(part), nil
+	return buffer.ReadableStringAt(in, index, length)
 }
 
 func defaultReason(code int) string {

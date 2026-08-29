@@ -66,6 +66,41 @@ func ReadableString(src ByteBuf) string {
 	return unsafe.String(unsafe.SliceData(data), len(data))
 }
 
+// ReadableStringAt 将 CompositeByteBuf 指定可读区间转换为 string，不推进 readerIndex。
+//
+// 连续区间保持 Go string 不可变语义复制；跨组件区间直接从组件复制到私有字节数组，
+// 避免为临时 Slice 构造中间 ByteBuf。
+func ReadableStringAt(src *CompositeByteBuf, index int, length int) (string, error) {
+	if src == nil {
+		if length == 0 {
+			return "", nil
+		}
+		return "", ErrInvalidIndex
+	}
+	if length < 0 {
+		return "", ErrInvalidIndex
+	}
+	if length == 0 {
+		if src.refs.Load() <= 0 {
+			return "", ErrReleasedBuffer
+		}
+		if index < src.readerIndex || index > src.writerIndex {
+			return "", ErrInvalidIndex
+		}
+		return "", nil
+	}
+	if data, ok := src.ReadableSpan(index, length); ok {
+		return string(data), nil
+	}
+	data := make([]byte, length)
+	if n, err := src.copyReadableRange(data, index, length); err != nil {
+		return "", err
+	} else if n != length {
+		return "", ErrNotEnoughBytes
+	}
+	return unsafe.String(unsafe.SliceData(data), len(data)), nil
+}
+
 // CopyReadableBytes 将 src 的可读区复制到 dst，不推进 readerIndex。
 //
 // 对内置 ByteBuf 类型直接访问已校验的内部布局，避免热路径为 ReadableSlices
