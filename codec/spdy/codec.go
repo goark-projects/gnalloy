@@ -39,34 +39,22 @@ func (d *Decoder) Decode(_ *channel.HandlerContext, in *buffer.CompositeByteBuf)
 		return nil, nil
 	}
 	reader := in.ReaderIndex()
-	first, _ := in.GetByte(reader)
-	control := first&0x80 != 0
-	flags, _ := in.GetByte(reader + 4)
-	length, err := readMedium(in, reader+5)
+	header, err := decodeFrameHeader(in, reader)
 	if err != nil {
 		return nil, err
 	}
-	total := headerSize + int(length)
+	total := headerSize + header.length
 	if total > d.maxFrameLength {
 		return nil, codec.ErrFrameTooLong
 	}
 	if in.ReadableBytes() < total {
 		return nil, nil
 	}
-	if control {
-		versionAndControl, err := in.ReadUnsigned(reader, 2, buffer.BigEndian)
-		if err != nil {
-			return nil, err
-		}
-		version := uint16(versionAndControl & 0x7fff)
-		if version != d.version {
+	if header.control {
+		if header.version != d.version {
 			return nil, ErrUnsupportedVersion
 		}
-		rawType, err := in.ReadUnsigned(reader+2, 2, buffer.BigEndian)
-		if err != nil {
-			return nil, err
-		}
-		msg, err := d.decodeControl(in, reader+headerSize, FrameType(rawType), flags, int(length))
+		msg, err := d.decodeControl(in, reader+headerSize, header.kind, header.flags, header.length)
 		if err != nil {
 			return nil, err
 		}
@@ -76,18 +64,14 @@ func (d *Decoder) Decode(_ *channel.HandlerContext, in *buffer.CompositeByteBuf)
 		}
 		return msg, nil
 	}
-	streamID, err := readStreamID(in, reader)
-	if err != nil {
-		return nil, err
-	}
-	if streamID == 0 {
+	if header.stream == 0 {
 		return nil, ErrInvalidFrame
 	}
-	data, err := slicePayload(in, reader+headerSize, int(length))
+	data, err := slicePayload(in, reader+headerSize, header.length)
 	if err != nil {
 		return nil, err
 	}
-	msg := DataFrame{StreamID: streamID, Flags: flags, Data: data}
+	msg := DataFrame{StreamID: header.stream, Flags: header.flags, Data: data}
 	if err := in.SkipBytes(total); err != nil {
 		msg.Release()
 		return nil, err
