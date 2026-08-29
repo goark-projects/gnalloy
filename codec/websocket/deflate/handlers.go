@@ -249,7 +249,8 @@ func copyFramePayload(payload buffer.ByteBuf) []byte {
 		payload.Release()
 		return nil
 	}
-	data := append([]byte(nil), payload.Bytes()...)
+	data := make([]byte, payload.ReadableBytes())
+	buffer.CopyReadableBytes(data, payload)
 	payload.Release()
 	return data
 }

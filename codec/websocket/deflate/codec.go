@@ -2,7 +2,6 @@ package deflate
 
 import (
 	"bytes"
-	"compress/flate"
 	"errors"
 	"io"
 
@@ -13,32 +12,33 @@ import (
 var syncFlushTail = []byte{0x00, 0x00, 0xff, 0xff}
 
 func compressMessage(src []byte, level int) ([]byte, error) {
-	var dst bytes.Buffer
-	writer, err := flate.NewWriter(&dst, level)
+	state, err := acquireMessageWriter(level)
 	if err != nil {
 		return nil, err
 	}
+	defer releaseMessageWriter(state)
 	if len(src) > 0 {
-		if _, err := writer.Write(src); err != nil {
-			_ = writer.Close()
+		if _, err := state.writer.Write(src); err != nil {
+			_ = state.writer.Close()
 			return nil, err
 		}
 	}
-	if err := writer.Flush(); err != nil {
-		_ = writer.Close()
+	if err := state.writer.Flush(); err != nil {
+		_ = state.writer.Close()
 		return nil, err
 	}
-	compressed := append([]byte(nil), dst.Bytes()...)
-	_ = writer.Close()
+	compressed := append([]byte(nil), state.dst.Bytes()...)
+	_ = state.writer.Close()
 	return trimSyncFlushTail(compressed), nil
 }
 
 func decompressMessage(src []byte, maxMessageBytes int) ([]byte, error) {
-	payload := make([]byte, 0, len(src)+len(syncFlushTail))
-	payload = append(payload, src...)
-	payload = append(payload, syncFlushTail...)
-	reader := flate.NewReader(bytes.NewReader(payload))
-	defer reader.Close()
+	source := newSyncTailReader(src)
+	reader, err := acquireMessageReader(source)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseMessageReader(reader)
 	limited := io.LimitReader(reader, int64(maxMessageBytes)+1)
 	data, err := io.ReadAll(limited)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {

@@ -74,15 +74,126 @@ func TestEncoderRejectsInvalidLevel(t *testing.T) {
 	}
 }
 
-func encodeWithHandler(t *testing.T, encoder *Encoder, payload []byte) buffer.ByteBuf {
+func BenchmarkGzipEncoderComposite(b *testing.B) {
+	encoder, err := NewGzipEncoder(-1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchmarkCompressionEncoder(b, encoder, fragmentedCompressionBuffer("abcdabcd", "efghefgh", "ijklijkl", "mnopmnop"))
+}
+
+func BenchmarkZlibEncoderComposite(b *testing.B) {
+	encoder, err := NewZlibEncoder(-1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchmarkCompressionEncoder(b, encoder, fragmentedCompressionBuffer("abcdabcd", "efghefgh", "ijklijkl", "mnopmnop"))
+}
+
+func BenchmarkGzipDecoder(b *testing.B) {
+	encoder, err := NewGzipEncoder(-1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	compressed := encodeWithHandler(b, encoder, []byte("abcdabcd efghefgh ijklijkl mnopmnop"))
+	defer compressed.Release()
+	decoder, err := NewGzipDecoder(1024)
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchmarkCompressionDecoder(b, decoder, compressed)
+}
+
+func BenchmarkZlibDecoder(b *testing.B) {
+	encoder, err := NewZlibEncoder(-1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	compressed := encodeWithHandler(b, encoder, []byte("abcdabcd efghefgh ijklijkl mnopmnop"))
+	defer compressed.Release()
+	decoder, err := NewZlibDecoder(1024)
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchmarkCompressionDecoder(b, decoder, compressed)
+}
+
+func benchmarkCompressionEncoder(b *testing.B, encoder *Encoder, payload buffer.ByteBuf) {
+	b.Helper()
+	b.Cleanup(func() {
+		payload.Release()
+	})
+	sink := &compressionSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("encoder", encoder); err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		for _, msg := range sink.writes {
+			if buf, ok := msg.(buffer.ByteBuf); ok {
+				buf.Release()
+			}
+		}
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := ch.Write(retainReadable(payload)); err != nil {
+			b.Fatal(err)
+		}
+		out := sink.writes[len(sink.writes)-1].(buffer.ByteBuf)
+		out.Release()
+		sink.writes = sink.writes[:0]
+	}
+}
+
+func benchmarkCompressionDecoder(b *testing.B, decoder *Decoder, compressed buffer.ByteBuf) {
+	b.Helper()
+	collector := &compressionCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("decoder", decoder); err != nil {
+		b.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("collector", collector); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ch.Pipeline().FireChannelRead(retainReadable(compressed))
+		if len(collector.reads) != 1 {
+			b.Fatalf("reads=%d", len(collector.reads))
+		}
+		collector.reads[0].(buffer.ByteBuf).Release()
+		collector.reads = collector.reads[:0]
+	}
+}
+
+func fragmentedCompressionBuffer(parts ...string) buffer.ByteBuf {
+	c := buffer.NewCompositeByteBuf()
+	for _, part := range parts {
+		c.Append(testCompressionBuf([]byte(part)))
+	}
+	return c
+}
+
+func retainReadable(src buffer.ByteBuf) buffer.ByteBuf {
+	if src != nil {
+		return src.Retain()
+	}
+	return nil
+}
+
+func encodeWithHandler(t testing.TB, encoder *Encoder, payload []byte) buffer.ByteBuf {
 	t.Helper()
 	sink := &compressionSink{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
 	if err := ch.Pipeline().AddLast("encoder", encoder); err != nil {
 		t.Fatal(err)
 	}
-	in := buffer.NewHeapBuffer(len(payload))
-	_, _ = in.WriteBytes(payload)
+	in := testCompressionBuf(payload)
 	if err := ch.Write(in); err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +208,12 @@ func encodeWithHandler(t *testing.T, encoder *Encoder, payload []byte) buffer.By
 		t.Fatal("payload was not compressed")
 	}
 	return out
+}
+
+func testCompressionBuf(data []byte) buffer.ByteBuf {
+	buf := buffer.NewHeapBuffer(len(data))
+	_, _ = buf.WriteBytes(data)
+	return buf
 }
 
 func decodeWithHandler(t *testing.T, decoder *Decoder, compressed buffer.ByteBuf) buffer.ByteBuf {

@@ -175,6 +175,105 @@ func TestFragmentedMessageCompressesOnFinalContinuation(t *testing.T) {
 	}
 }
 
+func BenchmarkCompressorCompositePayload(b *testing.B) {
+	sink := &frameSink{}
+	compressor, err := NewCompressor(Config{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("deflate", compressor)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := ch.Write(websocket.Frame{
+			Final:   true,
+			Opcode:  websocket.OpcodeBinary,
+			Payload: fragmentedDeflatePayload("abcdabcd", "efghefgh", "ijklijkl", "mnopmnop"),
+		}); err != nil {
+			b.Fatal(err)
+		}
+		sink.release()
+		sink.frames = sink.frames[:0]
+	}
+}
+
+func BenchmarkDecompressorPayload(b *testing.B) {
+	compressed, err := compressMessage([]byte("abcdabcd efghefgh ijklijkl mnopmnop"), defaultCompressionLevel(b))
+	if err != nil {
+		b.Fatal(err)
+	}
+	decompressor, err := NewDecompressor(Config{})
+	if err != nil {
+		b.Fatal(err)
+	}
+	collector := &frameCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("deflate", decompressor)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ch.Pipeline().FireChannelRead(websocket.Frame{
+			Final:   true,
+			Opcode:  websocket.OpcodeBinary,
+			RSV1:    true,
+			Payload: testBuf(compressed),
+		})
+		if len(collector.frames) != 1 {
+			b.Fatalf("frames=%d", len(collector.frames))
+		}
+		collector.release()
+		collector.frames = collector.frames[:0]
+	}
+}
+
+func BenchmarkCompressMessage(b *testing.B) {
+	payload := []byte("abcdabcd efghefgh ijklijkl mnopmnop")
+	level := defaultCompressionLevel(b)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out, err := compressMessage(payload, level)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(out) == 0 {
+			b.Fatal("empty compressed payload")
+		}
+	}
+}
+
+func BenchmarkDecompressMessage(b *testing.B) {
+	compressed, err := compressMessage([]byte("abcdabcd efghefgh ijklijkl mnopmnop"), defaultCompressionLevel(b))
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out, err := decompressMessage(compressed, 1024)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(out) == 0 {
+			b.Fatal("empty decompressed payload")
+		}
+	}
+}
+
+func fragmentedDeflatePayload(parts ...string) buffer.ByteBuf {
+	c := buffer.NewCompositeByteBuf()
+	for _, part := range parts {
+		c.Append(testBuf([]byte(part)))
+	}
+	return c
+}
+
 func compressOutboundFrame(t *testing.T, frame websocket.Frame) websocket.Frame {
 	t.Helper()
 	sink := &frameSink{}
@@ -215,7 +314,7 @@ func decompressInboundFrame(t *testing.T, frame websocket.Frame) *frameCollector
 	return collector
 }
 
-func defaultCompressionLevel(t *testing.T) int {
+func defaultCompressionLevel(t testing.TB) int {
 	t.Helper()
 	cfg, err := normalizeConfig(Config{})
 	if err != nil {
