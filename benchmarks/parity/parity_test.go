@@ -209,6 +209,68 @@ func TestLinuxHTTPS1ALPNMatrixSpecLoads(t *testing.T) {
 	}
 }
 
+func TestUDPEchoMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("udp-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 8 {
+		t.Fatalf("scenarios=%d, want udp matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if scenario.Protocol != "udp-echo" || !strings.Contains(command, "udp-echo") {
+			t.Fatalf("scenario=%+v command=%q", scenario, command)
+		}
+		if scenario.Framework == "netpoll" {
+			t.Fatalf("udp matrix must not include netpoll scenario: %+v", scenario)
+		}
+		if scenario.Warmup != 1 || scenario.Repeat != 3 {
+			t.Fatalf("scenario %q warmup=%d repeat=%d, want 1/3", scenario.Name, scenario.Warmup, scenario.Repeat)
+		}
+	}
+}
+
+func TestLinuxUDPEchoMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("linux-udp-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 8 {
+		t.Fatalf("scenarios=%d, want linux udp matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if scenario.Protocol != "udp-echo" || !strings.Contains(command, "udp-echo") {
+			t.Fatalf("scenario=%+v command=%q", scenario, command)
+		}
+		if scenario.Framework == "netpoll" {
+			t.Fatalf("linux udp matrix must not include netpoll scenario: %+v", scenario)
+		}
+		if scenario.Framework == "gnalloy" && scenario.Backend != "epoll" {
+			t.Fatalf("gnalloy backend=%q, want epoll", scenario.Backend)
+		}
+		if scenario.Framework == "netty" && scenario.Backend != "epoll" {
+			t.Fatalf("netty backend=%q, want epoll", scenario.Backend)
+		}
+		if scenario.Warmup != 1 || scenario.Repeat != 3 {
+			t.Fatalf("scenario %q warmup=%d repeat=%d, want 1/3", scenario.Name, scenario.Warmup, scenario.Repeat)
+		}
+	}
+}
+
 func TestBaselineNettyTCPEchoUsesNativeEpoll(t *testing.T) {
 	file, err := os.Open("baseline.json")
 	if err != nil {

@@ -9,7 +9,7 @@
 | --- | --- |
 | 平台 | Linux、macOS、Windows 分开记录，不允许跨平台混写结论。 |
 | 后端 | `epoll`、`kqueue`、`io_uring`、`iocp`、`std` 分别记录。 |
-| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、UDP、raw IP、L2 frame、QUIC packet/runtime、QUIC stream/datagram、DNS-over-QUIC。 |
+| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、UDP echo、raw IP、L2 frame、QUIC packet/runtime、QUIC stream/datagram、DNS-over-QUIC。 |
 | 负载 | 小包、MTU 附近包、大包、长连接、短连接、连接 churn。 |
 | 指标 | throughput、P50/P95/P99/P999 latency、allocs/op、B/op、RSS、CPU、错误率。 |
 | 回压 | 高/低水位线、慢消费者、写队列增长、flush 合并策略。 |
@@ -102,6 +102,46 @@ go run ./examples/parity-bench -strict-external -config benchmarks/parity/window
 `benchmarks/parity/windows-tcp.json` 覆盖 gnalloy IOCP、Netty NIO 和 gnet。
 CloudWeGo netpoll v0.7.5 在 Windows 上游实现为空，不能用于 Windows 性能结论；
 Linux/macOS/BSD 才把 netpoll 纳入真实对标。
+
+UDP echo 对标矩阵:
+
+```bash
+./scripts/build-external-bench.sh
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/linux-udp-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/linux-udp-matrix.json -out udp-matrix-report.md
+```
+
+Windows:
+
+```powershell
+.\scripts\build-external-bench.ps1
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/udp-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/udp-matrix.json -out udp-matrix-report.md
+```
+
+Windows UDP 必须同时记录 `iocp` 和 `std`：当前本机样本显示 UDP 在 `std`
+readiness 后端更快，而 TCP 仍以 IOCP completion 作为主要 Windows 后端。Linux UDP
+必须记录 epoll 基线和 `SO_REUSEPORT` 多 socket 场景；Netty 使用 DatagramChannel，
+gnet 使用 `udp://` event loop。CloudWeGo netpoll 当前没有等价 UDP server API，
+UDP 表格中记录为不适用，不把失败命令伪造成性能结果。
+
+2026-08-29 UDP echo 实测样本:
+
+| 平台 | 场景 | median ops/s | median p99 ns | 结论 |
+| --- | --- | ---: | ---: | --- |
+| Windows/amd64 | gnalloy iocp 128B | 132,069 | 1,118,400 | 低于 Netty NIO，保留为 IOCP UDP 优化缺口。 |
+| Windows/amd64 | gnalloy iocp 1KiB | 131,765 | 1,055,600 | 低于 Netty NIO，保留为 IOCP UDP 优化缺口。 |
+| Windows/amd64 | gnalloy std 128B | 164,540 | 1,025,000 | 吞吐超过 Netty NIO 148,170 和 gnet 130,934。 |
+| Windows/amd64 | gnalloy std 1KiB | 161,891 | 1,010,600 | 吞吐超过 Netty NIO 146,457 和 gnet 125,754。 |
+| Linux/amd64 | gnalloy epoll 128B | 110,217 | 990,221 | 吞吐超过 Netty epoll 92,453，低于 gnet 175,317。 |
+| Linux/amd64 | gnalloy epoll 1KiB | 105,983 | 1,007,715 | 吞吐超过 Netty epoll 90,485，低于 gnet 173,096。 |
+| Linux/amd64 | gnalloy epoll reuseport 128B | 265,752 | 1,039,784 | 吞吐超过 Netty epoll 92,453 和 gnet 175,317。 |
+| Linux/amd64 | gnalloy epoll reuseport 1KiB | 242,190 | 1,005,158 | 吞吐超过 Netty epoll 90,485 和 gnet 173,096。 |
+
+这些数据只对同机、同 payload、64 个 connected UDP 客户端、每客户端 5000 条消息、
+延迟采样率 1/64 的 echo 场景有效。Windows 报告路径为
+`%TEMP%\gnalloy-udp-local-20260829-233828.json`；Linux 报告路径为
+`/tmp/gnalloy-linux-udp-20260829-234423.json`。
 
 harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；
 该目录是本机构建产物，不提交到仓库。Netty 使用独立 Maven 工程，

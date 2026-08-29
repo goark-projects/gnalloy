@@ -16,13 +16,24 @@ func estimateLatencySampleCount(connections int, messages int, rate int) int {
 	return connections * perConnection
 }
 
-func resolveListenAddress(addr string) (string, error) {
+func resolveListenAddress(network string, addr string) (string, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return "", err
 	}
 	if port != "0" {
 		return addr, nil
+	}
+	if network == "udp" {
+		conn, err := net.ListenPacket("udp", net.JoinHostPort(host, port))
+		if err != nil {
+			return "", err
+		}
+		actual := conn.LocalAddr().String()
+		if err := conn.Close(); err != nil {
+			return "", err
+		}
+		return actual, nil
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(host, port))
 	if err != nil {

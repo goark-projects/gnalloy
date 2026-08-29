@@ -58,6 +58,21 @@ func TestParseConfigSupportsHTTPS1ALPN(t *testing.T) {
 	}
 }
 
+func TestParseConfigSupportsUDPEcho(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-protocol", "udp-echo",
+		"-payload", "128",
+		"-connections", "2",
+		"-messages", "3",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Protocol != "udp-echo" || cfg.Payload != 128 || cfg.Connections != 2 || cfg.Messages != 3 {
+		t.Fatalf("cfg=%+v", cfg)
+	}
+}
+
 func TestParseConfigResolvesNativePerformanceFlags(t *testing.T) {
 	cfg, err := parseConfig([]string{
 		"-backend", "iouring",
@@ -183,7 +198,7 @@ func TestDefaultWorkerCountNormalizesInvalidCPUCount(t *testing.T) {
 }
 
 func TestParseConfigRejectsUnsupportedProtocol(t *testing.T) {
-	_, err := parseConfig([]string{"-protocol", "udp-echo"})
+	_, err := parseConfig([]string{"-protocol", "sctp-echo"})
 	if !errors.Is(err, errUnsupportedProtocol) {
 		t.Fatalf("err=%v, want %v", err, errUnsupportedProtocol)
 	}

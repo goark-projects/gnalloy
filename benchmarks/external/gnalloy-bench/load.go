@@ -37,6 +37,8 @@ func runBenchmark(parent context.Context, cfg config) (benchResult, error) {
 	switch cfg.Protocol {
 	case "http1", "https1":
 		return runHTTP1Benchmark(ctx, cfg)
+	case "udp-echo":
+		return runUDPEchoBenchmark(ctx, cfg)
 	}
 	server, err := startEchoServer(ctx, cfg)
 	if err != nil {
@@ -93,6 +95,22 @@ func runHTTP1Benchmark(ctx context.Context, cfg config) (benchResult, error) {
 		Resources: resourceDeltaSince(resourcesBefore, captureResourceSnapshot()),
 	}
 	return out, err
+}
+
+func runUDPEchoBenchmark(ctx context.Context, cfg config) (benchResult, error) {
+	server, err := startUDPEchoServer(ctx, cfg)
+	if err != nil {
+		return benchResult{}, err
+	}
+	defer server.stop()
+
+	resourcesBefore := captureResourceSnapshot()
+	result, err := runUDPEchoLoad(ctx, server.addr, cfg)
+	result.Resources = resourceDeltaSince(resourcesBefore, captureResourceSnapshot())
+	if err != nil {
+		return result, err
+	}
+	return result, nil
 }
 
 func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResult, error) {

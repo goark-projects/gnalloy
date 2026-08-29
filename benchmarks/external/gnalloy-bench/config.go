@@ -105,7 +105,7 @@ func (c *config) resolve() error {
 
 func (c config) validate() error {
 	switch strings.TrimSpace(c.Protocol) {
-	case "tcp-echo", "http1", "https1":
+	case "tcp-echo", "udp-echo", "http1", "https1":
 	default:
 		return fmt.Errorf("%w: %s", errUnsupportedProtocol, c.Protocol)
 	}

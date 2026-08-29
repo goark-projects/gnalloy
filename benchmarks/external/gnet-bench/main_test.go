@@ -36,9 +36,19 @@ func TestParseConfig(t *testing.T) {
 }
 
 func TestParseConfigRejectsUnsupportedProtocol(t *testing.T) {
-	_, err := parseConfig([]string{"-protocol", "udp-echo"})
+	_, err := parseConfig([]string{"-protocol", "sctp-echo"})
 	if !errors.Is(err, errUnsupportedProtocol) {
 		t.Fatalf("err=%v, want %v", err, errUnsupportedProtocol)
+	}
+}
+
+func TestParseConfigSupportsUDPEcho(t *testing.T) {
+	cfg, err := parseConfig([]string{"-protocol", "udp-echo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Protocol != "udp-echo" {
+		t.Fatalf("protocol=%q, want udp-echo", cfg.Protocol)
 	}
 }
 
@@ -85,6 +95,30 @@ func TestWriteBenchmarkResult(t *testing.T) {
 func TestRunBenchmarkTCPEcho(t *testing.T) {
 	cfg := config{
 		Protocol:          "tcp-echo",
+		Addr:              "127.0.0.1:0",
+		Payload:           16,
+		Connections:       1,
+		Messages:          2,
+		Timeout:           5 * time.Second,
+		EventLoops:        1,
+		LatencySampleRate: 1,
+		WarmupMessages:    1,
+	}
+	result, err := runBenchmark(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TotalRequests != 2 || result.Errors != 0 || result.NsPerOp <= 0 {
+		t.Fatalf("result=%+v", result)
+	}
+	if result.Latency.Samples != 2 || result.Latency.P50 <= 0 || result.Resources.Goroutines <= 0 {
+		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestRunBenchmarkUDPEcho(t *testing.T) {
+	cfg := config{
+		Protocol:          "udp-echo",
 		Addr:              "127.0.0.1:0",
 		Payload:           16,
 		Connections:       1,

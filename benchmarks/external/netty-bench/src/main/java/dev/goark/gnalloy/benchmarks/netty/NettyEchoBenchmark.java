@@ -16,6 +16,11 @@ public final class NettyEchoBenchmark {
 
     static BenchmarkResult run(Config config) throws Exception {
         config.validate();
+        if (config.udpEcho()) {
+            try (DatagramEchoServer server = DatagramEchoServer.start(config)) {
+                return DatagramLoadGenerator.run(server.address(), config);
+            }
+        }
         try (EchoServer server = EchoServer.start(config)) {
             InetSocketAddress address = server.address();
             if (config.http1Family()) {

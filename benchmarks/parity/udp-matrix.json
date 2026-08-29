@@ -1,0 +1,116 @@
+{
+  "name": "gnalloy udp echo parity matrix",
+  "notes": "Windows/local UDP datagram echo 对标矩阵。Gnalloy 同时记录 IOCP completion 后端和当前更快的 std readiness 后端，Netty 使用 NIO DatagramChannel，gnet 使用 udp:// event loop。CloudWeGo netpoll 不提供等价 UDP server API，不纳入本矩阵。",
+  "variables": {
+    "REPO_ROOT": ".",
+    "CONNECTIONS": "64",
+    "MESSAGES": "5000",
+    "LATENCY_SAMPLE_RATE": "64",
+    "WARMUP_MESSAGES": "500",
+    "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
+    "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
+    "GNET_BENCH": "./benchmarks/external/bin/gnet-bench"
+  },
+  "scenarios": [
+    {
+      "name": "gnalloy iocp udp echo 128B",
+      "framework": "gnalloy",
+      "protocol": "udp-echo",
+      "backend": "iocp",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "udp-echo", "-backend", "iocp", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "udp", "iocp", "payload-128"]
+    },
+    {
+      "name": "gnalloy iocp udp echo 1KiB",
+      "framework": "gnalloy",
+      "protocol": "udp-echo",
+      "backend": "iocp",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "udp-echo", "-backend", "iocp", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "udp", "iocp", "payload-1024"]
+    },
+    {
+      "name": "gnalloy std udp echo 128B",
+      "framework": "gnalloy",
+      "protocol": "udp-echo",
+      "backend": "std",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "udp-echo", "-backend", "std", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "udp", "std", "payload-128"]
+    },
+    {
+      "name": "gnalloy std udp echo 1KiB",
+      "framework": "gnalloy",
+      "protocol": "udp-echo",
+      "backend": "std",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "udp-echo", "-backend", "std", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "udp", "std", "payload-1024"]
+    },
+    {
+      "name": "netty udp echo 128B",
+      "framework": "netty",
+      "protocol": "udp-echo",
+      "backend": "nio",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "udp-echo", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "udp", "payload-128"]
+    },
+    {
+      "name": "netty udp echo 1KiB",
+      "framework": "netty",
+      "protocol": "udp-echo",
+      "backend": "nio",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "udp-echo", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "udp", "payload-1024"]
+    },
+    {
+      "name": "gnet udp echo 128B",
+      "framework": "gnet",
+      "protocol": "udp-echo",
+      "backend": "poller",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["${GNET_BENCH}", "-protocol", "udp-echo", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "gnet", "udp", "payload-128"]
+    },
+    {
+      "name": "gnet udp echo 1KiB",
+      "framework": "gnet",
+      "protocol": "udp-echo",
+      "backend": "poller",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["${GNET_BENCH}", "-protocol", "udp-echo", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "gnet", "udp", "payload-1024"]
+    }
+  ]
+}

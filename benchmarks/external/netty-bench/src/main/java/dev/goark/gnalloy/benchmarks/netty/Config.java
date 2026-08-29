@@ -39,7 +39,7 @@ record Config(
     }
 
     void validate() {
-        if (!Objects.equals(protocol, "tcp-echo") && !Objects.equals(protocol, "http1") && !Objects.equals(protocol, "https1")) {
+        if (!Objects.equals(protocol, "tcp-echo") && !Objects.equals(protocol, "udp-echo") && !Objects.equals(protocol, "http1") && !Objects.equals(protocol, "https1")) {
             throw new IllegalArgumentException("netty-bench: unsupported protocol " + protocol);
         }
         if (backend == null) {
@@ -70,6 +70,10 @@ record Config(
 
     boolean http1Family() {
         return Objects.equals(protocol, "http1") || Objects.equals(protocol, "https1");
+    }
+
+    boolean udpEcho() {
+        return Objects.equals(protocol, "udp-echo");
     }
 
     boolean tlsEnabled() {

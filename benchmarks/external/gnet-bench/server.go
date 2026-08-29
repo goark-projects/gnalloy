@@ -16,7 +16,8 @@ type echoServer struct {
 }
 
 func startEchoServer(ctx context.Context, cfg config) (*echoServer, error) {
-	addr, err := resolveListenAddress(cfg.Addr)
+	network := listenNetwork(cfg.Protocol)
+	addr, err := resolveListenAddress(network, cfg.Addr)
 	if err != nil {
 		return nil, err
 	}
@@ -28,8 +29,10 @@ func startEchoServer(ctx context.Context, cfg config) (*echoServer, error) {
 	errCh := make(chan error, 1)
 	opts := []gnet.Option{
 		gnet.WithReuseAddr(true),
-		gnet.WithTCPNoDelay(gnet.TCPNoDelay),
 		gnet.WithLogger(noopLogger{}),
+	}
+	if network == "tcp" {
+		opts = append(opts, gnet.WithTCPNoDelay(gnet.TCPNoDelay))
 	}
 	if cfg.EventLoops > 0 {
 		opts = append(opts, gnet.WithNumEventLoop(cfg.EventLoops))
@@ -38,7 +41,7 @@ func startEchoServer(ctx context.Context, cfg config) (*echoServer, error) {
 	}
 
 	go func() {
-		errCh <- gnet.Run(handler, "tcp://"+addr, opts...)
+		errCh <- gnet.Run(handler, network+"://"+addr, opts...)
 	}()
 
 	select {
@@ -49,6 +52,13 @@ func startEchoServer(ctx context.Context, cfg config) (*echoServer, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+func listenNetwork(protocol string) string {
+	if protocol == "udp-echo" {
+		return "udp"
+	}
+	return "tcp"
 }
 
 func (s *echoServer) stop() {

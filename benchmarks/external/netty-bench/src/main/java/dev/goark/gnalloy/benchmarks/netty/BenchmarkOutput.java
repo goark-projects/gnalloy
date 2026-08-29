@@ -48,6 +48,9 @@ final class BenchmarkOutput {
         if ("https1".equals(protocol)) {
             return "BenchmarkNettyHTTPS1";
         }
+        if ("udp-echo".equals(protocol)) {
+            return "BenchmarkNettyUDPEcho";
+        }
         return "BenchmarkNettyTCPEcho";
     }
 }
