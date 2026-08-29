@@ -13,7 +13,8 @@ record Config(
         int connections,
         int messages,
         Duration timeout,
-        int eventLoops) {
+        int eventLoops,
+        int latencySampleRate) {
 
     static Config parse(String[] args) {
         Map<String, String> values = Args.parse(args);
@@ -27,7 +28,8 @@ record Config(
                 Args.intValue(values, "connections", 256),
                 Args.intValue(values, "messages", 100000),
                 durationValue(values, "timeout", Duration.ofMinutes(5)),
-                Args.intValue(values, "event-loops", Runtime.getRuntime().availableProcessors()));
+                Args.intValue(values, "event-loops", Runtime.getRuntime().availableProcessors()),
+                Args.intValue(values, "latency-sample-rate", 0));
     }
 
     void validate() {
@@ -51,6 +53,9 @@ record Config(
         }
         if (eventLoops <= 0) {
             throw new IllegalArgumentException("netty-bench: event-loops must be positive");
+        }
+        if (latencySampleRate < 0) {
+            throw new IllegalArgumentException("netty-bench: latency-sample-rate must not be negative");
         }
     }
 

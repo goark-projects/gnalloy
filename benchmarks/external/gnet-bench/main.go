@@ -26,14 +26,15 @@ var (
 )
 
 type config struct {
-	Protocol    string
-	Addr        string
-	Payload     int
-	Connections int
-	Messages    int
-	Timeout     time.Duration
-	EventLoops  int
-	Multicore   bool
+	Protocol          string
+	Addr              string
+	Payload           int
+	Connections       int
+	Messages          int
+	Timeout           time.Duration
+	EventLoops        int
+	Multicore         bool
+	LatencySampleRate int
 }
 
 type benchResult struct {
@@ -42,6 +43,8 @@ type benchResult struct {
 	Elapsed       time.Duration
 	Throughput    float64
 	NsPerOp       float64
+	Latency       latencySummary
+	Resources     resourceDelta
 }
 
 func main() {
@@ -83,6 +86,7 @@ func parseConfig(args []string) (config, error) {
 	fs.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "overall timeout")
 	fs.IntVar(&cfg.EventLoops, "event-loops", cfg.EventLoops, "gnet event-loop count")
 	fs.BoolVar(&cfg.Multicore, "multicore", cfg.Multicore, "enable gnet multicore mode")
+	fs.IntVar(&cfg.LatencySampleRate, "latency-sample-rate", cfg.LatencySampleRate, "record one round-trip latency sample every N messages per connection; 0 disables latency sampling")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -105,6 +109,9 @@ func (c config) validate() error {
 	if c.EventLoops < 0 {
 		return fmt.Errorf("%w: event-loops must not be negative", errInvalidConfig)
 	}
+	if c.LatencySampleRate < 0 {
+		return fmt.Errorf("%w: latency-sample-rate must not be negative", errInvalidConfig)
+	}
 	return nil
 }
 
@@ -124,7 +131,9 @@ func runBenchmark(parent context.Context, cfg config) (benchResult, error) {
 	}
 	defer server.stop()
 
+	resourcesBefore := captureResourceSnapshot()
 	result, err := runTCPEchoLoad(ctx, server.addr, cfg)
+	result.Resources = resourceDeltaSince(resourcesBefore, captureResourceSnapshot())
 	if err != nil {
 		return result, err
 	}
@@ -229,7 +238,11 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 		firstErr  error
 		once      sync.Once
 		wg        sync.WaitGroup
+		samples   [][]int64
 	)
+	if latencySamplingEnabled(cfg.LatencySampleRate) {
+		samples = make([][]int64, cfg.Connections)
+	}
 	recordError := func(err error) {
 		if err == nil {
 			return
@@ -247,7 +260,12 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			recordError(runClient(ctx, addr, cfg, clientID, &successes))
+			var clientSamples *[]int64
+			if samples != nil {
+				samples[clientID] = newLatencySamples(cfg.Messages, cfg.LatencySampleRate)
+				clientSamples = &samples[clientID]
+			}
+			recordError(runClient(ctx, addr, cfg, clientID, &successes, clientSamples))
 		}()
 	}
 	wg.Wait()
@@ -255,6 +273,13 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 
 	total := successes.Load()
 	result := benchResult{TotalRequests: total, Errors: errorsN.Load(), Elapsed: elapsed}
+	if samples != nil {
+		allSamples := make([]int64, 0, estimateLatencySampleCount(cfg.Connections, cfg.Messages, cfg.LatencySampleRate))
+		for _, clientSamples := range samples {
+			allSamples = append(allSamples, clientSamples...)
+		}
+		result.Latency = summarizeLatencySamples(allSamples)
+	}
 	if elapsed > 0 {
 		result.Throughput = float64(total) / elapsed.Seconds()
 	}
@@ -271,7 +296,7 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 	return result, nil
 }
 
-func runClient(ctx context.Context, addr string, cfg config, clientID int, successes *atomic.Int64) error {
+func runClient(ctx context.Context, addr string, cfg config, clientID int, successes *atomic.Int64, latencySamples *[]int64) error {
 	dialer := net.Dialer{Timeout: cfg.Timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -294,6 +319,11 @@ func runClient(ctx context.Context, addr string, cfg config, clientID int, succe
 		default:
 		}
 		payload[0] = byte(clientID + i)
+		recordLatency := shouldRecordLatency(i, cfg.LatencySampleRate)
+		var requestStarted time.Time
+		if recordLatency {
+			requestStarted = time.Now()
+		}
 		if err := writeAll(conn, payload); err != nil {
 			return err
 		}
@@ -303,17 +333,31 @@ func runClient(ctx context.Context, addr string, cfg config, clientID int, succe
 		if !bytes.Equal(reply, payload) {
 			return fmt.Errorf("gnet-bench: echo mismatch")
 		}
+		if recordLatency && latencySamples != nil {
+			*latencySamples = append(*latencySamples, elapsedLatencyNanos(requestStarted))
+		}
 		successes.Add(1)
 	}
 	return nil
+}
+
+func estimateLatencySampleCount(connections int, messages int, rate int) int {
+	if connections <= 0 || messages <= 0 || rate <= 0 {
+		return 0
+	}
+	perConnection := messages / rate
+	if messages%rate != 0 {
+		perConnection++
+	}
+	return connections * perConnection
 }
 
 func writeBenchmarkResult(w io.Writer, cfg config, result benchResult) {
 	if w == nil {
 		return
 	}
-	fmt.Fprintf(w, "framework=gnet protocol=%s backend=poller eventLoops=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s\n",
-		cfg.Protocol, cfg.EventLoops, cfg.Payload, cfg.Connections, cfg.Messages, result.TotalRequests, result.Errors, result.Elapsed, result.Throughput)
+	fmt.Fprintf(w, "framework=gnet protocol=%s backend=poller eventLoops=%d latencySampleRate=%d latencySamples=%d p50LatencyNs=%d p95LatencyNs=%d p99LatencyNs=%d p999LatencyNs=%d maxLatencyNs=%d rssBytes=%d heapAllocBytes=%d heapSysBytes=%d heapObjects=%d gcCount=%d gcPauseNs=%d goroutines=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s\n",
+		cfg.Protocol, cfg.EventLoops, cfg.LatencySampleRate, result.Latency.Samples, result.Latency.P50.Nanoseconds(), result.Latency.P95.Nanoseconds(), result.Latency.P99.Nanoseconds(), result.Latency.P999.Nanoseconds(), result.Latency.Max.Nanoseconds(), result.Resources.RSSBytes, result.Resources.HeapAllocBytes, result.Resources.HeapSysBytes, result.Resources.HeapObjects, result.Resources.GCCount, result.Resources.GCPauseNanos, result.Resources.Goroutines, cfg.Payload, cfg.Connections, cfg.Messages, result.TotalRequests, result.Errors, result.Elapsed, result.Throughput)
 	fmt.Fprintf(w, "%s-%d %d %.0f ns/op\n", benchmarkName, runtime.GOMAXPROCS(0), result.TotalRequests, result.NsPerOp)
 }
 

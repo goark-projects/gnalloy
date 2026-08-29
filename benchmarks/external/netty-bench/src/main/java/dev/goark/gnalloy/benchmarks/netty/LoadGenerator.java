@@ -22,13 +22,21 @@ final class LoadGenerator {
         AtomicLong successes = new AtomicLong();
         AtomicLong errors = new AtomicLong();
         AtomicReference<Throwable> firstError = new AtomicReference<>();
+        long[][] latencySamples = LatencyRecorder.samplingEnabled(config.latencySampleRate())
+                ? new long[config.connections()][]
+                : new long[0][];
         ExecutorService pool = Executors.newFixedThreadPool(config.connections());
+        ResourceSnapshot resourcesBefore = ResourceSnapshot.capture();
         long started = System.nanoTime();
         for (int i = 0; i < config.connections(); i++) {
             final int clientId = i;
             pool.execute(() -> {
                 try {
-                    runClient(address, config, clientId, successes);
+                    long[] clientSamples = LatencyRecorder.newSamples(config.messages(), config.latencySampleRate());
+                    if (clientSamples.length > 0) {
+                        latencySamples[clientId] = clientSamples;
+                    }
+                    runClient(address, config, clientId, successes, clientSamples);
                 } catch (Throwable t) {
                     errors.incrementAndGet();
                     firstError.compareAndSet(null, t);
@@ -45,7 +53,9 @@ final class LoadGenerator {
         }
 
         long total = successes.get();
-        BenchmarkResult result = result(total, errors.get(), elapsedNanos);
+        BenchmarkResult result = result(total, errors.get(), elapsedNanos,
+                LatencyRecorder.summarize(latencySamples),
+                resourcesBefore.delta(ResourceSnapshot.capture()));
         rethrowFirstError(firstError.get());
         long expected = (long) config.connections() * config.messages();
         if (total != expected) {
@@ -54,10 +64,15 @@ final class LoadGenerator {
         return result;
     }
 
-    private static BenchmarkResult result(long total, long errors, long elapsedNanos) {
+    private static BenchmarkResult result(
+            long total,
+            long errors,
+            long elapsedNanos,
+            LatencySummary latency,
+            ResourceDelta resources) {
         double throughput = elapsedNanos > 0 ? total * 1_000_000_000.0 / elapsedNanos : 0.0;
         double nsPerOp = total > 0 ? (double) elapsedNanos / total : 0.0;
-        return new BenchmarkResult(total, errors, Duration.ofNanos(elapsedNanos), throughput, nsPerOp);
+        return new BenchmarkResult(total, errors, Duration.ofNanos(elapsedNanos), throughput, nsPerOp, latency, resources);
     }
 
     private static void rethrowFirstError(Throwable failure) throws Exception {
@@ -74,7 +89,8 @@ final class LoadGenerator {
             InetSocketAddress address,
             Config config,
             int clientId,
-            AtomicLong successes) throws IOException {
+            AtomicLong successes,
+            long[] latencySamples) throws IOException {
         byte[] payload = makePayload(config.payload(), clientId);
         byte[] reply = new byte[config.payload()];
         try (Socket socket = new Socket()) {
@@ -83,12 +99,18 @@ final class LoadGenerator {
             socket.setSoTimeout(Math.toIntExact(config.timeout().toMillis()));
             OutputStream out = socket.getOutputStream();
             InputStream in = socket.getInputStream();
+            int sampleIndex = 0;
             for (int i = 0; i < config.messages(); i++) {
                 payload[0] = (byte) (clientId + i);
+                boolean recordLatency = LatencyRecorder.shouldRecord(i, config.latencySampleRate());
+                long requestStarted = recordLatency ? System.nanoTime() : 0L;
                 out.write(payload);
                 readFully(in, reply);
                 if (!Arrays.equals(reply, payload)) {
                     throw new IOException("netty-bench: echo mismatch");
+                }
+                if (recordLatency && sampleIndex < latencySamples.length) {
+                    latencySamples[sampleIndex++] = LatencyRecorder.elapsedNanos(requestStarted);
                 }
                 successes.incrementAndGet();
             }
