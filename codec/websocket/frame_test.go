@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -114,6 +115,30 @@ func TestFrameEncoder(t *testing.T) {
 	}
 	if string(sink.writes[0].Bytes()) != string([]byte{0x81, 0x02}) || string(sink.writes[1].Bytes()) != "hi" {
 		t.Fatalf("writes=%q,%q", sink.writes[0].Bytes(), sink.writes[1].Bytes())
+	}
+}
+
+func TestFrameEncoderMaskedPayloadWritesSingleBuffer(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewFrameEncoder())
+	defer sink.release()
+
+	if err := ch.Write(Frame{
+		Final:   true,
+		Opcode:  OpcodeBinary,
+		Payload: fragmentedWebSocketPayload("ab", "cd"),
+		Masked:  true,
+		MaskKey: [4]byte{1, 2, 3, 4},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
+	}
+	want := []byte{0x82, 0x84, 1, 2, 3, 4, 'a' ^ 1, 'b' ^ 2, 'c' ^ 3, 'd' ^ 4}
+	if !bytes.Equal(sink.writes[0].Bytes(), want) {
+		t.Fatalf("masked frame=%v, want %v", sink.writes[0].Bytes(), want)
 	}
 }
 

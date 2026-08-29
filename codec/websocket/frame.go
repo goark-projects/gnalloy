@@ -217,6 +217,14 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		return err
 	}
 	headerLength := websocketHeaderLength(payloadLength, frame.Masked)
+	if frame.Masked && payloadLength > 0 {
+		out, err := newMaskedFrameBuffer(ctx.Channel().Allocator(), frame, headerLength, payloadLength)
+		frame.Payload.Release()
+		if err != nil {
+			return err
+		}
+		return codec.WriteOutboundBuffer(ctx, out)
+	}
 	header, err := ctx.Channel().Allocator().Acquire(headerLength)
 	if err != nil {
 		if frame.Payload != nil {
@@ -244,40 +252,7 @@ func (e *FrameEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	if !frame.Masked {
 		return codec.WriteOutboundBuffer(ctx, frame.Payload)
 	}
-	masked, err := maskCopy(ctx, frame.Payload, frame.MaskKey)
-	frame.Payload.Release()
-	if err != nil {
-		return err
-	}
-	return codec.WriteOutboundBuffer(ctx, masked)
-}
-
-func unmask(in buffer.ByteBuf, key [4]byte) (buffer.ByteBuf, error) {
-	offset := 0
-	var stack [8][]byte
-	for _, data := range in.ReadableSlices(stack[:0]) {
-		for i := range data {
-			data[i] ^= key[(offset+i)&3]
-		}
-		offset += len(data)
-	}
-	return in, nil
-}
-
-func maskCopy(ctx *channel.HandlerContext, in buffer.ByteBuf, key [4]byte) (buffer.ByteBuf, error) {
-	out, err := ctx.Channel().Allocator().Acquire(in.ReadableBytes())
-	if err != nil {
-		return nil, err
-	}
-	if err := buffer.WriteReadableBytes(out, in); err != nil {
-		out.Release()
-		return nil, err
-	}
-	data := out.Bytes()
-	for i := range data {
-		data[i] ^= key[i&3]
-	}
-	return out, nil
+	return writeMaskedPayload(ctx, frame.Payload, frame.MaskKey)
 }
 
 func websocketHeaderLength(payloadLength int, masked bool) int {
