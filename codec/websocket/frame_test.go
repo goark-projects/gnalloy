@@ -158,6 +158,22 @@ func TestFrameDecoderRequiresExplicitRSV(t *testing.T) {
 	}
 }
 
+func TestFrameDecoderRejectsInvalidOpcodeBeforeExtendedLength(t *testing.T) {
+	decoder, err := NewFrameDecoder(1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := &errorCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("errors", errs)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x83, 0x7e}))
+	if len(errs.errs) != 1 || !errors.Is(errs.errs[0], codec.ErrInvalidFrameLength) {
+		t.Fatalf("errs=%v, want ErrInvalidFrameLength", errs.errs)
+	}
+}
+
 func TestFrameDecoderAllowsConfiguredRSV1(t *testing.T) {
 	decoder, err := NewFrameDecoderWithConfig(FrameDecoderConfig{MaxFrameLength: 1024, AllowMaskedFrames: true, AllowRSV1: true})
 	if err != nil {

@@ -89,8 +89,12 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 		return nil, nil
 	}
 	reader := in.ReaderIndex()
-	b0, _ := in.GetByte(reader)
-	b1, _ := in.GetByte(reader + 1)
+	header, ok := decodeBasicFrameHeader(in, reader)
+	if !ok {
+		return nil, nil
+	}
+	b0 := header.first
+	b1 := header.second
 	opcode := b0 & 0x0f
 	final := b0&0x80 != 0
 	rsv := b0 & 0x70
@@ -104,32 +108,16 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 	if !d.allowMaskedFrames && masked {
 		return nil, ErrMaskMismatch
 	}
-	payloadLength := int(b1 & 0x7f)
-	headerLength := 2
-	if payloadLength == 126 {
-		if in.ReadableBytes() < 4 {
-			return nil, nil
-		}
-		n, err := in.ReadUnsigned(reader+2, 2, buffer.BigEndian)
-		if err != nil {
-			return nil, err
-		}
-		payloadLength = int(n)
-		headerLength = 4
-	} else if payloadLength == 127 {
-		if in.ReadableBytes() < 10 {
-			return nil, nil
-		}
-		n, err := in.ReadUnsigned(reader+2, 8, buffer.BigEndian)
-		if err != nil {
-			return nil, err
-		}
-		if n > uint64(^uint(0)>>1) {
-			return nil, codec.ErrFrameTooLong
-		}
-		payloadLength = int(n)
-		headerLength = 10
+	var err error
+	header, ok, err = completeFrameHeader(in, reader, header)
+	if err != nil {
+		return nil, err
 	}
+	if !ok {
+		return nil, nil
+	}
+	payloadLength := header.payloadLength
+	headerLength := header.headerLength
 	if payloadLength > d.maxFrameLength {
 		return nil, codec.ErrFrameTooLong
 	}
@@ -138,18 +126,13 @@ func (d *FrameDecoder) Decode(ctx *channel.HandlerContext, in *buffer.CompositeB
 			return nil, ErrControlFrameInvalid
 		}
 	}
-	if masked {
-		headerLength += 4
-	}
 	total := headerLength + payloadLength
 	if in.ReadableBytes() < total {
 		return nil, nil
 	}
 	var mask [4]byte
 	if masked {
-		for i := 0; i < 4; i++ {
-			mask[i], _ = in.GetByte(reader + headerLength - 4 + i)
-		}
+		mask = readMaskKey(in, reader, headerLength)
 	}
 	var payload buffer.ByteBuf
 	if payloadLength > 0 {
