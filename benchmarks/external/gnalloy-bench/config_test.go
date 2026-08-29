@@ -40,6 +40,22 @@ func TestParseConfig(t *testing.T) {
 	if cfg.WarmupMessages != 7 {
 		t.Fatalf("warmupMessages=%d, want 7", cfg.WarmupMessages)
 	}
+	if cfg.ALPN != "http/1.1" {
+		t.Fatalf("alpn=%q, want http/1.1", cfg.ALPN)
+	}
+}
+
+func TestParseConfigSupportsHTTPS1ALPN(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-protocol", "https1",
+		"-alpn", "h2,http/1.1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Protocol != "https1" || cfg.ALPN != "h2,http/1.1" {
+		t.Fatalf("cfg=%+v", cfg)
+	}
 }
 
 func TestParseConfigResolvesNativePerformanceFlags(t *testing.T) {

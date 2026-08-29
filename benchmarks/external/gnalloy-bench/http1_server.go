@@ -8,6 +8,7 @@ import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/codec/http1"
+	gnalloytls "goark.dev/gnalloy/handler/tls"
 	"goark.dev/gnalloy/transport"
 	"goark.dev/gnalloy/transport/tcp"
 )
@@ -40,22 +41,35 @@ func bindHTTP1Server(ctx context.Context, cfg config, boss *transport.EventLoopG
 		Group(boss, workers).
 		Transport(tcp.NewTransport(tcpConfig)).
 		ChildInitializer(func(ch channel.Channel) error {
-			decoder, err := http1.NewRequestDecoder(16*1024, 0)
-			if err != nil {
-				return err
+			if cfg.Protocol == "https1" {
+				tlsConfig, err := serverTLSConfig(cfg)
+				if err != nil {
+					return err
+				}
+				if err := ch.Pipeline().AddLast("tls", gnalloytls.Server(gnalloytls.Config{TLS: tlsConfig})); err != nil {
+					return err
+				}
 			}
-			if err := ch.Pipeline().AddLast("httpEncoder", http1.NewResponseEncoder()); err != nil {
-				return err
-			}
-			if err := ch.Pipeline().AddLast("httpDecoder", decoder); err != nil {
-				return err
-			}
-			if err := ch.Pipeline().AddLast("continue", http1.NewContinueHandler()); err != nil {
-				return err
-			}
-			return ch.Pipeline().AddLast("handler", http1Handler{body: benchhttp.ResponseBody(cfg.Payload)})
+			return addHTTP1Pipeline(ch, cfg.Payload)
 		}).
 		BindContext(ctx, cfg.Addr)
+}
+
+func addHTTP1Pipeline(ch channel.Channel, payload int) error {
+	decoder, err := http1.NewRequestDecoder(16*1024, 0)
+	if err != nil {
+		return err
+	}
+	if err := ch.Pipeline().AddLast("httpEncoder", http1.NewResponseEncoder()); err != nil {
+		return err
+	}
+	if err := ch.Pipeline().AddLast("httpDecoder", decoder); err != nil {
+		return err
+	}
+	if err := ch.Pipeline().AddLast("continue", http1.NewContinueHandler()); err != nil {
+		return err
+	}
+	return ch.Pipeline().AddLast("handler", http1Handler{body: benchhttp.ResponseBody(payload)})
 }
 
 type http1Handler struct {

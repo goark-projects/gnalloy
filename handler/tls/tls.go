@@ -3,6 +3,7 @@ package tls
 import (
 	"errors"
 	"io"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,6 +17,9 @@ import (
 
 // drainWaitTimeout 限制同步 drain 等待后台 TLS 协程产物的最长时间。
 const drainWaitTimeout = 100 * time.Millisecond
+
+// drainProgressSpins 在已经 drain 到产物后短暂让出调度，避免每次 I/O 尾部等待固定超时。
+const drainProgressSpins = 64
 
 type Mode uint8
 
@@ -172,7 +176,7 @@ func (h *Handler) Flush(ctx *channel.HandlerContext) error {
 	if h.cfg.StartTLS && !h.started.Load() {
 		return ctx.Flush()
 	}
-	h.drain(ctx, false, true)
+	h.drain(ctx, false, false)
 	return ctx.Flush()
 }
 
@@ -305,6 +309,8 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 		return
 	}
 	deadline := time.Now().Add(drainWaitTimeout)
+	progressed := false
+	spins := 0
 	for {
 		drained := false
 		select {
@@ -349,10 +355,20 @@ func (h *Handler) drain(ctx *channel.HandlerContext, flush bool, wait bool) {
 		default:
 		}
 		if drained {
+			progressed = true
+			spins = 0
 			continue
 		}
 		if !wait || time.Now().After(deadline) {
 			break
+		}
+		if progressed {
+			if spins >= drainProgressSpins {
+				break
+			}
+			spins++
+			runtime.Gosched()
+			continue
 		}
 		select {
 		case <-h.notify:

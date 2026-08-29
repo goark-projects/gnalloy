@@ -35,7 +35,7 @@ func runBenchmark(parent context.Context, cfg config) (benchResult, error) {
 	defer cancel()
 
 	switch cfg.Protocol {
-	case "http1":
+	case "http1", "https1":
 		return runHTTP1Benchmark(ctx, cfg)
 	}
 	server, err := startEchoServer(ctx, cfg)
@@ -61,15 +61,20 @@ func runHTTP1Benchmark(ctx context.Context, cfg config) (benchResult, error) {
 	defer server.stop()
 
 	resourcesBefore := captureResourceSnapshot()
-	result, err := benchhttp.RunLoad(ctx, benchhttp.Config{
+	httpConfig := benchhttp.Config{
 		Addr:              server.addr,
+		ServerName:        tlsServerName(),
 		Payload:           cfg.Payload,
 		Connections:       cfg.Connections,
 		Messages:          cfg.Messages,
 		Timeout:           cfg.Timeout,
 		LatencySampleRate: cfg.LatencySampleRate,
 		WarmupMessages:    cfg.WarmupMessages,
-	})
+	}
+	if cfg.Protocol == "https1" {
+		httpConfig.TLS = clientTLSConfig(cfg)
+	}
+	result, err := benchhttp.RunLoad(ctx, httpConfig)
 	out := benchResult{
 		TotalRequests: result.TotalRequests,
 		Errors:        result.Errors,

@@ -89,8 +89,8 @@ func writeSummary(b *strings.Builder, report Report) {
 }
 
 func writeStatsSummary(b *strings.Builder, report Report) {
-	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Total | Errors | Throughput ops/s | P99 latency ns | RSS bytes | GC count | Elapsed |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| Scenario | Framework | Protocol | ALPN | Backend | Loops | Total | Errors | Throughput ops/s | P99 latency ns | RSS bytes | GC count | Elapsed |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, result := range report.Scenarios {
 		for _, stat := range result.Stats {
 			writeStatsRow(b, result.Scenario, stat)
@@ -115,8 +115,8 @@ func writeStatsAggregateSummary(b *strings.Builder, report Report) {
 	if len(summaries) == 0 {
 		return
 	}
-	b.WriteString("| Scenario | Framework | Protocol | Backend | Loops | Samples | Throughput min | Throughput median | Throughput max | Throughput mean | Median ns/op | Median P99 latency ns | Max RSS bytes | GC count | Errors |\n")
-	b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| Scenario | Framework | Protocol | ALPN | Backend | Loops | Samples | Throughput min | Throughput median | Throughput max | Throughput mean | Median ns/op | Median P99 latency ns | Max RSS bytes | GC count | Errors |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, summary := range summaries {
 		b.WriteString("| ")
 		b.WriteString(escapeCell(summary.Scenario))
@@ -124,6 +124,8 @@ func writeStatsAggregateSummary(b *strings.Builder, report Report) {
 		b.WriteString(escapeCell(summary.Framework))
 		b.WriteString(" | ")
 		b.WriteString(escapeCell(summary.Protocol))
+		b.WriteString(" | ")
+		b.WriteString(escapeCell(summary.NegotiatedProtocol))
 		b.WriteString(" | ")
 		b.WriteString(escapeCell(summary.Backend))
 		b.WriteString(" | ")
@@ -206,13 +208,15 @@ func writeScenario(b *strings.Builder, result ScenarioResult) {
 	}
 	if len(result.Stats) > 0 {
 		b.WriteString("Stats:\n\n")
-		b.WriteString("| Framework | Protocol | Backend | Loops | Payload | Connections | Messages | Total | Errors | Throughput ops/s | P50 latency ns | P99 latency ns | RSS bytes | GC count | Elapsed |\n")
-		b.WriteString("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		b.WriteString("| Framework | Protocol | ALPN | Backend | Loops | Payload | Connections | Messages | Total | Errors | Throughput ops/s | P50 latency ns | P99 latency ns | RSS bytes | GC count | Elapsed |\n")
+		b.WriteString("| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 		for _, stat := range result.Stats {
 			b.WriteString("| ")
 			b.WriteString(escapeCell(stat.Framework))
 			b.WriteString(" | ")
 			b.WriteString(escapeCell(stat.Protocol))
+			b.WriteString(" | ")
+			b.WriteString(escapeCell(stat.NegotiatedProtocol))
 			b.WriteString(" | ")
 			b.WriteString(escapeCell(stat.Backend))
 			b.WriteString(" | ")
@@ -310,6 +314,8 @@ func writeStatsRow(b *strings.Builder, scenario Scenario, stat ScenarioStats) {
 	b.WriteString(escapeCell(stat.Framework))
 	b.WriteString(" | ")
 	b.WriteString(escapeCell(stat.Protocol))
+	b.WriteString(" | ")
+	b.WriteString(escapeCell(stat.NegotiatedProtocol))
 	b.WriteString(" | ")
 	b.WriteString(escapeCell(stat.Backend))
 	b.WriteString(" | ")

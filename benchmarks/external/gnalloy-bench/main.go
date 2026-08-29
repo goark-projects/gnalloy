@@ -30,6 +30,8 @@ func benchmarkName(protocol string) string {
 	switch protocol {
 	case "http1":
 		return "BenchmarkGnalloyHTTP1"
+	case "https1":
+		return "BenchmarkGnalloyHTTPS1"
 	default:
 		return "BenchmarkGnalloyTCPEcho"
 	}

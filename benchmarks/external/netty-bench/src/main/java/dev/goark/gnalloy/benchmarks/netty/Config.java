@@ -1,6 +1,8 @@
 package dev.goark.gnalloy.benchmarks.netty;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -15,7 +17,8 @@ record Config(
         Duration timeout,
         int eventLoops,
         int latencySampleRate,
-        int warmupMessages) {
+        int warmupMessages,
+        String alpn) {
 
     static Config parse(String[] args) {
         Map<String, String> values = Args.parse(args);
@@ -31,11 +34,12 @@ record Config(
                 durationValue(values, "timeout", Duration.ofMinutes(5)),
                 Args.intValue(values, "event-loops", Runtime.getRuntime().availableProcessors()),
                 Args.intValue(values, "latency-sample-rate", 0),
-                Args.intValue(values, "warmup-messages", 0));
+                Args.intValue(values, "warmup-messages", 0),
+                values.getOrDefault("alpn", "http/1.1"));
     }
 
     void validate() {
-        if (!Objects.equals(protocol, "tcp-echo") && !Objects.equals(protocol, "http1")) {
+        if (!Objects.equals(protocol, "tcp-echo") && !Objects.equals(protocol, "http1") && !Objects.equals(protocol, "https1")) {
             throw new IllegalArgumentException("netty-bench: unsupported protocol " + protocol);
         }
         if (backend == null) {
@@ -62,6 +66,29 @@ record Config(
         if (warmupMessages < 0) {
             throw new IllegalArgumentException("netty-bench: warmup-messages must not be negative");
         }
+    }
+
+    boolean http1Family() {
+        return Objects.equals(protocol, "http1") || Objects.equals(protocol, "https1");
+    }
+
+    boolean tlsEnabled() {
+        return Objects.equals(protocol, "https1");
+    }
+
+    List<String> alpnProtocols() {
+        if (alpn == null || alpn.isBlank()) {
+            return List.of();
+        }
+        String[] parts = alpn.split(",");
+        List<String> protocols = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            String protocol = part.trim();
+            if (!protocol.isEmpty()) {
+                protocols.add(protocol);
+            }
+        }
+        return protocols;
     }
 
     private static Duration durationValue(Map<String, String> values, String key, Duration fallback) {

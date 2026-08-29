@@ -8,6 +8,7 @@ record BenchmarkResult(
         Duration elapsed,
         double throughput,
         double nsPerOp,
+        String negotiatedProtocol,
         LatencySummary latency,
         ResourceDelta resources) {
 }

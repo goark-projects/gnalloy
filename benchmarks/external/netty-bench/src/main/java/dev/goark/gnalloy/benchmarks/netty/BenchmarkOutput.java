@@ -6,10 +6,11 @@ final class BenchmarkOutput {
 
     static void write(Config config, BenchmarkResult result) {
         System.out.printf(
-                "framework=netty protocol=%s backend=%s eventLoops=%d latencySampleRate=%d warmupMessages=%d latencySamples=%d p50LatencyNs=%d p95LatencyNs=%d p99LatencyNs=%d p999LatencyNs=%d maxLatencyNs=%d rssBytes=%d heapAllocBytes=%d heapSysBytes=%d heapObjects=%d gcCount=%d gcPauseNs=%d goroutines=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s%n",
+                "framework=netty protocol=%s backend=%s eventLoops=%d negotiatedProtocol=%s latencySampleRate=%d warmupMessages=%d latencySamples=%d p50LatencyNs=%d p95LatencyNs=%d p99LatencyNs=%d p999LatencyNs=%d maxLatencyNs=%d rssBytes=%d heapAllocBytes=%d heapSysBytes=%d heapObjects=%d gcCount=%d gcPauseNs=%d goroutines=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s%n",
                 config.protocol(),
                 config.backend().wireName(),
                 config.eventLoops(),
+                result.negotiatedProtocol(),
                 config.latencySampleRate(),
                 config.warmupMessages(),
                 result.latency().samples(),
@@ -43,6 +44,9 @@ final class BenchmarkOutput {
     private static String benchmarkName(String protocol) {
         if ("http1".equals(protocol)) {
             return "BenchmarkNettyHTTP1";
+        }
+        if ("https1".equals(protocol)) {
+            return "BenchmarkNettyHTTPS1";
         }
         return "BenchmarkNettyTCPEcho";
     }

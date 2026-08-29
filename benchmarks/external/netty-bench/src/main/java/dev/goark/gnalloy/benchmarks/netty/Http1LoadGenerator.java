@@ -60,6 +60,7 @@ final class Http1LoadGenerator {
             long total = successes.get();
             BenchmarkResult result = result(total, errors.get(), elapsedNanos,
                     LatencyRecorder.summarize(latencySamples),
+                    firstNegotiatedProtocol(clients),
                     resourcesBefore.delta(ResourceSnapshot.capture()));
             rethrowFirstError(firstError.get());
             long expected = (long) config.connections() * config.messages();
@@ -72,24 +73,22 @@ final class Http1LoadGenerator {
         }
     }
 
-    private static Http1Session[] prepareClients(InetSocketAddress address, Config config) throws IOException {
+    private static Http1Session[] prepareClients(InetSocketAddress address, Config config) throws Exception {
         Http1Session[] clients = new Http1Session[config.connections()];
         try {
             for (int i = 0; i < clients.length; i++) {
-                Socket socket = new Socket();
-                socket.setTcpNoDelay(true);
-                socket.connect(address, Math.toIntExact(config.timeout().toMillis()));
-                socket.setSoTimeout(Math.toIntExact(config.timeout().toMillis()));
+                Socket socket = SslSupport.connect(address, config);
                 clients[i] = new Http1Session(
                         socket,
                         new BufferedInputStream(socket.getInputStream(), 16 * 1024),
                         socket.getOutputStream(),
                         HttpPayload.request(config.host()),
                         HttpPayload.body(config.payload()),
-                        new byte[config.payload()]);
+                        new byte[config.payload()],
+                        SslSupport.negotiatedProtocol(socket));
             }
             return clients;
-        } catch (IOException | RuntimeException failure) {
+        } catch (Exception failure) {
             closeClients(clients);
             throw failure;
         }
@@ -199,10 +198,20 @@ final class Http1LoadGenerator {
             long errors,
             long elapsedNanos,
             LatencySummary latency,
+            String negotiatedProtocol,
             ResourceDelta resources) {
         double throughput = elapsedNanos > 0 ? total * 1_000_000_000.0 / elapsedNanos : 0.0;
         double nsPerOp = total > 0 ? (double) elapsedNanos / total : 0.0;
-        return new BenchmarkResult(total, errors, Duration.ofNanos(elapsedNanos), throughput, nsPerOp, latency, resources);
+        return new BenchmarkResult(total, errors, Duration.ofNanos(elapsedNanos), throughput, nsPerOp, negotiatedProtocol, latency, resources);
+    }
+
+    private static String firstNegotiatedProtocol(Http1Session[] clients) {
+        for (Http1Session client : clients) {
+            if (client != null && !client.negotiatedProtocol().isEmpty()) {
+                return client.negotiatedProtocol();
+            }
+        }
+        return "";
     }
 
     private static void rethrowFirstError(Throwable failure) throws Exception {
@@ -233,7 +242,8 @@ final class Http1LoadGenerator {
             OutputStream out,
             byte[] request,
             byte[] expected,
-            byte[] reply) implements AutoCloseable {
+            byte[] reply,
+            String negotiatedProtocol) implements AutoCloseable {
         @Override
         public void close() throws IOException {
             socket.close();

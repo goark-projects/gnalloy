@@ -1,0 +1,66 @@
+{
+  "name": "gnalloy https1 alpn parity matrix",
+  "notes": "HTTPS/1.1 over TLS 1.3 + ALPN 对标矩阵。Gnalloy 使用 handler/tls + codec/http1 pipeline，Netty 使用 SslHandler + HttpServerCodec。gnet/netpoll 没有等价 TLS/ALPN pipeline，不纳入本矩阵。",
+  "variables": {
+    "REPO_ROOT": ".",
+    "CONNECTIONS": "64",
+    "MESSAGES": "5000",
+    "LATENCY_SAMPLE_RATE": "64",
+    "WARMUP_MESSAGES": "500",
+    "ALPN": "http/1.1",
+    "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
+    "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar"
+  },
+  "scenarios": [
+    {
+      "name": "gnalloy https1 alpn 128B",
+      "framework": "gnalloy",
+      "protocol": "https1",
+      "backend": "default",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "https1", "tls13", "alpn", "payload-128"]
+    },
+    {
+      "name": "gnalloy https1 alpn 1KiB",
+      "framework": "gnalloy",
+      "protocol": "https1",
+      "backend": "default",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["local", "parity-harness", "https1", "tls13", "alpn", "payload-1024"]
+    },
+    {
+      "name": "netty https1 alpn 128B",
+      "framework": "netty",
+      "protocol": "https1",
+      "backend": "nio",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "https1", "tls13", "alpn", "payload-128"]
+    },
+    {
+      "name": "netty https1 alpn 1KiB",
+      "framework": "netty",
+      "protocol": "https1",
+      "backend": "nio",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${ALPN}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "https1", "tls13", "alpn", "payload-1024"]
+    }
+  ]
+}

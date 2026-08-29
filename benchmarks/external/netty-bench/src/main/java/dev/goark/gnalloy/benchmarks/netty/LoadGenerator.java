@@ -132,7 +132,7 @@ final class LoadGenerator {
             ResourceDelta resources) {
         double throughput = elapsedNanos > 0 ? total * 1_000_000_000.0 / elapsedNanos : 0.0;
         double nsPerOp = total > 0 ? (double) elapsedNanos / total : 0.0;
-        return new BenchmarkResult(total, errors, Duration.ofNanos(elapsedNanos), throughput, nsPerOp, latency, resources);
+        return new BenchmarkResult(total, errors, Duration.ofNanos(elapsedNanos), throughput, nsPerOp, "", latency, resources);
     }
 
     private static void rethrowFirstError(Throwable failure) throws Exception {

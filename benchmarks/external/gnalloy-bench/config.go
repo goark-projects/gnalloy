@@ -34,6 +34,7 @@ type config struct {
 	IOUringSQPoll          bool
 	LatencySampleRate      int
 	WarmupMessages         int
+	ALPN                   string
 }
 
 func parseConfig(args []string) (config, error) {
@@ -50,6 +51,7 @@ func parseConfig(args []string) (config, error) {
 		ReadBufferSize: 0,
 		MmapBlockSize:  4096,
 		MmapBlocks:     4096,
+		ALPN:           "http/1.1",
 	}
 	fs := flag.NewFlagSet("gnalloy-bench", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -72,6 +74,7 @@ func parseConfig(args []string) (config, error) {
 	fs.BoolVar(&cfg.IOUringSQPoll, "iouring-sqpoll", cfg.IOUringSQPoll, "enable io_uring SQPOLL")
 	fs.IntVar(&cfg.LatencySampleRate, "latency-sample-rate", cfg.LatencySampleRate, "record one round-trip latency sample every N messages per connection; 0 disables latency sampling")
 	fs.IntVar(&cfg.WarmupMessages, "warmup-messages", cfg.WarmupMessages, "messages per connection sent before timed measurement; 0 disables in-process warmup")
+	fs.StringVar(&cfg.ALPN, "alpn", cfg.ALPN, "comma-separated TLS ALPN protocols for https1")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -102,7 +105,7 @@ func (c *config) resolve() error {
 
 func (c config) validate() error {
 	switch strings.TrimSpace(c.Protocol) {
-	case "tcp-echo", "http1":
+	case "tcp-echo", "http1", "https1":
 	default:
 		return fmt.Errorf("%w: %s", errUnsupportedProtocol, c.Protocol)
 	}

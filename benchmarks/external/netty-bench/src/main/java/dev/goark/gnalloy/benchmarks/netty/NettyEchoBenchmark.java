@@ -18,7 +18,7 @@ public final class NettyEchoBenchmark {
         config.validate();
         try (EchoServer server = EchoServer.start(config)) {
             InetSocketAddress address = server.address();
-            if ("http1".equals(config.protocol())) {
+            if (config.http1Family()) {
                 return Http1LoadGenerator.run(address, config);
             }
             return LoadGenerator.run(address, config);

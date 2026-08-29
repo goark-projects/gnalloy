@@ -159,6 +159,56 @@ func TestWindowsTCPMatrixSpecLoads(t *testing.T) {
 	}
 }
 
+func TestHTTPS1ALPNMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("https1-alpn-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 4 {
+		t.Fatalf("scenarios=%d, want https1 alpn matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if scenario.Protocol != "https1" || !strings.Contains(command, "alpn") {
+			t.Fatalf("scenario=%+v command=%q", scenario, command)
+		}
+		if scenario.Framework != "gnalloy" && scenario.Framework != "netty" {
+			t.Fatalf("framework=%q, want gnalloy or netty", scenario.Framework)
+		}
+	}
+}
+
+func TestLinuxHTTPS1ALPNMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("linux-https1-alpn-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 4 {
+		t.Fatalf("scenarios=%d, want linux https1 alpn matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if scenario.Protocol != "https1" || scenario.Backend != "epoll" {
+			t.Fatalf("scenario=%+v", scenario)
+		}
+		if !strings.Contains(command, "epoll") || !strings.Contains(command, "alpn") {
+			t.Fatalf("command=%q", command)
+		}
+	}
+}
+
 func TestBaselineNettyTCPEchoUsesNativeEpoll(t *testing.T) {
 	file, err := os.Open("baseline.json")
 	if err != nil {
@@ -593,13 +643,16 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 }
 
 func TestParseScenarioStats(t *testing.T) {
-	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true latencySampleRate=16 latencySamples=1600 p50LatencyNs=1000 p95LatencyNs=1500 p99LatencyNs=2000 p999LatencyNs=3000 maxLatencyNs=4000 rssBytes=4096 heapAllocBytes=2048 heapSysBytes=8192 heapObjects=64 gcCount=2 gcPauseNs=100 goroutines=12 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
+	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp negotiatedProtocol=http/1.1 boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true latencySampleRate=16 latencySamples=1600 p50LatencyNs=1000 p95LatencyNs=1500 p99LatencyNs=2000 p999LatencyNs=3000 maxLatencyNs=4000 rssBytes=4096 heapAllocBytes=2048 heapSysBytes=8192 heapObjects=64 gcCount=2 gcPauseNs=100 goroutines=12 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
 	if len(stats) != 1 {
 		t.Fatalf("stats=%+v, want one", stats)
 	}
 	stat := stats[0]
 	if stat.Framework != "gnalloy" || stat.Protocol != "tcp-echo" || stat.Backend != "iocp" {
 		t.Fatalf("stat=%+v", stat)
+	}
+	if stat.NegotiatedProtocol != "http/1.1" {
+		t.Fatalf("negotiatedProtocol=%q, want http/1.1", stat.NegotiatedProtocol)
 	}
 	if stat.PayloadBytes != 1024 || stat.Connections != 256 || stat.Messages != 100000 || stat.TotalRequests != 25600000 || stat.Errors != 0 {
 		t.Fatalf("stat=%+v", stat)

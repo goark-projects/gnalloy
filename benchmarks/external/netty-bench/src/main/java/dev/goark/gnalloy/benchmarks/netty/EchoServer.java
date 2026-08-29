@@ -8,6 +8,7 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.ssl.SslContext;
 
 import java.net.InetSocketAddress;
 
@@ -20,9 +21,10 @@ final class EchoServer implements AutoCloseable {
         this.channel = channel;
     }
 
-    static EchoServer start(Config config) throws InterruptedException {
+    static EchoServer start(Config config) throws Exception {
         EventLoopResources resources = EventLoopResources.create(config);
         try {
+            SslContext sslContext = SslSupport.serverContext(config);
             ServerBootstrap bootstrap = new ServerBootstrap()
                     .group(resources.bossGroup(), resources.workerGroup())
                     .channel(resources.serverChannelType())
@@ -32,7 +34,10 @@ final class EchoServer implements AutoCloseable {
                     .childHandler(new ChannelInitializer<SocketChannel>() {
                         @Override
                         protected void initChannel(SocketChannel ch) {
-                            if ("http1".equals(config.protocol())) {
+                            if (config.http1Family()) {
+                                if (sslContext != null) {
+                                    ch.pipeline().addLast(sslContext.newHandler(ch.alloc()));
+                                }
                                 ch.pipeline().addLast(new HttpServerCodec());
                                 ch.pipeline().addLast(new Http1ServerHandler(config.payload()));
                                 return;
@@ -46,6 +51,9 @@ final class EchoServer implements AutoCloseable {
             resources.close();
             if (t instanceof InterruptedException interrupted) {
                 throw interrupted;
+            }
+            if (t instanceof Exception exception) {
+                throw exception;
             }
             if (t instanceof RuntimeException runtimeException) {
                 throw runtimeException;

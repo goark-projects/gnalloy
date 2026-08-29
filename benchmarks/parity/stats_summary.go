@@ -11,6 +11,7 @@ type StatsSummary struct {
 	Framework           string  `json:"framework,omitempty"`
 	Protocol            string  `json:"protocol,omitempty"`
 	Backend             string  `json:"backend,omitempty"`
+	NegotiatedProtocol  string  `json:"negotiatedProtocol,omitempty"`
 	LoopSummary         string  `json:"loopSummary,omitempty"`
 	Samples             int     `json:"samples"`
 	MinThroughputOps    float64 `json:"minThroughputOps"`
@@ -51,6 +52,7 @@ func summarizeScenarioStats(result ScenarioResult) (StatsSummary, bool) {
 			summary.Framework = stat.Framework
 			summary.Protocol = stat.Protocol
 			summary.Backend = stat.Backend
+			summary.NegotiatedProtocol = stat.NegotiatedProtocol
 			summary.LoopSummary = loopSummary(stat)
 		}
 		if stat.ThroughputOpsPerSec > 0 {
