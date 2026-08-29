@@ -119,13 +119,12 @@ func parseIPv4Header(buf buffer.ByteBuf) (Header, int, error) {
 	ttl, _ := buf.GetByte(base + 8)
 	proto, _ := buf.GetByte(base + 9)
 	sum, _ := buf.ReadUnsigned(base+10, 2, buffer.BigEndian)
-	headerBytes := make([]byte, ihl)
-	copy(headerBytes, readableAt(buf, base, ihl))
+	headerBytes := readableAt(buf, base, ihl)
 	if Checksum(headerBytes) != 0 {
 		return Header{}, 0, ErrInvalidHeader
 	}
-	src := append(net.IP(nil), readableAt(buf, base+12, 4)...)
-	dst := append(net.IP(nil), readableAt(buf, base+16, 4)...)
+	src := append(net.IP(nil), headerBytes[12:16]...)
+	dst := append(net.IP(nil), headerBytes[16:20]...)
 	return Header{
 		Version:        Version4,
 		HeaderLength:   ihl,

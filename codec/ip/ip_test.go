@@ -57,6 +57,41 @@ func TestEncodeDecodeIPv4PacketZeroCopyPayload(t *testing.T) {
 	}
 }
 
+func TestDecodeIPv4PacketFragmentedHeader(t *testing.T) {
+	payload := testBuf("abc")
+	encoded, err := EncodePacket(buffer.NewHeapAllocator(), Packet{
+		Header:  Header{Version: Version4, Protocol: ProtocolICMP, Source: ipv4Src, Destination: ipv4Dst},
+		Payload: payload,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := append([]byte(nil), encoded.Bytes()...)
+	encoded.Release()
+	payload.Release()
+
+	comp := buffer.NewCompositeByteBuf()
+	first := buffer.NewHeapBuffer(8)
+	_, _ = first.WriteBytes(wire[:8])
+	comp.Append(first)
+	second := buffer.NewHeapBuffer(len(wire) - 8)
+	_, _ = second.WriteBytes(wire[8:])
+	comp.Append(second)
+	defer comp.Release()
+
+	decoded, err := DecodePacket(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer decoded.Release()
+	if decoded.Header.Protocol != ProtocolICMP || decoded.Header.TotalLength != len(wire) {
+		t.Fatalf("header=%+v", decoded.Header)
+	}
+	if string(decoded.Payload.Bytes()) != "abc" {
+		t.Fatalf("payload=%q", decoded.Payload.Bytes())
+	}
+}
+
 func TestEncodeDecodeIPv6Packet(t *testing.T) {
 	payload := testBuf("hello")
 	packet := Packet{
