@@ -80,6 +80,41 @@ func TestAppendAndDecodeV2TCP6WithTLV(t *testing.T) {
 	}
 }
 
+func TestAppendAndDecodeV2TCP4(t *testing.T) {
+	header, err := AppendHeader(nil, Message{
+		Version:            Version2,
+		Command:            CommandProxy,
+		Protocol:           ProtocolTCP4,
+		SourceAddress:      "192.0.2.1",
+		DestinationAddress: "198.51.100.1",
+		SourcePort:         12345,
+		DestinationPort:    443,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder, err := NewDecoder(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := singleComposite(testBuf(header))
+	defer in.Release()
+
+	out, err := decoder.Decode(nil, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := out.(Message)
+	if msg.Version != Version2 ||
+		msg.Protocol != ProtocolTCP4 ||
+		msg.SourceAddress != "192.0.2.1" ||
+		msg.DestinationAddress != "198.51.100.1" ||
+		msg.SourcePort != 12345 ||
+		msg.DestinationPort != 443 {
+		t.Fatalf("msg=%+v", msg)
+	}
+}
+
 func TestAppendAndDecodeV2ControlFrameWithTLV(t *testing.T) {
 	tests := []struct {
 		name     string

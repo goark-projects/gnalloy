@@ -1,7 +1,6 @@
 package haproxy
 
 import (
-	"bytes"
 	"net"
 	"strconv"
 	"strings"
@@ -78,7 +77,7 @@ func (d *Decoder) decodeV2(in *buffer.CompositeByteBuf, reader int) (any, error)
 	if in.ReadableBytes() < 16 {
 		return nil, nil
 	}
-	length, err := in.ReadUnsigned(reader+14, 2, buffer.BigEndian)
+	length, err := readUint16(in, reader+14)
 	if err != nil {
 		return nil, err
 	}
@@ -207,16 +206,16 @@ func parseV2Header(in *buffer.CompositeByteBuf, reader int, payloadLength int) (
 		}
 		msg.SourceAddress = ipv4String(in, payload)
 		msg.DestinationAddress = ipv4String(in, payload+4)
-		sourcePort, err := in.ReadUnsigned(payload+8, 2, buffer.BigEndian)
+		sourcePort, err := readUint16(in, payload+8)
 		if err != nil {
 			return Message{}, err
 		}
-		destPort, err := in.ReadUnsigned(payload+10, 2, buffer.BigEndian)
+		destPort, err := readUint16(in, payload+10)
 		if err != nil {
 			return Message{}, err
 		}
-		msg.SourcePort = uint16(sourcePort)
-		msg.DestinationPort = uint16(destPort)
+		msg.SourcePort = sourcePort
+		msg.DestinationPort = destPort
 		tlvStart = payload + 12
 	case ProtocolTCP6, ProtocolUDP6:
 		if payloadLength < 36 {
@@ -224,16 +223,16 @@ func parseV2Header(in *buffer.CompositeByteBuf, reader int, payloadLength int) (
 		}
 		msg.SourceAddress = ipString(in, payload, net.IPv6len)
 		msg.DestinationAddress = ipString(in, payload+16, net.IPv6len)
-		sourcePort, err := in.ReadUnsigned(payload+32, 2, buffer.BigEndian)
+		sourcePort, err := readUint16(in, payload+32)
 		if err != nil {
 			return Message{}, err
 		}
-		destPort, err := in.ReadUnsigned(payload+34, 2, buffer.BigEndian)
+		destPort, err := readUint16(in, payload+34)
 		if err != nil {
 			return Message{}, err
 		}
-		msg.SourcePort = uint16(sourcePort)
-		msg.DestinationPort = uint16(destPort)
+		msg.SourcePort = sourcePort
+		msg.DestinationPort = destPort
 		tlvStart = payload + 36
 	case ProtocolUnixStream, ProtocolUnixDgram:
 		if payloadLength < 216 {
@@ -419,7 +418,7 @@ func parseTLVs(in *buffer.CompositeByteBuf, start int, end int) ([]TLV, error) {
 			return nil, ErrInvalidTLV
 		}
 		tlvType, _ := in.GetByte(start)
-		length, err := in.ReadUnsigned(start+1, 2, buffer.BigEndian)
+		length, err := readUint16(in, start+1)
 		if err != nil {
 			return nil, err
 		}
@@ -492,28 +491,4 @@ func lineString(in *buffer.CompositeByteBuf, start int, end int) (string, error)
 	}
 	defer part.Release()
 	return string(part.Bytes()), nil
-}
-
-func ipv4String(in *buffer.CompositeByteBuf, start int) string {
-	var ip [4]byte
-	for i := range ip {
-		ip[i], _ = in.GetByte(start + i)
-	}
-	return net.IP(ip[:]).String()
-}
-
-func ipString(in *buffer.CompositeByteBuf, start int, length int) string {
-	ip := make(net.IP, length)
-	for i := range ip {
-		ip[i], _ = in.GetByte(start + i)
-	}
-	return ip.String()
-}
-
-func unixAddressString(in *buffer.CompositeByteBuf, start int) string {
-	value := make([]byte, 108)
-	for i := range value {
-		value[i], _ = in.GetByte(start + i)
-	}
-	return string(bytes.TrimRight(value, "\x00"))
 }
