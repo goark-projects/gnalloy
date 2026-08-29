@@ -25,43 +25,77 @@ final class LoadGenerator {
         long[][] latencySamples = LatencyRecorder.samplingEnabled(config.latencySampleRate())
                 ? new long[config.connections()][]
                 : new long[0][];
-        ExecutorService pool = Executors.newFixedThreadPool(config.connections());
-        ResourceSnapshot resourcesBefore = ResourceSnapshot.capture();
-        long started = System.nanoTime();
-        for (int i = 0; i < config.connections(); i++) {
-            final int clientId = i;
-            pool.execute(() -> {
-                try {
-                    long[] clientSamples = LatencyRecorder.newSamples(config.messages(), config.latencySampleRate());
-                    if (clientSamples.length > 0) {
-                        latencySamples[clientId] = clientSamples;
+        ClientSession[] clients = prepareClients(address, config);
+        try {
+            ExecutorService pool = Executors.newFixedThreadPool(config.connections());
+            ResourceSnapshot resourcesBefore = ResourceSnapshot.capture();
+            long started = System.nanoTime();
+            for (int i = 0; i < config.connections(); i++) {
+                final int clientId = i;
+                pool.execute(() -> {
+                    try {
+                        long[] clientSamples = LatencyRecorder.newSamples(config.messages(), config.latencySampleRate());
+                        if (clientSamples.length > 0) {
+                            latencySamples[clientId] = clientSamples;
+                        }
+                        runClient(config, clientId, clients[clientId], successes, clientSamples);
+                    } catch (Throwable t) {
+                        errors.incrementAndGet();
+                        firstError.compareAndSet(null, t);
                     }
-                    runClient(address, config, clientId, successes, clientSamples);
-                } catch (Throwable t) {
-                    errors.incrementAndGet();
-                    firstError.compareAndSet(null, t);
-                }
-            });
-        }
-        pool.shutdown();
-        boolean finished = pool.awaitTermination(config.timeout().toNanos(), TimeUnit.NANOSECONDS);
-        long elapsedNanos = System.nanoTime() - started;
-        if (!finished) {
-            pool.shutdownNow();
-            errors.incrementAndGet();
-            firstError.compareAndSet(null, new IOException("netty-bench: timeout"));
-        }
+                });
+            }
+            pool.shutdown();
+            boolean finished = pool.awaitTermination(config.timeout().toNanos(), TimeUnit.NANOSECONDS);
+            long elapsedNanos = System.nanoTime() - started;
+            if (!finished) {
+                pool.shutdownNow();
+                errors.incrementAndGet();
+                firstError.compareAndSet(null, new IOException("netty-bench: timeout"));
+            }
 
-        long total = successes.get();
-        BenchmarkResult result = result(total, errors.get(), elapsedNanos,
-                LatencyRecorder.summarize(latencySamples),
-                resourcesBefore.delta(ResourceSnapshot.capture()));
-        rethrowFirstError(firstError.get());
-        long expected = (long) config.connections() * config.messages();
-        if (total != expected) {
-            throw new IOException("netty-bench: completed " + total + " requests, want " + expected);
+            long total = successes.get();
+            BenchmarkResult result = result(total, errors.get(), elapsedNanos,
+                    LatencyRecorder.summarize(latencySamples),
+                    resourcesBefore.delta(ResourceSnapshot.capture()));
+            rethrowFirstError(firstError.get());
+            long expected = (long) config.connections() * config.messages();
+            if (total != expected) {
+                throw new IOException("netty-bench: completed " + total + " requests, want " + expected);
+            }
+            return result;
+        } finally {
+            closeClients(clients);
         }
-        return result;
+    }
+
+    private static ClientSession[] prepareClients(InetSocketAddress address, Config config) throws IOException {
+        ClientSession[] clients = new ClientSession[config.connections()];
+        try {
+            for (int i = 0; i < clients.length; i++) {
+                Socket socket = new Socket();
+                socket.setTcpNoDelay(true);
+                socket.connect(address, Math.toIntExact(config.timeout().toMillis()));
+                socket.setSoTimeout(Math.toIntExact(config.timeout().toMillis()));
+                clients[i] = new ClientSession(socket, makePayload(config.payload(), i), new byte[config.payload()]);
+            }
+            return clients;
+        } catch (IOException | RuntimeException failure) {
+            closeClients(clients);
+            throw failure;
+        }
+    }
+
+    private static void closeClients(ClientSession[] clients) {
+        for (ClientSession client : clients) {
+            if (client == null) {
+                continue;
+            }
+            try {
+                client.close();
+            } catch (IOException ignored) {
+                }
+        }
     }
 
     private static BenchmarkResult result(
@@ -86,34 +120,29 @@ final class LoadGenerator {
     }
 
     private static void runClient(
-            InetSocketAddress address,
             Config config,
             int clientId,
+            ClientSession client,
             AtomicLong successes,
             long[] latencySamples) throws IOException {
-        byte[] payload = makePayload(config.payload(), clientId);
-        byte[] reply = new byte[config.payload()];
-        try (Socket socket = new Socket()) {
-            socket.setTcpNoDelay(true);
-            socket.connect(address, Math.toIntExact(config.timeout().toMillis()));
-            socket.setSoTimeout(Math.toIntExact(config.timeout().toMillis()));
-            OutputStream out = socket.getOutputStream();
-            InputStream in = socket.getInputStream();
-            int sampleIndex = 0;
-            for (int i = 0; i < config.messages(); i++) {
-                payload[0] = (byte) (clientId + i);
-                boolean recordLatency = LatencyRecorder.shouldRecord(i, config.latencySampleRate());
-                long requestStarted = recordLatency ? System.nanoTime() : 0L;
-                out.write(payload);
-                readFully(in, reply);
-                if (!Arrays.equals(reply, payload)) {
-                    throw new IOException("netty-bench: echo mismatch");
-                }
-                if (recordLatency && sampleIndex < latencySamples.length) {
-                    latencySamples[sampleIndex++] = LatencyRecorder.elapsedNanos(requestStarted);
-                }
-                successes.incrementAndGet();
+        byte[] payload = client.payload();
+        byte[] reply = client.reply();
+        OutputStream out = client.socket().getOutputStream();
+        InputStream in = client.socket().getInputStream();
+        int sampleIndex = 0;
+        for (int i = 0; i < config.messages(); i++) {
+            payload[0] = (byte) (clientId + i);
+            boolean recordLatency = LatencyRecorder.shouldRecord(i, config.latencySampleRate());
+            long requestStarted = recordLatency ? System.nanoTime() : 0L;
+            out.write(payload);
+            readFully(in, reply);
+            if (!Arrays.equals(reply, payload)) {
+                throw new IOException("netty-bench: echo mismatch");
             }
+            if (recordLatency && sampleIndex < latencySamples.length) {
+                latencySamples[sampleIndex++] = LatencyRecorder.elapsedNanos(requestStarted);
+            }
+            successes.incrementAndGet();
         }
     }
 

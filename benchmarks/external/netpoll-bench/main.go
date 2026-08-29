@@ -135,6 +135,12 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
+	clients, err := prepareTCPClients(ctx, addr, cfg)
+	if err != nil {
+		return benchResult{Errors: 1}, err
+	}
+	defer closeTCPClients(clients)
+
 	var (
 		successes atomic.Int64
 		errorsN   atomic.Int64
@@ -157,8 +163,8 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 		})
 	}
 
-	start := time.Now()
-	for i := 0; i < cfg.Connections; i++ {
+	startCh := make(chan struct{})
+	for i := range clients {
 		clientID := i
 		wg.Add(1)
 		go func() {
@@ -168,11 +174,16 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 				samples[clientID] = newLatencySamples(cfg.Messages, cfg.LatencySampleRate)
 				clientSamples = &samples[clientID]
 			}
-			recordError(runClient(ctx, addr, cfg, clientID, &successes, clientSamples))
+			recordError(runClient(ctx, clients[clientID], cfg, clientID, startCh, &successes, clientSamples))
 		}()
 	}
+	start := time.Now()
+	close(startCh)
 	wg.Wait()
 	elapsed := time.Since(start)
+	if elapsed <= 0 {
+		elapsed = time.Nanosecond
+	}
 
 	total := successes.Load()
 	result := benchResult{TotalRequests: total, Errors: errorsN.Load(), Elapsed: elapsed}
@@ -199,41 +210,78 @@ func runTCPEchoLoad(parent context.Context, addr string, cfg config) (benchResul
 	return result, nil
 }
 
-func runClient(ctx context.Context, addr string, cfg config, clientID int, successes *atomic.Int64, latencySamples *[]int64) error {
+type tcpClient struct {
+	conn    net.Conn
+	payload []byte
+	reply   []byte
+}
+
+func prepareTCPClients(ctx context.Context, addr string, cfg config) ([]tcpClient, error) {
+	clients := make([]tcpClient, 0, cfg.Connections)
+	for i := 0; i < cfg.Connections; i++ {
+		conn, err := dialTCPClient(ctx, addr, cfg)
+		if err != nil {
+			closeTCPClients(clients)
+			return nil, err
+		}
+		clients = append(clients, tcpClient{
+			conn:    conn,
+			payload: makePayload(cfg.Payload, i),
+			reply:   make([]byte, cfg.Payload),
+		})
+	}
+	return clients, nil
+}
+
+func dialTCPClient(ctx context.Context, addr string, cfg config) (net.Conn, error) {
 	dialer := net.Dialer{Timeout: cfg.Timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer conn.Close()
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
 		_ = tcpConn.SetNoDelay(true)
 	}
 	if err := conn.SetDeadline(time.Now().Add(cfg.Timeout)); err != nil {
-		return err
+		_ = conn.Close()
+		return nil, err
 	}
+	return conn, nil
+}
 
-	payload := makePayload(cfg.Payload, clientID)
-	reply := make([]byte, cfg.Payload)
+func closeTCPClients(clients []tcpClient) {
+	for i := range clients {
+		if clients[i].conn != nil {
+			_ = clients[i].conn.Close()
+		}
+	}
+}
+
+func runClient(ctx context.Context, client tcpClient, cfg config, clientID int, startCh <-chan struct{}, successes *atomic.Int64, latencySamples *[]int64) error {
+	select {
+	case <-startCh:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	for i := 0; i < cfg.Messages; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-		payload[0] = byte(clientID + i)
+		client.payload[0] = byte(clientID + i)
 		recordLatency := shouldRecordLatency(i, cfg.LatencySampleRate)
 		var requestStarted time.Time
 		if recordLatency {
 			requestStarted = time.Now()
 		}
-		if err := writeAll(conn, payload); err != nil {
+		if err := writeAll(client.conn, client.payload); err != nil {
 			return err
 		}
-		if _, err := io.ReadFull(conn, reply); err != nil {
+		if _, err := io.ReadFull(client.conn, client.reply); err != nil {
 			return err
 		}
-		if !bytes.Equal(reply, payload) {
+		if !bytes.Equal(client.reply, client.payload) {
 			return fmt.Errorf("netpoll-bench: echo mismatch")
 		}
 		if recordLatency && latencySamples != nil {
