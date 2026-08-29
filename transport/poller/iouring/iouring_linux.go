@@ -148,6 +148,7 @@ type msghdr struct {
 type msgContext struct {
 	name    unix.RawSockaddrAny
 	nameLen uint32
+	inline  [inlineWriteVectors]iovec
 	iov     []iovec
 	hdr     msghdr
 }
@@ -160,12 +161,13 @@ type Poller struct {
 	sq     sq
 	cq     cq
 
-	entries map[poller.FDRef]poller.ChannelID
-	pending map[uint64]poller.IORequest
-	writev  map[uint64][]iovec
-	msgctx  map[uint64]*msgContext
-	nextID  uint64
-	closed  atomic.Bool
+	entries    map[poller.FDRef]poller.ChannelID
+	pending    map[uint64]poller.IORequest
+	writev     map[uint64]*writeVectorContext
+	msgctx     map[uint64]*msgContext
+	nextID     uint64
+	closed     atomic.Bool
+	freeWritev *writeVectorContext
 
 	multishotAccept   bool
 	registeredBuffers bool
@@ -213,7 +215,7 @@ func NewWithConfig(cfg Config) (poller.Poller, error) {
 		wakefd:          -1,
 		entries:         make(map[poller.FDRef]poller.ChannelID, entries),
 		pending:         make(map[uint64]poller.IORequest, entries),
-		writev:          make(map[uint64][]iovec, entries),
+		writev:          make(map[uint64]*writeVectorContext, entries),
 		msgctx:          make(map[uint64]*msgContext, entries),
 		multishotAccept: cfg.MultishotAccept,
 	}
@@ -387,6 +389,7 @@ func (p *Poller) Close() error {
 	clear(p.msgctx)
 	p.writev = nil
 	p.msgctx = nil
+	p.freeWritev = nil
 	p.pending = nil
 	err1 := unmapIfPresent(p.sq.sqes)
 	if len(p.cq.ring) > 0 && len(p.sq.ring) > 0 && &p.cq.ring[0] == &p.sq.ring[0] {
@@ -561,15 +564,15 @@ func (p *Poller) prepareAt(userData uint64, req poller.IORequest, tail uint32) (
 			break
 		}
 		if len(req.Bufs) > 0 {
-			vectors, err := makeIOVectors(req)
+			ctx, err := p.acquireWriteVectorContext(req)
 			if err != nil {
 				return 0, err
 			}
-			p.writev[userData] = vectors
+			p.writev[userData] = ctx
 			entry.opcode = opWritev
 			entry.fd = int32(req.FD.FD)
-			entry.addr = uint64(uintptr(unsafe.Pointer(&vectors[0])))
-			entry.len = uint32(len(vectors))
+			entry.addr = uint64(uintptr(unsafe.Pointer(&ctx.vectors[0])))
+			entry.len = uint32(len(ctx.vectors))
 			break
 		}
 		if data, ok := buffer.ContiguousReadableBytes(req.Buf); ok {
@@ -589,15 +592,15 @@ func (p *Poller) prepareAt(userData uint64, req poller.IORequest, tail uint32) (
 			if req.UseFixedBuffer {
 				return 0, poller.ErrInvalidIORequest
 			}
-			vectors, err := makeIOVectors(req)
+			ctx, err := p.acquireWriteVectorContext(req)
 			if err != nil {
 				return 0, err
 			}
-			p.writev[userData] = vectors
+			p.writev[userData] = ctx
 			entry.opcode = opWritev
 			entry.fd = int32(req.FD.FD)
-			entry.addr = uint64(uintptr(unsafe.Pointer(&vectors[0])))
-			entry.len = uint32(len(vectors))
+			entry.addr = uint64(uintptr(unsafe.Pointer(&ctx.vectors[0])))
+			entry.len = uint32(len(ctx.vectors))
 		}
 	case poller.OpClose:
 		entry.opcode = opClose
@@ -623,7 +626,7 @@ func (p *Poller) reap(dst []poller.Event) int {
 		more := cqe.flags&cqeFMore != 0
 		if !more {
 			delete(p.pending, cqe.userData)
-			delete(p.writev, cqe.userData)
+			p.releaseWriteVectorContext(cqe.userData)
 			delete(p.msgctx, cqe.userData)
 		}
 
@@ -690,7 +693,8 @@ func makeRecvMsgContext(req poller.IORequest) (*msgContext, error) {
 		return nil, poller.ErrInvalidIORequest
 	}
 	ctx := &msgContext{nameLen: unix.SizeofSockaddrAny}
-	ctx.iov = []iovec{{base: uintptr(unsafe.Pointer(&view[0])), len: uintptr(len(view))}}
+	ctx.iov = ctx.inline[:1]
+	ctx.iov[0] = iovec{base: uintptr(unsafe.Pointer(&view[0])), len: uintptr(len(view))}
 	ctx.hdr = msghdr{
 		name:    uintptr(unsafe.Pointer(&ctx.name)),
 		namelen: ctx.nameLen,
@@ -705,11 +709,12 @@ func makeSendMsgContext(req poller.IORequest) (*msgContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	vectors, err := makeIOVectors(req)
+	ctx := &msgContext{name: name, nameLen: nameLen}
+	vectors, err := makeIOVectors(req, ctx.inline[:0])
 	if err != nil {
 		return nil, err
 	}
-	ctx := &msgContext{name: name, nameLen: nameLen, iov: vectors}
+	ctx.iov = vectors
 	ctx.hdr = msghdr{
 		name:    uintptr(unsafe.Pointer(&ctx.name)),
 		namelen: ctx.nameLen,

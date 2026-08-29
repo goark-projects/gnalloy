@@ -83,7 +83,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	retained := req.RetainBuffers()
 	nextTail, err := p.prepare(uint64(id), req)
 	if err != nil {
-		delete(p.writev, uint64(id))
+		p.releaseWriteVectorContext(uint64(id))
 		delete(p.msgctx, uint64(id))
 		if retained {
 			req.ReleaseBuffers()
@@ -94,7 +94,7 @@ func (p *Poller) Submit(req poller.IORequest) error {
 	atomic.StoreUint32(p.sq.tail, nextTail)
 	if err := p.enter(1, 0, p.submitEnterFlags()); err != nil {
 		delete(p.pending, uint64(id))
-		delete(p.writev, uint64(id))
+		p.releaseWriteVectorContext(uint64(id))
 		delete(p.msgctx, uint64(id))
 		if retained {
 			req.ReleaseBuffers()
@@ -161,7 +161,7 @@ func (p *Poller) submitBatch(reqs []poller.IORequest) error {
 		retained := req.RetainBuffers()
 		tail, err := p.prepareAt(id, req, nextTail)
 		if err != nil {
-			delete(p.writev, id)
+			p.releaseWriteVectorContext(id)
 			delete(p.msgctx, id)
 			if retained {
 				req.ReleaseBuffers()
@@ -249,7 +249,7 @@ func (p *Poller) rollbackBatch(prepared []batchRequest) {
 		req := prepared[i].req
 		id := prepared[i].id
 		delete(p.pending, id)
-		delete(p.writev, id)
+		p.releaseWriteVectorContext(id)
 		delete(p.msgctx, id)
 		if prepared[i].retained {
 			req.ReleaseBuffers()

@@ -9,8 +9,79 @@ import (
 	"goark.dev/gnalloy/transport/poller"
 )
 
-func makeIOVectors(req poller.IORequest) ([]iovec, error) {
-	vectors := make([]iovec, 0, iovCapacity(req))
+const (
+	inlineWriteVectors      = 16
+	maxRetainedWriteVectors = 64
+)
+
+// writeVectorContext 保存提交给内核的 iovec，直到对应 CQE 回收前地址必须稳定。
+type writeVectorContext struct {
+	inline  [inlineWriteVectors]iovec
+	vectors []iovec
+	next    *writeVectorContext
+}
+
+func (p *Poller) acquireWriteVectorContext(req poller.IORequest) (*writeVectorContext, error) {
+	ctx := p.freeWritev
+	if ctx == nil {
+		ctx = &writeVectorContext{}
+	} else {
+		p.freeWritev = ctx.next
+		ctx.next = nil
+	}
+	vectors, err := makeIOVectors(req, ctx.scratch())
+	if err != nil {
+		p.recycleWriteVectorContext(ctx)
+		return nil, err
+	}
+	ctx.vectors = vectors
+	return ctx, nil
+}
+
+func (p *Poller) releaseWriteVectorContext(id uint64) {
+	ctx := p.writev[id]
+	if ctx == nil {
+		return
+	}
+	delete(p.writev, id)
+	p.recycleWriteVectorContext(ctx)
+}
+
+func (p *Poller) recycleWriteVectorContext(ctx *writeVectorContext) {
+	if ctx == nil {
+		return
+	}
+	ctx.reset()
+	ctx.next = p.freeWritev
+	p.freeWritev = ctx
+}
+
+func (ctx *writeVectorContext) scratch() []iovec {
+	if ctx == nil {
+		return nil
+	}
+	if cap(ctx.vectors) <= inlineWriteVectors {
+		return ctx.inline[:0]
+	}
+	return ctx.vectors[:0]
+}
+
+func (ctx *writeVectorContext) reset() {
+	clear(ctx.vectors)
+	if cap(ctx.vectors) > maxRetainedWriteVectors {
+		ctx.vectors = nil
+		return
+	}
+	if ctx.vectors != nil {
+		ctx.vectors = ctx.vectors[:0]
+	}
+}
+
+func makeIOVectors(req poller.IORequest, dst []iovec) ([]iovec, error) {
+	vectors := dst
+	if vectors == nil {
+		vectors = make([]iovec, 0, iovCapacityHint(req))
+	}
 	var err error
 	if req.Buf != nil {
 		vectors, err = appendIOVectors(vectors, req.Buf)
@@ -31,13 +102,13 @@ func makeIOVectors(req poller.IORequest) ([]iovec, error) {
 	return vectors, nil
 }
 
-func iovCapacity(req poller.IORequest) int {
+func iovCapacityHint(req poller.IORequest) int {
 	if req.Buf != nil {
-		return readableVectorCapacity(req.Buf)
+		return readableVectorCapacityHint(req.Buf)
 	}
 	n := 0
 	for _, buf := range req.Bufs {
-		n += readableVectorCapacity(buf)
+		n += readableVectorCapacityHint(buf)
 	}
 	if n == 0 {
 		return 1
@@ -45,12 +116,9 @@ func iovCapacity(req poller.IORequest) int {
 	return n
 }
 
-func readableVectorCapacity(src buffer.ByteBuf) int {
+func readableVectorCapacityHint(src buffer.ByteBuf) int {
 	if src == nil || src.ReadableBytes() == 0 {
 		return 0
-	}
-	if _, ok := buffer.ContiguousReadableBytes(src); ok {
-		return 1
 	}
 	if composite, ok := src.(*buffer.CompositeByteBuf); ok {
 		return composite.ComponentCount()

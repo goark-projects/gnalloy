@@ -304,12 +304,67 @@ func TestSubmitBatchCompletesPipeReadAndWrite(t *testing.T) {
 func TestMakeIOVectorsExpandsCompositeWithoutCopy(t *testing.T) {
 	buf := fragmentedWriteBuffer("ab", "cd")
 	defer buf.Release()
-	vectors, err := makeIOVectors(poller.IORequest{Buf: buf})
+	var inline [inlineWriteVectors]iovec
+	vectors, err := makeIOVectors(poller.IORequest{Buf: buf}, inline[:0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(vectors) != 2 || vectors[0].len != 2 || vectors[1].len != 2 {
 		t.Fatalf("vectors=%+v, want two 2-byte vectors", vectors)
+	}
+	if &vectors[0] != &inline[0] {
+		t.Fatal("复合 ByteBuf 小片段应复用调用方内联 iovec 存储")
+	}
+}
+
+func TestWriteVectorContextReusesInlineStorage(t *testing.T) {
+	buf := fragmentedWriteBuffer("ab", "cd")
+	defer buf.Release()
+
+	p := &Poller{}
+	ctx, err := p.acquireWriteVectorContext(poller.IORequest{Buf: buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ctx.vectors) != 2 || &ctx.vectors[0] != &ctx.inline[0] {
+		t.Fatalf("vectors=%+v, want inline storage", ctx.vectors)
+	}
+
+	p.recycleWriteVectorContext(ctx)
+	if p.freeWritev != ctx {
+		t.Fatal("write-vector context should return to poller free list")
+	}
+	ctx2, err := p.acquireWriteVectorContext(poller.IORequest{Buf: buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx2 != ctx {
+		t.Fatal("write-vector context should be reused")
+	}
+	p.recycleWriteVectorContext(ctx2)
+}
+
+func TestMsgContextUsesInlineVectors(t *testing.T) {
+	readBuf := buffer.NewHeapBuffer(8)
+	defer readBuf.Release()
+	recv, err := makeRecvMsgContext(poller.IORequest{Buf: readBuf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recv.iov) != 1 || &recv.iov[0] != &recv.inline[0] {
+		t.Fatalf("recv iov=%+v, want inline storage", recv.iov)
+	}
+
+	writeBuf := fragmentedWriteBuffer("ab", "cd")
+	defer writeBuf.Release()
+	addr := poller.SocketAddress{Family: poller.SocketFamilyIPv4, Port: 53}
+	copy(addr.IP[:4], []byte{127, 0, 0, 1})
+	send, err := makeSendMsgContext(poller.IORequest{Buf: writeBuf, Addr: addr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(send.iov) != 2 || &send.iov[0] != &send.inline[0] {
+		t.Fatalf("send iov=%+v, want inline storage", send.iov)
 	}
 }
 
@@ -317,11 +372,12 @@ func BenchmarkMakeIOVectorsComposite(b *testing.B) {
 	buf := fragmentedWriteBuffer("abcd", "efgh", "ijkl", "mnop")
 	defer buf.Release()
 	req := poller.IORequest{Buf: buf}
+	var inline [inlineWriteVectors]iovec
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		vectors, err := makeIOVectors(req)
+		vectors, err := makeIOVectors(req, inline[:0])
 		if err != nil {
 			b.Fatal(err)
 		}
