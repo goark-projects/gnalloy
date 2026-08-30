@@ -168,6 +168,8 @@ Netty parity:
 - Benchmark parity 口径见 `docs/benchmark-parity.md`。
 - TLS 版本对标矩阵见 `benchmarks/parity/tls-version-matrix.json` 和
   `benchmarks/parity/linux-tls-version-matrix.json`。
+- HTTP/3 对标矩阵见 `benchmarks/parity/http3-matrix.json` 和
+  `benchmarks/parity/linux-http3-matrix.json`。
 - Production runbook 见 `docs/production-runbook.md`。
 - Microbenchmark suites 见 `benchmarks/microbench`，并通过
   `go run ./cmd/gnalloy-benchdiff -suite hotpath` 执行上一版本对比。
@@ -183,6 +185,7 @@ ALLOW_SKIP=1 ./scripts/verify-privileged.sh
 ./scripts/verify-bench.sh
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/tcp-matrix.json
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/http3-matrix.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/tls-version-matrix.json
 GROUPS=codec,queue,timer ./scripts/verify-bench.sh
 go run ./cmd/gnalloy-benchdiff -list-suites
@@ -202,6 +205,7 @@ go test ./...
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/baseline.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/tcp-matrix.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/windows-tcp.json
+go run ./examples/parity-bench -dry-run -config benchmarks/parity/http3-matrix.json
 go run ./examples/parity-bench -dry-run -config benchmarks/parity/tls-version-matrix.json
 .\scripts\verify-bench.ps1 -Groups codec,queue,timer
 go run ./cmd/gnalloy-benchdiff -list-suites

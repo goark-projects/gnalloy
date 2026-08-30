@@ -46,7 +46,8 @@ record Config(
                 && !Objects.equals(protocol, "http1")
                 && !Objects.equals(protocol, "https1")
                 && !Objects.equals(protocol, "http2")
-                && !Objects.equals(protocol, "https2")) {
+                && !Objects.equals(protocol, "https2")
+                && !Objects.equals(protocol, "http3")) {
             throw new IllegalArgumentException("netty-bench: unsupported protocol " + protocol);
         }
         if (backend == null) {
@@ -76,6 +77,12 @@ record Config(
         if (Objects.equals(protocol, "https2") && tlsVersion == TlsVersion.TLS11) {
             throw new IllegalArgumentException("netty-bench: HTTP/2 over TLS requires TLS 1.2 or newer");
         }
+        if (http3Family() && tlsVersion != TlsVersion.TLS13) {
+            throw new IllegalArgumentException("netty-bench: HTTP/3 requires TLS 1.3");
+        }
+        if (http3Family() && !alpnProtocols().contains("h3")) {
+            throw new IllegalArgumentException("netty-bench: HTTP/3 requires ALPN h3");
+        }
     }
 
     boolean http1Family() {
@@ -86,12 +93,16 @@ record Config(
         return Objects.equals(protocol, "http2") || Objects.equals(protocol, "https2");
     }
 
+    boolean http3Family() {
+        return Objects.equals(protocol, "http3");
+    }
+
     boolean udpEcho() {
         return Objects.equals(protocol, "udp-echo");
     }
 
     boolean tlsEnabled() {
-        return Objects.equals(protocol, "https1") || Objects.equals(protocol, "https2");
+        return Objects.equals(protocol, "https1") || Objects.equals(protocol, "https2") || http3Family();
     }
 
     List<String> alpnProtocols() {
@@ -116,6 +127,9 @@ record Config(
         }
         if (Objects.equals(values.get("protocol"), "https2")) {
             return "h2";
+        }
+        if (Objects.equals(values.get("protocol"), "http3")) {
+            return "h3";
         }
         return "http/1.1";
     }

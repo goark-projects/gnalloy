@@ -21,6 +21,11 @@ public final class NettyEchoBenchmark {
                 return DatagramLoadGenerator.run(server.address(), config);
             }
         }
+        if (config.http3Family()) {
+            try (Http3Server server = Http3Server.start(config)) {
+                return Http3LoadGenerator.run(server.address(), config);
+            }
+        }
         try (EchoServer server = EchoServer.start(config)) {
             InetSocketAddress address = server.address();
             if (config.http1Family()) {

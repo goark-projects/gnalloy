@@ -53,3 +53,29 @@ func TestWriteBenchmarkResult(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteHTTP3BenchmarkResultUsesRFC9000Backend(t *testing.T) {
+	var out bytes.Buffer
+	writeBenchmarkResult(&out, config{
+		Protocol:    "http3",
+		TLSVersion:  "1.3",
+		Backend:     transport.BackendEpoll,
+		Boss:        1,
+		Workers:     4,
+		Payload:     8,
+		Connections: 1,
+		Messages:    1,
+	}, benchResult{
+		TotalRequests: 1,
+		Elapsed:       time.Microsecond,
+		Throughput:    1000000,
+		NsPerOp:       1000,
+		Protocol:      "h3",
+	})
+	text := out.String()
+	for _, want := range []string{"protocol=http3", "backend=rfc9000", "negotiatedProtocol=h3", "BenchmarkGnalloyHTTP3-"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in %q", want, text)
+		}
+	}
+}

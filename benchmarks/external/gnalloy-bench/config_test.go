@@ -98,6 +98,23 @@ func TestParseConfigSupportsHTTP2Family(t *testing.T) {
 	}
 }
 
+func TestParseConfigSupportsHTTP3(t *testing.T) {
+	cfg, err := parseConfig([]string{"-protocol", "http3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Protocol != "http3" || cfg.ALPN != "h3" || cfg.TLSVersion != "1.3" {
+		t.Fatalf("cfg=%+v, want http3 with h3/TLS1.3", cfg)
+	}
+}
+
+func TestParseConfigRejectsHTTP3TLS12(t *testing.T) {
+	_, err := parseConfig([]string{"-protocol", "http3", "-tls-version", "1.2"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
 func TestParseConfigSupportsUDPEcho(t *testing.T) {
 	cfg, err := parseConfig([]string{
 		"-protocol", "udp-echo",

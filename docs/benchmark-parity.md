@@ -9,7 +9,7 @@
 | --- | --- |
 | 平台 | Linux、macOS、Windows 分开记录，不允许跨平台混写结论。 |
 | 后端 | `epoll`、`kqueue`、`io_uring`、`iocp`、`std` 分别记录。 |
-| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、UDP echo、raw IP、L2 frame、QUIC packet/runtime、QUIC stream/datagram、DNS-over-QUIC。 |
+| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、HTTP/3 stream、UDP echo、raw IP、L2 frame、QUIC packet/runtime、QUIC stream/datagram、DNS-over-QUIC。 |
 | 负载 | 小包、MTU 附近包、大包、长连接、短连接、连接 churn。 |
 | 指标 | throughput、P50/P95/P99/P999 latency、allocs/op、B/op、RSS、CPU、错误率。 |
 | 回压 | 高/低水位线、慢消费者、写队列增长、flush 合并策略。 |
@@ -184,6 +184,30 @@ HTTP/2 矩阵覆盖 h2c 明文和 TLS 1.3 + ALPN `h2` 密文，负载模型为 6
 `%TEMP%\gnalloy-http2-local-20260830-010041.json`；Linux 报告路径为
 `/tmp/gnalloy-http2-linux-20260830-0109.json`。
 
+HTTP/3 stream 对标矩阵:
+
+```bash
+./scripts/build-external-bench.sh
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/linux-http3-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/linux-http3-matrix.json -out http3-matrix-report.md
+```
+
+Windows:
+
+```powershell
+.\scripts\build-external-bench.ps1
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/http3-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/http3-matrix.json -out http3-matrix-report.md
+```
+
+HTTP/3 矩阵按 RFC 9114/RFC 9000 边界固定 TLS 1.3 和 ALPN `h3`，负载模型为
+64 条 QUIC 连接、每连接 5000 个顺序 request stream、每场景 1 次 warmup 和 3 次
+正式采样。Gnalloy 使用 `transport/quic/rfc9000`、`transport/http3` 和
+`codec/http3`；Netty 使用 `Http3.newQuicServerCodecBuilder`、
+`Http3.newQuicClientCodecBuilder` 和对应平台 DatagramChannel。gnet 与
+CloudWeGo netpoll 当前没有等价完整 HTTP/3 协议栈，HTTP/3 表格中记录为不适用，
+不把 TCP/UDP echo 结果混入 HTTP/3 结论。
+
 TLS 版本矩阵:
 
 ```bash
@@ -228,7 +252,9 @@ jar 文件本身是否存在。Windows 下 Go harness 构建为 `.exe`，baselin
 
 ```bash
 benchmarks/external/bin/gnalloy-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000 -backend default
+benchmarks/external/bin/gnalloy-bench -protocol http3 -payload 1024 -connections 64 -messages 5000 -alpn h3 -tls-version 1.3
 java -jar benchmarks/external/bin/netty-bench.jar --protocol tcp-echo --payload 1024 --connections 256 --messages 100000
+java -jar benchmarks/external/bin/netty-bench.jar --protocol http3 --payload 1024 --connections 64 --messages 5000 --alpn h3 --tls-version 1.3
 benchmarks/external/bin/gnet-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
 benchmarks/external/bin/netpoll-bench -protocol tcp-echo -payload 1024 -connections 256 -messages 100000
 ```

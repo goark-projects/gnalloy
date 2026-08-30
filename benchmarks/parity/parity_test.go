@@ -350,6 +350,77 @@ func TestLinuxHTTP2MatrixSpecLoads(t *testing.T) {
 	}
 }
 
+func TestHTTP3MatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("http3-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 4 {
+		t.Fatalf("scenarios=%d, want http3 matrix scenarios", len(spec.Scenarios))
+	}
+	if spec.Variables["ALPN"] != "h3" || spec.Variables["TLS_VERSION"] != "1.3" {
+		t.Fatalf("variables=%v, want h3/TLS1.3", spec.Variables)
+	}
+	for _, scenario := range spec.Scenarios {
+		assertHTTP3MatrixScenario(t, scenario, "nio")
+	}
+}
+
+func TestLinuxHTTP3MatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("linux-http3-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 4 {
+		t.Fatalf("scenarios=%d, want linux http3 matrix scenarios", len(spec.Scenarios))
+	}
+	if spec.Variables["ALPN"] != "h3" || spec.Variables["TLS_VERSION"] != "1.3" {
+		t.Fatalf("variables=%v, want h3/TLS1.3", spec.Variables)
+	}
+	for _, scenario := range spec.Scenarios {
+		assertHTTP3MatrixScenario(t, scenario, "epoll")
+	}
+}
+
+func assertHTTP3MatrixScenario(t *testing.T, scenario Scenario, nettyBackend string) {
+	t.Helper()
+	command := strings.Join(scenario.Command, " ")
+	if scenario.Protocol != "http3" {
+		t.Fatalf("scenario=%+v", scenario)
+	}
+	if !strings.Contains(command, "http3") || !strings.Contains(command, "tls-version") || !strings.Contains(command, "${TLS_VERSION}") || !strings.Contains(command, "${ALPN}") {
+		t.Fatalf("command=%q", command)
+	}
+	if scenario.Framework == "gnalloy" {
+		if scenario.Backend != "rfc9000" || !hasScenarioTag(scenario, "parity-harness") {
+			t.Fatalf("gnalloy scenario=%+v", scenario)
+		}
+		if strings.Contains(command, "rfc9000") {
+			t.Fatalf("gnalloy HTTP/3 CLI must not pass rfc9000 as a poller backend: %q", command)
+		}
+		return
+	}
+	if scenario.Framework == "netty" {
+		if scenario.Backend != nettyBackend || !strings.Contains(command, nettyBackend) {
+			t.Fatalf("netty scenario=%+v command=%q", scenario, command)
+		}
+		return
+	}
+	t.Fatalf("framework=%q, want gnalloy or netty", scenario.Framework)
+}
+
 func TestUDPEchoMatrixSpecLoads(t *testing.T) {
 	file, err := os.Open("udp-matrix.json")
 	if err != nil {

@@ -96,6 +96,9 @@ func (c *config) resolve() error {
 	if c.Protocol == "https2" && c.ALPN == "http/1.1" {
 		c.ALPN = "h2"
 	}
+	if c.Protocol == "http3" && c.ALPN == "http/1.1" {
+		c.ALPN = http3ALPNValue
+	}
 	tlsVersion, err := normalizeTLSVersion(c.TLSVersion)
 	if err != nil {
 		return err
@@ -116,7 +119,7 @@ func (c *config) resolve() error {
 
 func (c config) validate() error {
 	switch strings.TrimSpace(c.Protocol) {
-	case "tcp-echo", "udp-echo", "http1", "https1", "http2", "https2":
+	case "tcp-echo", "udp-echo", "http1", "https1", "http2", "https2", "http3":
 	default:
 		return fmt.Errorf("%w: %s", errUnsupportedProtocol, c.Protocol)
 	}
@@ -161,6 +164,9 @@ func (c config) validate() error {
 	}
 	if c.Protocol == "https2" && c.TLSVersion == tlsVersion11 {
 		return fmt.Errorf("%w: HTTP/2 over TLS requires TLS 1.2 or newer", errInvalidConfig)
+	}
+	if c.Protocol == "http3" {
+		return ensureHTTP3Config(c)
 	}
 	return nil
 }

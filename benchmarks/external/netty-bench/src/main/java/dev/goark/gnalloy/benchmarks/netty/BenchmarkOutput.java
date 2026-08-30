@@ -55,6 +55,9 @@ final class BenchmarkOutput {
         if ("https2".equals(protocol)) {
             return "BenchmarkNettyHTTPS2";
         }
+        if ("http3".equals(protocol)) {
+            return "BenchmarkNettyHTTP3";
+        }
         if ("udp-echo".equals(protocol)) {
             return "BenchmarkNettyUDPEcho";
         }

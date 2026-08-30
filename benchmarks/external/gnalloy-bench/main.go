@@ -36,6 +36,8 @@ func benchmarkName(protocol string) string {
 		return "BenchmarkGnalloyHTTP2"
 	case "https2":
 		return "BenchmarkGnalloyHTTPS2"
+	case "http3":
+		return "BenchmarkGnalloyHTTP3"
 	case "udp-echo":
 		return "BenchmarkGnalloyUDPEcho"
 	default:
