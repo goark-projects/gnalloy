@@ -345,52 +345,9 @@ func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	if !ok {
 		return ctx.Write(msg)
 	}
-	method := req.Method
-	if method == "" {
-		method = "GET"
-	}
-	uri := req.URI
-	if uri == "" {
-		uri = "/"
-	}
-	version := req.Version
-	if version == "" {
-		version = "HTTP/1.1"
-	}
-	var builder strings.Builder
-	builder.WriteString(method)
-	builder.WriteByte(' ')
-	builder.WriteString(uri)
-	builder.WriteByte(' ')
-	builder.WriteString(version)
-	builder.WriteString("\r\n")
-	hasContentLength := false
-	chunked := req.Headers.ContainsToken("Transfer-Encoding", "chunked")
-	for k, v := range req.Headers {
-		if strings.EqualFold(k, "Content-Length") {
-			hasContentLength = true
-		}
-		builder.WriteString(k)
-		builder.WriteString(": ")
-		builder.WriteString(v)
-		builder.WriteString("\r\n")
-	}
-	if req.Body != nil && !hasContentLength && !chunked {
-		builder.WriteString("Content-Length: ")
-		builder.WriteString(strconv.Itoa(req.Body.ReadableBytes()))
-		builder.WriteString("\r\n")
-	}
-	builder.WriteString("\r\n")
-	header := builder.String()
-	out, err := ctx.Channel().Allocator().Acquire(len(header))
+	chunked := requestChunked(req)
+	out, err := encodeRequestHead(ctx, req, chunked)
 	if err != nil {
-		if req.Body != nil {
-			req.Body.Release()
-		}
-		return err
-	}
-	if _, err := out.WriteBytes([]byte(header)); err != nil {
-		out.Release()
 		if req.Body != nil {
 			req.Body.Release()
 		}
@@ -426,48 +383,9 @@ func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	if !ok {
 		return ctx.Write(msg)
 	}
-	version := resp.Version
-	if version == "" {
-		version = "HTTP/1.1"
-	}
-	reason := resp.Reason
-	if reason == "" {
-		reason = defaultReason(resp.StatusCode)
-	}
-	var builder strings.Builder
-	builder.WriteString(version)
-	builder.WriteByte(' ')
-	builder.WriteString(strconv.Itoa(resp.StatusCode))
-	builder.WriteByte(' ')
-	builder.WriteString(reason)
-	builder.WriteString("\r\n")
-	hasContentLength := false
-	chunked := resp.Headers.ContainsToken("Transfer-Encoding", "chunked")
-	for k, v := range resp.Headers {
-		if strings.EqualFold(k, "Content-Length") {
-			hasContentLength = true
-		}
-		builder.WriteString(k)
-		builder.WriteString(": ")
-		builder.WriteString(v)
-		builder.WriteString("\r\n")
-	}
-	if resp.Body != nil && !hasContentLength && !chunked {
-		builder.WriteString("Content-Length: ")
-		builder.WriteString(strconv.Itoa(resp.Body.ReadableBytes()))
-		builder.WriteString("\r\n")
-	}
-	builder.WriteString("\r\n")
-	header := builder.String()
-	out, err := ctx.Channel().Allocator().Acquire(len(header))
+	chunked := responseChunked(resp)
+	out, err := encodeResponseHead(ctx, resp, chunked)
 	if err != nil {
-		if resp.Body != nil {
-			resp.Body.Release()
-		}
-		return err
-	}
-	if _, err := out.WriteBytes([]byte(header)); err != nil {
-		out.Release()
 		if resp.Body != nil {
 			resp.Body.Release()
 		}

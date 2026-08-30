@@ -85,6 +85,47 @@ func BenchmarkRequestDecoderChunkedFragmentedBody(b *testing.B) {
 	}
 }
 
+func BenchmarkRequestEncoderHeader(b *testing.B) {
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), releasingHTTP1Sink{})
+	_ = ch.Pipeline().AddLast("encoder", NewRequestEncoder())
+	req := Request{
+		Method: "GET",
+		URI:    "/bench",
+		Headers: Headers{
+			"Host":       "example.test",
+			"User-Agent": "gnalloy",
+		},
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := ch.Write(req); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkResponseEncoderHeader(b *testing.B) {
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), releasingHTTP1Sink{})
+	_ = ch.Pipeline().AddLast("encoder", NewResponseEncoder())
+	resp := Response{
+		StatusCode: 200,
+		Headers: Headers{
+			"Content-Type": "application/octet-stream",
+			"Server":       "gnalloy",
+		},
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := ch.Write(resp); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func fragmentedHTTP1Buffer(parts ...string) *buffer.CompositeByteBuf {
 	c := buffer.NewCompositeByteBuf()
 	for _, part := range parts {
@@ -92,3 +133,16 @@ func fragmentedHTTP1Buffer(parts ...string) *buffer.CompositeByteBuf {
 	}
 	return c
 }
+
+type releasingHTTP1Sink struct{}
+
+func (releasingHTTP1Sink) Write(msg any) error {
+	if buf, ok := msg.(buffer.ByteBuf); ok {
+		buf.Release()
+	}
+	return nil
+}
+
+func (releasingHTTP1Sink) Flush() error { return nil }
+
+func (releasingHTTP1Sink) Close() error { return nil }
