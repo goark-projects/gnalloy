@@ -66,6 +66,70 @@ func TestHandlerNegotiatesAndPassesPlaintext(t *testing.T) {
 	}
 }
 
+func TestHandlerNegotiatesConfiguredTLSVersions(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version uint16
+	}{
+		{name: "tls12", version: cryptotls.VersionTLS12},
+		{name: "tls13", version: cryptotls.VersionTLS13},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cert := testCertificate(t)
+			clientSink := &pipeSink{}
+			serverSink := &pipeSink{}
+			client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+			server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+			clientSink.peer = server.Pipeline()
+			serverSink.peer = client.Pipeline()
+
+			clientRecv := &plainRecorder{}
+			serverEcho := &plainEcho{}
+			clientTLS := Client(Config{
+				TLS: &cryptotls.Config{
+					ServerName:         "gnalloy.local",
+					InsecureSkipVerify: true,
+					MinVersion:         tc.version,
+					MaxVersion:         tc.version,
+					NextProtos:         []string{"http/1.1"},
+				},
+			})
+			serverTLS := Server(Config{
+				TLS: &cryptotls.Config{
+					Certificates: []cryptotls.Certificate{cert},
+					MinVersion:   tc.version,
+					MaxVersion:   tc.version,
+					NextProtos:   []string{"http/1.1"},
+				},
+			})
+			if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.Pipeline().AddLast("recorder", clientRecv); err != nil {
+				t.Fatal(err)
+			}
+			if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+				t.Fatal(err)
+			}
+			if err := server.Pipeline().AddLast("echo", serverEcho); err != nil {
+				t.Fatal(err)
+			}
+
+			server.Pipeline().FireChannelActive()
+			client.Pipeline().FireChannelActive()
+			writePlain(t, client, "ping")
+
+			clientRecv.waitString(t, "ping")
+			if clientRecv.version != tc.version {
+				t.Fatalf("tls version=%x, want %x", clientRecv.version, tc.version)
+			}
+			if clientRecv.protocol != "http/1.1" {
+				t.Fatalf("alpn=%q, want http/1.1", clientRecv.protocol)
+			}
+		})
+	}
+}
+
 func TestHandlerFlushesRepeatedApplicationWrites(t *testing.T) {
 	cert := testCertificate(t)
 	clientSink := &pipeSink{}
@@ -464,6 +528,7 @@ func (s *pipeSink) Close() error { return nil }
 type plainRecorder struct {
 	buf      bytes.Buffer
 	protocol string
+	version  uint16
 	ocsp     []OCSPEvent
 }
 
@@ -480,6 +545,7 @@ func (r *plainRecorder) UserEventTriggered(ctx *channel.HandlerContext, event an
 	switch ev := event.(type) {
 	case HandshakeEvent:
 		r.protocol = ev.NegotiatedProtocol
+		r.version = ev.Version
 	case OCSPEvent:
 		r.ocsp = append(r.ocsp, ev)
 	}

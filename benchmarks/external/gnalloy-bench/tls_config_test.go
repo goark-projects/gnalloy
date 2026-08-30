@@ -25,3 +25,21 @@ func TestServerTLSConfigUsesTLS13(t *testing.T) {
 		t.Fatalf("tlsConfig=%+v", tlsConfig)
 	}
 }
+
+func TestTLSConfigUsesSelectedVersion(t *testing.T) {
+	cfg, err := parseConfig([]string{"-protocol", "https1", "-tls-version", "1.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig, err := serverTLSConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConfig := clientTLSConfig(cfg)
+	if serverConfig.MinVersion != cryptotls.VersionTLS12 || serverConfig.MaxVersion != cryptotls.VersionTLS12 {
+		t.Fatalf("server tls version min=%x max=%x", serverConfig.MinVersion, serverConfig.MaxVersion)
+	}
+	if clientConfig.MinVersion != cryptotls.VersionTLS12 || clientConfig.MaxVersion != cryptotls.VersionTLS12 {
+		t.Fatalf("client tls version min=%x max=%x", clientConfig.MinVersion, clientConfig.MaxVersion)
+	}
+}

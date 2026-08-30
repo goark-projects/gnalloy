@@ -18,6 +18,7 @@ record Config(
         int eventLoops,
         int latencySampleRate,
         int warmupMessages,
+        TlsVersion tlsVersion,
         String alpn) {
 
     static Config parse(String[] args) {
@@ -35,6 +36,7 @@ record Config(
                 Args.intValue(values, "event-loops", Runtime.getRuntime().availableProcessors()),
                 Args.intValue(values, "latency-sample-rate", 0),
                 Args.intValue(values, "warmup-messages", 0),
+                TlsVersion.parse(values.getOrDefault("tls-version", "1.3")),
                 defaultAlpn(values));
     }
 
@@ -70,6 +72,9 @@ record Config(
         }
         if (warmupMessages < 0) {
             throw new IllegalArgumentException("netty-bench: warmup-messages must not be negative");
+        }
+        if (Objects.equals(protocol, "https2") && tlsVersion == TlsVersion.TLS11) {
+            throw new IllegalArgumentException("netty-bench: HTTP/2 over TLS requires TLS 1.2 or newer");
         }
     }
 

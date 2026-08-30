@@ -35,6 +35,7 @@ type config struct {
 	LatencySampleRate      int
 	WarmupMessages         int
 	ALPN                   string
+	TLSVersion             string
 }
 
 func parseConfig(args []string) (config, error) {
@@ -52,6 +53,7 @@ func parseConfig(args []string) (config, error) {
 		MmapBlockSize:  4096,
 		MmapBlocks:     4096,
 		ALPN:           "http/1.1",
+		TLSVersion:     defaultTLSVersion,
 	}
 	fs := flag.NewFlagSet("gnalloy-bench", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -75,6 +77,7 @@ func parseConfig(args []string) (config, error) {
 	fs.IntVar(&cfg.LatencySampleRate, "latency-sample-rate", cfg.LatencySampleRate, "record one round-trip latency sample every N messages per connection; 0 disables latency sampling")
 	fs.IntVar(&cfg.WarmupMessages, "warmup-messages", cfg.WarmupMessages, "messages per connection sent before timed measurement; 0 disables in-process warmup")
 	fs.StringVar(&cfg.ALPN, "alpn", cfg.ALPN, "comma-separated TLS ALPN protocols for HTTPS protocols")
+	fs.StringVar(&cfg.TLSVersion, "tls-version", cfg.TLSVersion, "TLS protocol version: 1.1, 1.2 or 1.3")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -93,6 +96,11 @@ func (c *config) resolve() error {
 	if c.Protocol == "https2" && c.ALPN == "http/1.1" {
 		c.ALPN = "h2"
 	}
+	tlsVersion, err := normalizeTLSVersion(c.TLSVersion)
+	if err != nil {
+		return err
+	}
+	c.TLSVersion = tlsVersion
 	if c.Workers == 0 {
 		c.Workers = defaultWorkerCount(workerSizingInput{
 			GOOS:       runtime.GOOS,
@@ -150,6 +158,9 @@ func (c config) validate() error {
 	}
 	if c.WarmupMessages < 0 {
 		return fmt.Errorf("%w: warmup-messages must not be negative", errInvalidConfig)
+	}
+	if c.Protocol == "https2" && c.TLSVersion == tlsVersion11 {
+		return fmt.Errorf("%w: HTTP/2 over TLS requires TLS 1.2 or newer", errInvalidConfig)
 	}
 	return nil
 }

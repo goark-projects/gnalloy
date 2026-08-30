@@ -58,6 +58,28 @@ func TestParseConfigSupportsHTTPS1ALPN(t *testing.T) {
 	}
 }
 
+func TestParseConfigSupportsTLSVersions(t *testing.T) {
+	for _, version := range []string{"1.1", "1.2", "1.3"} {
+		cfg, err := parseConfig([]string{
+			"-protocol", "https1",
+			"-tls-version", version,
+		})
+		if err != nil {
+			t.Fatalf("version %s: %v", version, err)
+		}
+		if cfg.TLSVersion != version {
+			t.Fatalf("version=%q, want %s", cfg.TLSVersion, version)
+		}
+	}
+}
+
+func TestParseConfigRejectsHTTP2TLS11(t *testing.T) {
+	_, err := parseConfig([]string{"-protocol", "https2", "-tls-version", "1.1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
 func TestParseConfigSupportsHTTP2Family(t *testing.T) {
 	cfg, err := parseConfig([]string{"-protocol", "http2"})
 	if err != nil {
@@ -245,6 +267,13 @@ func TestParseConfigRejectsNegativeLatencySampleRate(t *testing.T) {
 
 func TestParseConfigRejectsNegativeWarmupMessages(t *testing.T) {
 	_, err := parseConfig([]string{"-warmup-messages", "-1"})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
+func TestParseConfigRejectsInvalidTLSVersion(t *testing.T) {
+	_, err := parseConfig([]string{"-protocol", "https1", "-tls-version", "1.0"})
 	if !errors.Is(err, errInvalidConfig) {
 		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
 	}

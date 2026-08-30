@@ -6,10 +6,11 @@ final class BenchmarkOutput {
 
     static void write(Config config, BenchmarkResult result) {
         System.out.printf(
-                "framework=netty protocol=%s backend=%s eventLoops=%d negotiatedProtocol=%s latencySampleRate=%d warmupMessages=%d latencySamples=%d p50LatencyNs=%d p95LatencyNs=%d p99LatencyNs=%d p999LatencyNs=%d maxLatencyNs=%d rssBytes=%d heapAllocBytes=%d heapSysBytes=%d heapObjects=%d gcCount=%d gcPauseNs=%d goroutines=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s%n",
+                "framework=netty protocol=%s backend=%s eventLoops=%d tlsVersion=%s negotiatedProtocol=%s latencySampleRate=%d warmupMessages=%d latencySamples=%d p50LatencyNs=%d p95LatencyNs=%d p99LatencyNs=%d p999LatencyNs=%d maxLatencyNs=%d rssBytes=%d heapAllocBytes=%d heapSysBytes=%d heapObjects=%d gcCount=%d gcPauseNs=%d goroutines=%d payload=%d connections=%d messages=%d total=%d errors=%d elapsed=%s throughput=%.2f ops/s%n",
                 config.protocol(),
                 config.backend().wireName(),
                 config.eventLoops(),
+                config.tlsVersion().id(),
                 result.negotiatedProtocol(),
                 config.latencySampleRate(),
                 config.warmupMessages(),

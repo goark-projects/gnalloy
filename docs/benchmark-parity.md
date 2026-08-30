@@ -184,6 +184,29 @@ HTTP/2 矩阵覆盖 h2c 明文和 TLS 1.3 + ALPN `h2` 密文，负载模型为 6
 `%TEMP%\gnalloy-http2-local-20260830-010041.json`；Linux 报告路径为
 `/tmp/gnalloy-http2-linux-20260830-0109.json`。
 
+TLS 版本矩阵:
+
+```bash
+./scripts/build-external-bench.sh
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/linux-tls-version-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/linux-tls-version-matrix.json -out tls-version-matrix-report.md
+```
+
+Windows:
+
+```powershell
+.\scripts\build-external-bench.ps1
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/tls-version-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/tls-version-matrix.json -out tls-version-matrix-report.md
+```
+
+TLS 矩阵覆盖 HTTPS/1.1 的 TLS 1.1、1.2、1.3，以及 HTTP/2 over TLS 的
+TLS 1.2、1.3。HTTP/2 不纳入 TLS 1.1：这不是实现取舍，而是协议安全边界。
+Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
+`MinVersion/MaxVersion`，Netty harness 使用 `--tls-version` 固定
+`SslHandler` 的协议版本，并在 Java 21 进程内仅对显式 TLS 1.1 场景放开
+`TLSv1.1` 禁用项，避免影响默认 TLS 1.3 路径。
+
 harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；
 该目录是本机构建产物，不提交到仓库。Netty 使用独立 Maven 工程，
 gnalloy/gnet/netpoll 使用独立 Go module，避免把对标依赖引入 gnalloy 根 `go.mod`。

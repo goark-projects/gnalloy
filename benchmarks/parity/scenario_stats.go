@@ -12,6 +12,7 @@ type ScenarioStats struct {
 	Framework              string        `json:"framework,omitempty"`
 	Protocol               string        `json:"protocol,omitempty"`
 	Backend                string        `json:"backend,omitempty"`
+	TLSVersion             string        `json:"tlsVersion,omitempty"`
 	NegotiatedProtocol     string        `json:"negotiatedProtocol,omitempty"`
 	Boss                   int64         `json:"boss,omitempty"`
 	Workers                int64         `json:"workers,omitempty"`
@@ -83,6 +84,8 @@ func parseScenarioStatsLine(line string) (ScenarioStats, bool) {
 			seenProtocol = true
 		case "backend":
 			stat.Backend = value
+		case "tlsVersion":
+			stat.TLSVersion = value
 		case "negotiatedProtocol":
 			stat.NegotiatedProtocol = value
 		case "boss":

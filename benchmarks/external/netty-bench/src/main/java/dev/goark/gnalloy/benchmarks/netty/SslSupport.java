@@ -13,12 +13,14 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.security.Security;
 import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 final class SslSupport {
     private static final String SERVER_NAME = "gnalloy.local";
-    private static final String TLS_VERSION = "TLSv1.3";
     private static final X509TrustManager TRUST_ALL = new X509TrustManager() {
         @Override
         public void checkClientTrusted(X509Certificate[] chain, String authType) {
@@ -41,10 +43,11 @@ final class SslSupport {
         if (!config.tlsEnabled()) {
             return null;
         }
+        enableLegacyTLSIfRequested(config.tlsVersion());
         SelfSignedCertificate certificate = new SelfSignedCertificate(SERVER_NAME);
         SslContextBuilder builder = SslContextBuilder
                 .forServer(certificate.certificate(), certificate.privateKey())
-                .protocols(TLS_VERSION);
+                .protocols(config.tlsVersion().protocolName());
         List<String> protocols = config.alpnProtocols();
         if (!protocols.isEmpty()) {
             builder.applicationProtocolConfig(new ApplicationProtocolConfig(
@@ -64,12 +67,13 @@ final class SslSupport {
             socket.setSoTimeout(Math.toIntExact(config.timeout().toMillis()));
             return socket;
         }
+        enableLegacyTLSIfRequested(config.tlsVersion());
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(null, new TrustManager[]{TRUST_ALL}, null);
         SSLSocket socket = (SSLSocket) context.getSocketFactory().createSocket();
         socket.setUseClientMode(true);
         socket.setTcpNoDelay(true);
-        socket.setEnabledProtocols(new String[]{TLS_VERSION});
+        socket.setEnabledProtocols(new String[]{config.tlsVersion().protocolName()});
         configureClientParameters(socket, config.alpnProtocols());
         socket.connect(address, Math.toIntExact(config.timeout().toMillis()));
         socket.setSoTimeout(Math.toIntExact(config.timeout().toMillis()));
@@ -91,5 +95,20 @@ final class SslSupport {
             parameters.setApplicationProtocols(protocols.toArray(String[]::new));
         }
         socket.setSSLParameters(parameters);
+    }
+
+    private static void enableLegacyTLSIfRequested(TlsVersion version) {
+        if (version != TlsVersion.TLS11) {
+            return;
+        }
+        String disabled = Security.getProperty("jdk.tls.disabledAlgorithms");
+        if (disabled == null || disabled.isBlank()) {
+            return;
+        }
+        String updated = Arrays.stream(disabled.split(","))
+                .map(String::trim)
+                .filter(rule -> !rule.equalsIgnoreCase("TLSv1.1"))
+                .collect(Collectors.joining(", "));
+        Security.setProperty("jdk.tls.disabledAlgorithms", updated);
     }
 }

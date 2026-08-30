@@ -13,6 +13,7 @@ func TestWriteBenchmarkResult(t *testing.T) {
 	var out bytes.Buffer
 	writeBenchmarkResult(&out, config{
 		Protocol:          "tcp-echo",
+		TLSVersion:        "1.2",
 		Backend:           transport.BackendStd,
 		Boss:              1,
 		Workers:           2,
@@ -46,7 +47,7 @@ func TestWriteBenchmarkResult(t *testing.T) {
 		},
 	})
 	text := out.String()
-	for _, want := range []string{"framework=gnalloy", "backend=std", "boss=1", "workers=2", "negotiatedProtocol=http/1.1", "latencySampleRate=1", "warmupMessages=3", "latencySamples=2", "p99LatencyNs=200000", "rssBytes=4096", "gcCount=1", "total=2", "BenchmarkGnalloyTCPEcho-", "2 2000 ns/op"} {
+	for _, want := range []string{"framework=gnalloy", "backend=std", "boss=1", "workers=2", "tlsVersion=1.2", "negotiatedProtocol=http/1.1", "latencySampleRate=1", "warmupMessages=3", "latencySamples=2", "p99LatencyNs=200000", "rssBytes=4096", "gcCount=1", "total=2", "BenchmarkGnalloyTCPEcho-", "2 2000 ns/op"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}

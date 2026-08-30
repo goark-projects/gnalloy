@@ -12,18 +12,28 @@ func serverTLSConfig(cfg config) (*cryptotls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	version, err := cryptoTLSVersion(cfg.TLSVersion)
+	if err != nil {
+		return nil, err
+	}
 	return &cryptotls.Config{
 		Certificates: []cryptotls.Certificate{cert},
-		MinVersion:   cryptotls.VersionTLS13,
+		MinVersion:   version,
+		MaxVersion:   version,
 		NextProtos:   alpnProtocols(cfg.ALPN),
 	}, nil
 }
 
 func clientTLSConfig(cfg config) *cryptotls.Config {
+	version, err := cryptoTLSVersion(cfg.TLSVersion)
+	if err != nil {
+		version = cryptotls.VersionTLS13
+	}
 	return &cryptotls.Config{
 		ServerName:         tlsServerName(),
 		InsecureSkipVerify: true,
-		MinVersion:         cryptotls.VersionTLS13,
+		MinVersion:         version,
+		MaxVersion:         version,
 		NextProtos:         alpnProtocols(cfg.ALPN),
 	}
 }

@@ -246,6 +246,76 @@ func TestHTTP2MatrixSpecLoads(t *testing.T) {
 	}
 }
 
+func TestTLSVersionMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("tls-version-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 20 {
+		t.Fatalf("scenarios=%d, want tls version matrix scenarios", len(spec.Scenarios))
+	}
+	seen := map[string]bool{}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if !strings.Contains(command, "tls-version") {
+			t.Fatalf("scenario %q missing tls-version: %q", scenario.Name, command)
+		}
+		if scenario.Framework != "gnalloy" && scenario.Framework != "netty" {
+			t.Fatalf("framework=%q, want gnalloy or netty", scenario.Framework)
+		}
+		if scenario.Framework == "gnalloy" && scenario.Backend != "iocp" {
+			t.Fatalf("gnalloy backend=%q, want iocp", scenario.Backend)
+		}
+		if scenario.Protocol == "https2" && strings.Contains(command, "1.1") {
+			t.Fatalf("https2 must not use TLS 1.1: %q", command)
+		}
+		for _, version := range []string{"1.1", "1.2", "1.3"} {
+			if strings.Contains(command, "tls-version") && strings.Contains(command, version) {
+				seen[version] = true
+			}
+		}
+	}
+	for _, version := range []string{"1.1", "1.2", "1.3"} {
+		if !seen[version] {
+			t.Fatalf("tls version %s missing", version)
+		}
+	}
+}
+
+func TestLinuxTLSVersionMatrixSpecLoads(t *testing.T) {
+	file, err := os.Open("linux-tls-version-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Scenarios) != 20 {
+		t.Fatalf("scenarios=%d, want linux tls version matrix scenarios", len(spec.Scenarios))
+	}
+	for _, scenario := range spec.Scenarios {
+		command := strings.Join(scenario.Command, " ")
+		if !strings.Contains(command, "tls-version") {
+			t.Fatalf("scenario %q missing tls-version: %q", scenario.Name, command)
+		}
+		if scenario.Backend != "epoll" {
+			t.Fatalf("backend=%q, want epoll", scenario.Backend)
+		}
+		if scenario.Protocol == "https2" && strings.Contains(command, "1.1") {
+			t.Fatalf("https2 must not use TLS 1.1: %q", command)
+		}
+	}
+}
+
 func TestLinuxHTTP2MatrixSpecLoads(t *testing.T) {
 	file, err := os.Open("linux-http2-matrix.json")
 	if err != nil {
@@ -776,7 +846,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 }
 
 func TestParseScenarioStats(t *testing.T) {
-	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp negotiatedProtocol=http/1.1 boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true latencySampleRate=16 latencySamples=1600 p50LatencyNs=1000 p95LatencyNs=1500 p99LatencyNs=2000 p999LatencyNs=3000 maxLatencyNs=4000 rssBytes=4096 heapAllocBytes=2048 heapSysBytes=8192 heapObjects=64 gcCount=2 gcPauseNs=100 goroutines=12 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
+	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp tlsVersion=1.2 negotiatedProtocol=http/1.1 boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true latencySampleRate=16 latencySamples=1600 p50LatencyNs=1000 p95LatencyNs=1500 p99LatencyNs=2000 p999LatencyNs=3000 maxLatencyNs=4000 rssBytes=4096 heapAllocBytes=2048 heapSysBytes=8192 heapObjects=64 gcCount=2 gcPauseNs=100 goroutines=12 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
 	if len(stats) != 1 {
 		t.Fatalf("stats=%+v, want one", stats)
 	}
@@ -786,6 +856,9 @@ func TestParseScenarioStats(t *testing.T) {
 	}
 	if stat.NegotiatedProtocol != "http/1.1" {
 		t.Fatalf("negotiatedProtocol=%q, want http/1.1", stat.NegotiatedProtocol)
+	}
+	if stat.TLSVersion != "1.2" {
+		t.Fatalf("tlsVersion=%q, want 1.2", stat.TLSVersion)
 	}
 	if stat.PayloadBytes != 1024 || stat.Connections != 256 || stat.Messages != 100000 || stat.TotalRequests != 25600000 || stat.Errors != 0 {
 		t.Fatalf("stat=%+v", stat)
