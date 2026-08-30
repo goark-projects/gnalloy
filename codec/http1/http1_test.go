@@ -147,6 +147,39 @@ func TestResponseEncoder(t *testing.T) {
 	}
 }
 
+func TestResponseEncoderCoalescesSmallBodyWhenEnabled(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewResponseEncoderWithOptions(ResponseEncoderOptions{CoalesceBodyBytes: 1024}))
+	defer sink.release()
+
+	if err := ch.Write(Response{StatusCode: 200, Headers: Headers{"Server": "gnalloy"}, Body: testBuf([]byte("ok"))}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
+	}
+	got := string(sink.writes[0].Bytes())
+	want := "HTTP/1.1 200 OK\r\nServer: gnalloy\r\nContent-Length: 2\r\n\r\nok"
+	if got != want {
+		t.Fatalf("response=%q, want %q", got, want)
+	}
+}
+
+func TestResponseEncoderDoesNotCoalesceLargeBody(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewResponseEncoderWithOptions(ResponseEncoderOptions{CoalesceBodyBytes: 1}))
+	defer sink.release()
+
+	if err := ch.Write(Response{StatusCode: 200, Body: testBuf([]byte("ok"))}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want 2", len(sink.writes))
+	}
+}
+
 func TestRequestDecoderWithChunkedBody(t *testing.T) {
 	decoder, err := NewRequestDecoder(1024, 1024)
 	if err != nil {

@@ -50,17 +50,21 @@ func bindHTTP1Server(ctx context.Context, cfg config, boss *transport.EventLoopG
 					return err
 				}
 			}
-			return addHTTP1Pipeline(ch, cfg.Payload)
+			return addHTTP1Pipeline(ch, cfg)
 		}).
 		BindContext(ctx, cfg.Addr)
 }
 
-func addHTTP1Pipeline(ch channel.Channel, payload int) error {
+func addHTTP1Pipeline(ch channel.Channel, cfg config) error {
 	decoder, err := http1.NewRequestDecoder(16*1024, 0)
 	if err != nil {
 		return err
 	}
-	if err := ch.Pipeline().AddLast("httpEncoder", http1.NewResponseEncoder()); err != nil {
+	encoder := http1.NewResponseEncoder()
+	if cfg.Protocol == "https1" && cfg.Payload > 0 && cfg.Payload <= 16*1024 {
+		encoder = http1.NewResponseEncoderWithOptions(http1.ResponseEncoderOptions{CoalesceBodyBytes: 16 * 1024})
+	}
+	if err := ch.Pipeline().AddLast("httpEncoder", encoder); err != nil {
 		return err
 	}
 	if err := ch.Pipeline().AddLast("httpDecoder", decoder); err != nil {
@@ -70,7 +74,7 @@ func addHTTP1Pipeline(ch channel.Channel, payload int) error {
 		return err
 	}
 	return ch.Pipeline().AddLast("handler", http1Handler{
-		body: benchhttp.ResponseBody(payload),
+		body: benchhttp.ResponseBody(cfg.Payload),
 		headers: http1.Headers{
 			"Content-Type": "application/octet-stream",
 		},

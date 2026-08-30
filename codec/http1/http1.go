@@ -372,10 +372,28 @@ func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 	return nil
 }
 
-type ResponseEncoder struct{}
+// ResponseEncoderOptions 描述 HTTP/1 响应编码器的可选热路径策略。
+type ResponseEncoderOptions struct {
+	// CoalesceBodyBytes 大于 0 时，小于等于该阈值的非 chunked 响应会合并头部和正文。
+	//
+	// 该选项适合 TLS 下减少 record 数和 goroutine 边界往返；明文高吞吐场景可保持
+	// 默认 0，继续依赖 writev/批量写出避免额外拷贝。
+	CoalesceBodyBytes int
+}
+
+type ResponseEncoder struct {
+	options ResponseEncoderOptions
+}
 
 func NewResponseEncoder() *ResponseEncoder {
 	return &ResponseEncoder{}
+}
+
+func NewResponseEncoderWithOptions(options ResponseEncoderOptions) *ResponseEncoder {
+	if options.CoalesceBodyBytes < 0 {
+		options.CoalesceBodyBytes = 0
+	}
+	return &ResponseEncoder{options: options}
 }
 
 func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
@@ -384,6 +402,27 @@ func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		return ctx.Write(msg)
 	}
 	chunked := responseChunked(resp)
+	if resp.Body != nil && !chunked && e.options.CoalesceBodyBytes > 0 {
+		return e.writeCoalesced(ctx, resp)
+	}
+	return e.writeSplit(ctx, resp, chunked)
+}
+
+func (e *ResponseEncoder) writeCoalesced(ctx *channel.HandlerContext, resp Response) error {
+	bodyBytes := resp.Body.ReadableBytes()
+	if bodyBytes == 0 || bodyBytes > e.options.CoalesceBodyBytes {
+		return e.writeSplit(ctx, resp, false)
+	}
+	out, err := encodeResponse(ctx, resp, bodyBytes)
+	if err != nil {
+		resp.Body.Release()
+		return err
+	}
+	resp.Body.Release()
+	return codec.WriteOutboundBuffer(ctx, out)
+}
+
+func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response, chunked bool) error {
 	out, err := encodeResponseHead(ctx, resp, chunked)
 	if err != nil {
 		if resp.Body != nil {

@@ -48,6 +48,36 @@ func encodeRequestHead(ctx *channel.HandlerContext, req Request, chunked bool) (
 }
 
 func encodeResponseHead(ctx *channel.HandlerContext, resp Response, chunked bool) (buffer.ByteBuf, error) {
+	version, reason, contentLength, size := responseHeadFields(resp, chunked)
+	out, err := ctx.Channel().Allocator().Acquire(size)
+	if err != nil {
+		return nil, err
+	}
+	if err := appendResponseHead(out, version, resp.StatusCode, reason, resp.Headers, contentLength); err != nil {
+		out.Release()
+		return nil, err
+	}
+	return out, nil
+}
+
+func encodeResponse(ctx *channel.HandlerContext, resp Response, bodyBytes int) (buffer.ByteBuf, error) {
+	version, reason, contentLength, size := responseHeadFields(resp, false)
+	out, err := ctx.Channel().Allocator().Acquire(size + bodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	if err := appendResponseHead(out, version, resp.StatusCode, reason, resp.Headers, contentLength); err != nil {
+		out.Release()
+		return nil, err
+	}
+	if err := buffer.WriteReadableBytes(out, resp.Body); err != nil {
+		out.Release()
+		return nil, err
+	}
+	return out, nil
+}
+
+func responseHeadFields(resp Response, chunked bool) (string, string, int, int) {
 	version := resp.Version
 	if version == "" {
 		version = "HTTP/1.1"
@@ -61,15 +91,7 @@ func encodeResponseHead(ctx *channel.HandlerContext, resp Response, chunked bool
 		contentLength = resp.Body.ReadableBytes()
 	}
 	size := responseHeadSize(version, resp.StatusCode, reason, resp.Headers, contentLength)
-	out, err := ctx.Channel().Allocator().Acquire(size)
-	if err != nil {
-		return nil, err
-	}
-	if err := appendResponseHead(out, version, resp.StatusCode, reason, resp.Headers, contentLength); err != nil {
-		out.Release()
-		return nil, err
-	}
-	return out, nil
+	return version, reason, contentLength, size
 }
 
 func appendRequestHead(out buffer.ByteBuf, method string, uri string, version string, headers Headers, contentLength int) error {
