@@ -268,9 +268,12 @@ TLS 1.2、1.3。HTTP/2 不纳入 TLS 1.1：这不是实现取舍，而是协议�
 Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
 `MinVersion/MaxVersion`，Netty harness 使用 `--tls-version` 固定
 `SslHandler` 的协议版本，并在 Java 21 进程内仅对显式 TLS 1.1 场景放开
-`TLSv1.1` 禁用项，避免影响默认 TLS 1.3 路径。HTTPS/1 的 Gnalloy
-场景使用 `-http1-mode raw`，仍经过 `handler/tls`，只去掉通用 HTTP/1
-对象编解码成本；HTTPS/2 场景保持 `codec/http2`。
+`TLSv1.1` 禁用项，避免影响默认 TLS 1.3 路径。TLS 1.1/1.2 场景同时
+通过 `-cipher-suites`/`--cipher-suites` 固定双方共同支持的 IANA/Java
+密码套件；TLS 1.3 和 HTTP/3 场景保留运行时/provider 默认密码套件，因为
+Go `crypto/tls` 不允许把 TLS 1.3 套件写入 `CipherSuites`。HTTPS/1 的
+Gnalloy 场景使用 `-http1-mode raw`，仍经过 `handler/tls`，只去掉通用
+HTTP/1 对象编解码成本；HTTPS/2 场景保持 `codec/http2`。
 gnet-bench 当前只接受 `tcp-echo`、`udp-echo` 和 `http1`；netpoll-bench 当前只接受
 `tcp-echo` 和 `http1`。两者没有原生 HTTP/2、HTTP/3 或 TLS/ALPN 协议栈场景，
 因此 TLS 1.1/1.2/1.3 表格只对 Gnalloy 和 Netty 做同协议对比。

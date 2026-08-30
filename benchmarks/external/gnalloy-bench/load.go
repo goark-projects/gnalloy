@@ -80,7 +80,11 @@ func runHTTP1Benchmark(ctx context.Context, cfg config) (benchResult, error) {
 		WarmupMessages:    cfg.WarmupMessages,
 	}
 	if cfg.Protocol == "https1" {
-		httpConfig.TLS = clientTLSConfig(cfg)
+		tlsConfig, err := clientTLSConfig(cfg)
+		if err != nil {
+			return benchResult{}, err
+		}
+		httpConfig.TLS = tlsConfig
 	}
 	result, err := benchhttp.RunLoad(ctx, httpConfig)
 	out := benchResult{
@@ -122,7 +126,11 @@ func runHTTP2Benchmark(ctx context.Context, cfg config) (benchResult, error) {
 		WarmupMessages:    cfg.WarmupMessages,
 	}
 	if cfg.Protocol == "https2" {
-		h2Config.TLS = clientTLSConfig(cfg)
+		tlsConfig, err := clientTLSConfig(cfg)
+		if err != nil {
+			return benchResult{}, err
+		}
+		h2Config.TLS = tlsConfig
 	}
 	result, err := benchh2.RunLoad(ctx, h2Config)
 	out := benchResult{
@@ -153,6 +161,10 @@ func runHTTP3Benchmark(ctx context.Context, cfg config) (benchResult, error) {
 	defer server.stop()
 
 	resourcesBefore := captureResourceSnapshot()
+	tlsConfig, err := clientTLSConfig(cfg)
+	if err != nil {
+		return benchResult{}, err
+	}
 	h3Config := benchh3.Config{
 		Addr:              server.addr,
 		ServerName:        tlsServerName(),
@@ -162,7 +174,7 @@ func runHTTP3Benchmark(ctx context.Context, cfg config) (benchResult, error) {
 		Timeout:           cfg.Timeout,
 		LatencySampleRate: cfg.LatencySampleRate,
 		WarmupMessages:    cfg.WarmupMessages,
-		TLS:               clientTLSConfig(cfg),
+		TLS:               tlsConfig,
 	}
 	result, err := benchh3.RunLoad(ctx, h3Config)
 	out := benchResult{

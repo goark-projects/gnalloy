@@ -5,10 +5,11 @@ import (
 	"strings"
 
 	"goark.dev/gnalloy/benchmarks/external/internal/benchtls"
+	handlertls "goark.dev/gnalloy/handler/tls"
 )
 
 func serverTLSConfig(cfg config) (*cryptotls.Config, error) {
-	cert, err := benchtls.SelfSignedCertificate(tlsServerName())
+	certs, err := benchmarkCertificates(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -16,26 +17,34 @@ func serverTLSConfig(cfg config) (*cryptotls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &cryptotls.Config{
-		Certificates: []cryptotls.Certificate{cert},
+	tlsConfig := &cryptotls.Config{
+		Certificates: certs,
 		MinVersion:   version,
 		MaxVersion:   version,
 		NextProtos:   alpnProtocols(cfg.ALPN),
-	}, nil
+	}
+	if err := handlertls.ConfigureCipherSuites(tlsConfig, cfg.CipherSuiteIDs); err != nil {
+		return nil, err
+	}
+	return tlsConfig, nil
 }
 
-func clientTLSConfig(cfg config) *cryptotls.Config {
+func clientTLSConfig(cfg config) (*cryptotls.Config, error) {
 	version, err := cryptoTLSVersion(cfg.TLSVersion)
 	if err != nil {
 		version = cryptotls.VersionTLS13
 	}
-	return &cryptotls.Config{
+	tlsConfig := &cryptotls.Config{
 		ServerName:         tlsServerName(),
 		InsecureSkipVerify: true,
 		MinVersion:         version,
 		MaxVersion:         version,
 		NextProtos:         alpnProtocols(cfg.ALPN),
 	}
+	if err := handlertls.ConfigureCipherSuites(tlsConfig, cfg.CipherSuiteIDs); err != nil {
+		return nil, err
+	}
+	return tlsConfig, nil
 }
 
 func tlsServerName() string {

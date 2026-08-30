@@ -2,6 +2,8 @@ package tls
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	cryptotls "crypto/tls"
@@ -71,6 +73,7 @@ func TestHandlerNegotiatesConfiguredTLSVersions(t *testing.T) {
 		name    string
 		version uint16
 	}{
+		{name: "tls11", version: cryptotls.VersionTLS11},
 		{name: "tls12", version: cryptotls.VersionTLS12},
 		{name: "tls13", version: cryptotls.VersionTLS13},
 	} {
@@ -125,6 +128,76 @@ func TestHandlerNegotiatesConfiguredTLSVersions(t *testing.T) {
 			}
 			if clientRecv.protocol != "http/1.1" {
 				t.Fatalf("alpn=%q, want http/1.1", clientRecv.protocol)
+			}
+		})
+	}
+}
+
+func TestHandlerNegotiatesConfiguredCipherSuites(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version uint16
+		suite   uint16
+		cert    func(*testing.T) cryptotls.Certificate
+	}{
+		{name: "tls11-cbc-rsa", version: cryptotls.VersionTLS11, suite: cryptotls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, cert: testCertificate},
+		{name: "tls11-cbc-ecdsa", version: cryptotls.VersionTLS11, suite: cryptotls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA, cert: testECDSACertificate},
+		{name: "tls12-gcm-rsa", version: cryptotls.VersionTLS12, suite: cryptotls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, cert: testCertificate},
+		{name: "tls12-gcm-ecdsa", version: cryptotls.VersionTLS12, suite: cryptotls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, cert: testECDSACertificate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cert := tc.cert(t)
+			clientSink := &pipeSink{}
+			serverSink := &pipeSink{}
+			client := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), clientSink)
+			server := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), serverSink)
+			clientSink.peer = server.Pipeline()
+			serverSink.peer = client.Pipeline()
+
+			clientRecv := &plainRecorder{}
+			serverEcho := &plainEcho{}
+			clientTLS := Client(Config{
+				CipherSuites: []uint16{tc.suite},
+				TLS: &cryptotls.Config{
+					ServerName:         "gnalloy.local",
+					InsecureSkipVerify: true,
+					MinVersion:         tc.version,
+					MaxVersion:         tc.version,
+					NextProtos:         []string{"http/1.1"},
+				},
+			})
+			serverTLS := Server(Config{
+				CipherSuites: []uint16{tc.suite},
+				TLS: &cryptotls.Config{
+					Certificates: []cryptotls.Certificate{cert},
+					MinVersion:   tc.version,
+					MaxVersion:   tc.version,
+					NextProtos:   []string{"http/1.1"},
+				},
+			})
+			if err := client.Pipeline().AddLast("tls", clientTLS); err != nil {
+				t.Fatal(err)
+			}
+			if err := client.Pipeline().AddLast("recorder", clientRecv); err != nil {
+				t.Fatal(err)
+			}
+			if err := server.Pipeline().AddLast("tls", serverTLS); err != nil {
+				t.Fatal(err)
+			}
+			if err := server.Pipeline().AddLast("echo", serverEcho); err != nil {
+				t.Fatal(err)
+			}
+
+			server.Pipeline().FireChannelActive()
+			client.Pipeline().FireChannelActive()
+			writePlain(t, client, "ping")
+
+			clientRecv.waitString(t, "ping")
+			if clientRecv.version != tc.version {
+				t.Fatalf("tls version=%x, want %x", clientRecv.version, tc.version)
+			}
+			if clientRecv.cipherSuite != tc.suite {
+				t.Fatalf("cipherSuite=%x, want %x", clientRecv.cipherSuite, tc.suite)
 			}
 		})
 	}
@@ -526,10 +599,11 @@ func (s *pipeSink) Flush() error {
 func (s *pipeSink) Close() error { return nil }
 
 type plainRecorder struct {
-	buf      bytes.Buffer
-	protocol string
-	version  uint16
-	ocsp     []OCSPEvent
+	buf         bytes.Buffer
+	protocol    string
+	version     uint16
+	cipherSuite uint16
+	ocsp        []OCSPEvent
 }
 
 func (r *plainRecorder) ChannelRead(_ *channel.HandlerContext, msg any) {
@@ -546,6 +620,7 @@ func (r *plainRecorder) UserEventTriggered(ctx *channel.HandlerContext, event an
 	case HandshakeEvent:
 		r.protocol = ev.NegotiatedProtocol
 		r.version = ev.Version
+		r.cipherSuite = ev.CipherSuite
 	case OCSPEvent:
 		r.ocsp = append(r.ocsp, ev)
 	}
@@ -588,6 +663,39 @@ func (plainEcho) ChannelRead(ctx *channel.HandlerContext, msg any) {
 
 func testCertificate(t *testing.T) cryptotls.Certificate {
 	return testCertificateForName(t, "gnalloy.local")
+}
+
+func testECDSACertificate(t *testing.T) cryptotls.Certificate {
+	t.Helper()
+	name := "gnalloy.local"
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: name},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		DNSNames:     []string{name},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	cert, err := cryptotls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
 }
 
 func testCertificateForName(t *testing.T, name string) cryptotls.Certificate {

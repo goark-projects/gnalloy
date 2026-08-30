@@ -148,7 +148,8 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | HTTP multipart 高级工具 | `codec/http1/multipart` done | 提供 Content-Type boundary 提取、受限流式解码、ByteBuf/Request 适配和 append-style form-data 编码；part 数量、头部、单 part 和总正文都有预算保护。 |
 | WebSocket extension compression | `codec/websocket/deflate` done | 支持 permessage-deflate 协商参数、RSV1 显式 decoder 配置、data message 压缩/解压、分片最终聚合、控制帧透传和解压膨胀预算。 |
 | brotli/snappy/lz4 等压缩 codec | defer | 需要外部算法依赖，适合扩展包。 |
-| OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS 需要平台依赖、复制预算和安全审计。 |
+| TLS cipher suite catalog/name conversion/config | `handler/tls` done | 基于 Go 运行时目录提供 IANA/Java/OpenSSL/hex 名称解析、insecure 显式 opt-in、TLS 1.0-1.2 配置应用和 TLS 1.3 不可配置边界。 |
+| OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS provider 需要平台依赖、复制预算和安全审计独立切片。 |
 | true sendfile/splice 零拷贝文件传输 | `transport/zerocopy` done | Linux/macOS `sendfile` 和 Windows `TransmitFile` 可直接传输 `DefaultFileRegion` backed by `*os.File`；TCP `Unsafe` 出站默认接入该 writer，非原生 region 明确返回 unsupported，保留 `Copy` 与 `FileRegionEncoder` fallback。 |
 | SCTP、UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
 | in-VM local transport | defer | Go 里可用 memory backend 与嵌入式测试替代；无需复制 Netty 的 JVM 内本地传输模型。 |

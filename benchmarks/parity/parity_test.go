@@ -275,6 +275,7 @@ func TestTLSVersionMatrixSpecLoads(t *testing.T) {
 		if scenario.Protocol == "https2" && strings.Contains(command, "1.1") {
 			t.Fatalf("https2 must not use TLS 1.1: %q", command)
 		}
+		assertTLSCipherSuiteCommand(t, command)
 		for _, version := range []string{"1.1", "1.2", "1.3"} {
 			if strings.Contains(command, "tls-version") && strings.Contains(command, version) {
 				seen[version] = true
@@ -312,6 +313,21 @@ func TestLinuxTLSVersionMatrixSpecLoads(t *testing.T) {
 		}
 		if scenario.Protocol == "https2" && strings.Contains(command, "1.1") {
 			t.Fatalf("https2 must not use TLS 1.1: %q", command)
+		}
+		assertTLSCipherSuiteCommand(t, command)
+	}
+}
+
+func assertTLSCipherSuiteCommand(t *testing.T, command string) {
+	t.Helper()
+	switch {
+	case strings.Contains(command, "tls-version 1.1"), strings.Contains(command, "tls-version 1.2"):
+		if !strings.Contains(command, "cipher-suites") {
+			t.Fatalf("TLS 1.1/1.2 scenario missing cipher-suites: %q", command)
+		}
+	case strings.Contains(command, "tls-version 1.3"):
+		if strings.Contains(command, "cipher-suites") {
+			t.Fatalf("TLS 1.3 scenario must use runtime-default cipher suites: %q", command)
 		}
 	}
 }
@@ -991,7 +1007,7 @@ func TestWriteMarkdownReportIncludesMachineAndScenario(t *testing.T) {
 }
 
 func TestParseScenarioStats(t *testing.T) {
-	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp tlsVersion=1.2 negotiatedProtocol=http/1.1 boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true latencySampleRate=16 latencySamples=1600 p50LatencyNs=1000 p95LatencyNs=1500 p99LatencyNs=2000 p999LatencyNs=3000 maxLatencyNs=4000 rssBytes=4096 heapAllocBytes=2048 heapSysBytes=8192 heapObjects=64 gcCount=2 gcPauseNs=100 goroutines=12 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
+	stats := ParseScenarioStats("framework=gnalloy protocol=tcp-echo backend=iocp tlsVersion=1.2 cipherSuites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 negotiatedProtocol=http/1.1 boss=1 workers=8 readBufferSize=4096 reuseport=true mmap=true mmapBlockSize=4096 mmapBlocks=512 iouringFixedBuffers=true iouringMultishotAccept=true iouringSQPoll=true latencySampleRate=16 latencySamples=1600 p50LatencyNs=1000 p95LatencyNs=1500 p99LatencyNs=2000 p999LatencyNs=3000 maxLatencyNs=4000 rssBytes=4096 heapAllocBytes=2048 heapSysBytes=8192 heapObjects=64 gcCount=2 gcPauseNs=100 goroutines=12 payload=1024 connections=256 messages=100000 total=25600000 errors=0 elapsed=3.2s throughput=8000000.25 ops/s\n")
 	if len(stats) != 1 {
 		t.Fatalf("stats=%+v, want one", stats)
 	}
@@ -1004,6 +1020,9 @@ func TestParseScenarioStats(t *testing.T) {
 	}
 	if stat.TLSVersion != "1.2" {
 		t.Fatalf("tlsVersion=%q, want 1.2", stat.TLSVersion)
+	}
+	if stat.CipherSuites != "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" {
+		t.Fatalf("cipherSuites=%q, want TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", stat.CipherSuites)
 	}
 	if stat.PayloadBytes != 1024 || stat.Connections != 256 || stat.Messages != 100000 || stat.TotalRequests != 25600000 || stat.Errors != 0 {
 		t.Fatalf("stat=%+v", stat)

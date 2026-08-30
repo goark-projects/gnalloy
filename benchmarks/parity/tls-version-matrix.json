@@ -10,6 +10,8 @@
     "GNALLOY_HTTP1_READ_BUFFER_SIZE": "384",
     "HTTP1_ALPN": "http/1.1",
     "HTTP2_ALPN": "h2",
+    "TLS11_CIPHER": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
+    "TLS12_CIPHER": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
     "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
     "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar"
   },
@@ -23,7 +25,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.1"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.1", "-cipher-suites", "${TLS11_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "gnalloy", "https1", "tls11", "payload-128"]
     },
@@ -36,7 +38,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.1"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.1", "-cipher-suites", "${TLS11_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "gnalloy", "https1", "tls11", "payload-1024"]
     },
@@ -49,7 +51,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.2"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.2", "-cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "gnalloy", "https1", "tls12", "payload-128"]
     },
@@ -62,7 +64,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.2"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https1", "-backend", "iocp", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP1_ALPN}", "-tls-version", "1.2", "-cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "gnalloy", "https1", "tls12", "payload-1024"]
     },
@@ -101,7 +103,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "https2", "-backend", "iocp", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP2_ALPN}", "-tls-version", "1.2"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https2", "-backend", "iocp", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP2_ALPN}", "-tls-version", "1.2", "-cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "gnalloy", "https2", "tls12", "payload-128"]
     },
@@ -114,7 +116,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "https2", "-backend", "iocp", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP2_ALPN}", "-tls-version", "1.2"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "https2", "-backend", "iocp", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}", "-alpn", "${HTTP2_ALPN}", "-tls-version", "1.2", "-cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "gnalloy", "https2", "tls12", "payload-1024"]
     },
@@ -152,7 +154,7 @@
       "payload": "128B",
       "warmup": 1,
       "repeat": 3,
-      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.1"],
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.1", "--cipher-suites", "${TLS11_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "netty", "https1", "tls11", "payload-128"]
     },
@@ -164,7 +166,7 @@
       "payload": "1024B",
       "warmup": 1,
       "repeat": 3,
-      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.1"],
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.1", "--cipher-suites", "${TLS11_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "netty", "https1", "tls11", "payload-1024"]
     },
@@ -176,7 +178,7 @@
       "payload": "128B",
       "warmup": 1,
       "repeat": 3,
-      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.2"],
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.2", "--cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "netty", "https1", "tls12", "payload-128"]
     },
@@ -188,7 +190,7 @@
       "payload": "1024B",
       "warmup": 1,
       "repeat": 3,
-      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.2"],
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https1", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP1_ALPN}", "--tls-version", "1.2", "--cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "netty", "https1", "tls12", "payload-1024"]
     },
@@ -224,7 +226,7 @@
       "payload": "128B",
       "warmup": 1,
       "repeat": 3,
-      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https2", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP2_ALPN}", "--tls-version", "1.2"],
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https2", "--backend", "nio", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP2_ALPN}", "--tls-version", "1.2", "--cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "netty", "https2", "tls12", "payload-128"]
     },
@@ -236,7 +238,7 @@
       "payload": "1024B",
       "warmup": 1,
       "repeat": 3,
-      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https2", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP2_ALPN}", "--tls-version", "1.2"],
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "https2", "--backend", "nio", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}", "--alpn", "${HTTP2_ALPN}", "--tls-version", "1.2", "--cipher-suites", "${TLS12_CIPHER}"],
       "timeout": "5m",
       "tags": ["local", "netty", "https2", "tls12", "payload-1024"]
     },

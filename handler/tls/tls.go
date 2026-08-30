@@ -26,6 +26,8 @@ const (
 
 type Config struct {
 	TLS *cryptotls.Config
+	// CipherSuites 覆盖 TLS 1.0-1.2 密码套件；TLS 1.3 套件由 Go 运行时管理，不能写入 crypto/tls.Config。
+	CipherSuites []uint16
 	// StartTLS 表示连接建立后先透传明文，收到 StartEvent 后再启动 TLS 握手。
 	StartTLS bool
 	// VerifyPeerName 在握手完成后对对端证书执行主机名校验，空值表示不额外校验。
@@ -100,8 +102,8 @@ func newHandler(mode Mode, cfg Config) *Handler {
 
 func (h *Handler) HandlerAdded(ctx *channel.HandlerContext) error {
 	h.ctx.Store(ctx)
-	if h.mode != ModeClient && h.mode != ModeServer {
-		return ErrInvalidConfig
+	if err := h.validateConfig(); err != nil {
+		return err
 	}
 	if !h.cfg.StartTLS {
 		h.ensureStarted()
@@ -211,9 +213,11 @@ func (h *Handler) Close(ctx *channel.HandlerContext) error {
 func (h *Handler) ensureStarted() {
 	h.startOnce.Do(func() {
 		h.raw = newMemoryConn(h.bytePool, h.notifyDrain)
-		cfg := &cryptotls.Config{}
-		if h.cfg.TLS != nil {
-			cfg = h.cfg.TLS.Clone()
+		cfg, err := h.tlsConfig()
+		if err != nil {
+			h.started.Store(true)
+			h.sendErr(err)
+			return
 		}
 		if h.mode == ModeServer {
 			h.conn = cryptotls.Server(h.raw, cfg)
@@ -224,6 +228,24 @@ func (h *Handler) ensureStarted() {
 		go h.runHandshake()
 		go h.runWriter()
 	})
+}
+
+func (h *Handler) validateConfig() error {
+	if h.mode != ModeClient && h.mode != ModeServer {
+		return ErrInvalidConfig
+	}
+	return ValidateConfigurableCipherSuites(h.cfg.CipherSuites)
+}
+
+func (h *Handler) tlsConfig() (*cryptotls.Config, error) {
+	cfg := &cryptotls.Config{}
+	if h.cfg.TLS != nil {
+		cfg = h.cfg.TLS.Clone()
+	}
+	if err := ConfigureCipherSuites(cfg, h.cfg.CipherSuites); err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func (h *Handler) runHandshake() {

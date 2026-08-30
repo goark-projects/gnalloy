@@ -1,12 +1,14 @@
 package main
 
 import (
+	cryptotls "crypto/tls"
 	"errors"
 	"runtime"
 	"strconv"
 	"testing"
 	"time"
 
+	handlertls "goark.dev/gnalloy/handler/tls"
 	"goark.dev/gnalloy/transport"
 )
 
@@ -93,6 +95,66 @@ func TestParseConfigSupportsTLSVersions(t *testing.T) {
 		if cfg.TLSVersion != version {
 			t.Fatalf("version=%q, want %s", cfg.TLSVersion, version)
 		}
+	}
+}
+
+func TestParseConfigSupportsCipherSuites(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-protocol", "https1",
+		"-tls-version", "1.2",
+		"-cipher-suites", "ECDHE-RSA-AES128-GCM-SHA256,0xC030",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CipherSuites != "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" {
+		t.Fatalf("cipherSuites=%q", cfg.CipherSuites)
+	}
+	want := []uint16{cryptotls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, cryptotls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384}
+	if len(cfg.CipherSuiteIDs) != len(want) {
+		t.Fatalf("cipherSuiteIDs=%x, want %x", cfg.CipherSuiteIDs, want)
+	}
+	for i := range want {
+		if cfg.CipherSuiteIDs[i] != want[i] {
+			t.Fatalf("cipherSuiteIDs=%x, want %x", cfg.CipherSuiteIDs, want)
+		}
+	}
+}
+
+func TestParseConfigRejectsInsecureCipherSuiteByDefault(t *testing.T) {
+	_, err := parseConfig([]string{
+		"-protocol", "https1",
+		"-tls-version", "1.1",
+		"-cipher-suites", "TLS_RSA_WITH_AES_128_CBC_SHA",
+	})
+	if !errors.Is(err, handlertls.ErrInsecureCipherSuite) {
+		t.Fatalf("err=%v, want %v", err, handlertls.ErrInsecureCipherSuite)
+	}
+}
+
+func TestParseConfigSupportsInsecureCipherSuiteOptIn(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-protocol", "https1",
+		"-tls-version", "1.1",
+		"-cipher-suites", "TLS_RSA_WITH_AES_128_CBC_SHA",
+		"-allow-insecure-cipher-suites",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.CipherSuiteIDs) != 1 || cfg.CipherSuiteIDs[0] != cryptotls.TLS_RSA_WITH_AES_128_CBC_SHA {
+		t.Fatalf("cipherSuiteIDs=%x, want TLS_RSA_WITH_AES_128_CBC_SHA", cfg.CipherSuiteIDs)
+	}
+}
+
+func TestParseConfigRejectsCipherSuitesForTLS13(t *testing.T) {
+	_, err := parseConfig([]string{
+		"-protocol", "https1",
+		"-tls-version", "1.3",
+		"-cipher-suites", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+	})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
 	}
 }
 

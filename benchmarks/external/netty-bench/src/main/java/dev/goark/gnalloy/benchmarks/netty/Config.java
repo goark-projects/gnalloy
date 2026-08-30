@@ -19,7 +19,8 @@ record Config(
         int latencySampleRate,
         int warmupMessages,
         TlsVersion tlsVersion,
-        String alpn) {
+        String alpn,
+        String cipherSuites) {
 
     static Config parse(String[] args) {
         Map<String, String> values = Args.parse(args);
@@ -37,7 +38,8 @@ record Config(
                 Args.intValue(values, "latency-sample-rate", 0),
                 Args.intValue(values, "warmup-messages", 0),
                 TlsVersion.parse(values.getOrDefault("tls-version", "1.3")),
-                defaultAlpn(values));
+                defaultAlpn(values),
+                values.getOrDefault("cipher-suites", ""));
     }
 
     void validate() {
@@ -83,6 +85,12 @@ record Config(
         if (http3Family() && !alpnProtocols().contains("h3")) {
             throw new IllegalArgumentException("netty-bench: HTTP/3 requires ALPN h3");
         }
+        if (!tlsEnabled() && !cipherSuiteList().isEmpty()) {
+            throw new IllegalArgumentException("netty-bench: cipher-suites require TLS");
+        }
+        if (http3Family() && !cipherSuiteList().isEmpty()) {
+            throw new IllegalArgumentException("netty-bench: HTTP/3 cipher suites are provider-managed");
+        }
     }
 
     boolean http1Family() {
@@ -109,7 +117,26 @@ record Config(
         if (alpn == null || alpn.isBlank()) {
             return List.of();
         }
-        String[] parts = alpn.split(",");
+        return splitNames(alpn);
+    }
+
+    List<String> cipherSuiteList() {
+        if (cipherSuites == null || cipherSuites.isBlank()) {
+            return List.of();
+        }
+        return splitNames(cipherSuites);
+    }
+
+    String cipherSuiteOutput() {
+        List<String> suites = cipherSuiteList();
+        if (suites.isEmpty()) {
+            return "";
+        }
+        return String.join(",", suites);
+    }
+
+    private static List<String> splitNames(String value) {
+        String[] parts = value.split("[,;:]");
         List<String> protocols = new ArrayList<>(parts.length);
         for (String part : parts) {
             String protocol = part.trim();

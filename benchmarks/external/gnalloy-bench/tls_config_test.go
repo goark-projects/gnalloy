@@ -35,11 +35,39 @@ func TestTLSConfigUsesSelectedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientConfig := clientTLSConfig(cfg)
+	clientConfig, err := clientTLSConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if serverConfig.MinVersion != cryptotls.VersionTLS12 || serverConfig.MaxVersion != cryptotls.VersionTLS12 {
 		t.Fatalf("server tls version min=%x max=%x", serverConfig.MinVersion, serverConfig.MaxVersion)
 	}
 	if clientConfig.MinVersion != cryptotls.VersionTLS12 || clientConfig.MaxVersion != cryptotls.VersionTLS12 {
 		t.Fatalf("client tls version min=%x max=%x", clientConfig.MinVersion, clientConfig.MaxVersion)
+	}
+}
+
+func TestTLSConfigUsesCipherSuites(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-protocol", "https1",
+		"-tls-version", "1.2",
+		"-cipher-suites", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverConfig, err := serverTLSConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConfig, err := clientTLSConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(serverConfig.CipherSuites) != 1 || serverConfig.CipherSuites[0] != cryptotls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 {
+		t.Fatalf("server cipher suites=%x", serverConfig.CipherSuites)
+	}
+	if len(clientConfig.CipherSuites) != 1 || clientConfig.CipherSuites[0] != cryptotls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 {
+		t.Fatalf("client cipher suites=%x", clientConfig.CipherSuites)
 	}
 }

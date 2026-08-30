@@ -56,6 +56,10 @@ final class SslSupport {
                     ApplicationProtocolConfig.SelectedListenerFailureBehavior.ACCEPT,
                     protocols));
         }
+        List<String> cipherSuites = config.cipherSuiteList();
+        if (!cipherSuites.isEmpty()) {
+            builder.ciphers(cipherSuites);
+        }
         return builder.build();
     }
 
@@ -74,6 +78,10 @@ final class SslSupport {
         socket.setUseClientMode(true);
         socket.setTcpNoDelay(true);
         socket.setEnabledProtocols(new String[]{config.tlsVersion().protocolName()});
+        List<String> cipherSuites = config.cipherSuiteList();
+        if (!cipherSuites.isEmpty()) {
+            socket.setEnabledCipherSuites(cipherSuites.toArray(String[]::new));
+        }
         configureClientParameters(socket, config.alpnProtocols());
         socket.connect(address, Math.toIntExact(config.timeout().toMillis()));
         socket.setSoTimeout(Math.toIntExact(config.timeout().toMillis()));

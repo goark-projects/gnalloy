@@ -14,29 +14,32 @@ import (
 const maxInt = int(^uint(0) >> 1)
 
 type config struct {
-	Protocol               string
-	Addr                   string
-	Payload                int
-	Connections            int
-	Messages               int
-	Timeout                time.Duration
-	BackendName            string
-	Backend                transport.BackendKind
-	Boss                   int
-	Workers                int
-	ReadBufferSize         int
-	ReusePort              bool
-	Mmap                   bool
-	MmapBlockSize          int
-	MmapBlocks             int
-	IOUringFixedBuffers    bool
-	IOUringMultishotAccept bool
-	IOUringSQPoll          bool
-	LatencySampleRate      int
-	WarmupMessages         int
-	ALPN                   string
-	TLSVersion             string
-	HTTP1Mode              string
+	Protocol                  string
+	Addr                      string
+	Payload                   int
+	Connections               int
+	Messages                  int
+	Timeout                   time.Duration
+	BackendName               string
+	Backend                   transport.BackendKind
+	Boss                      int
+	Workers                   int
+	ReadBufferSize            int
+	ReusePort                 bool
+	Mmap                      bool
+	MmapBlockSize             int
+	MmapBlocks                int
+	IOUringFixedBuffers       bool
+	IOUringMultishotAccept    bool
+	IOUringSQPoll             bool
+	LatencySampleRate         int
+	WarmupMessages            int
+	ALPN                      string
+	TLSVersion                string
+	CipherSuites              string
+	CipherSuiteIDs            []uint16
+	AllowInsecureCipherSuites bool
+	HTTP1Mode                 string
 }
 
 func parseConfig(args []string) (config, error) {
@@ -80,6 +83,8 @@ func parseConfig(args []string) (config, error) {
 	fs.IntVar(&cfg.WarmupMessages, "warmup-messages", cfg.WarmupMessages, "messages per connection sent before timed measurement; 0 disables in-process warmup")
 	fs.StringVar(&cfg.ALPN, "alpn", cfg.ALPN, "comma-separated TLS ALPN protocols for HTTPS protocols")
 	fs.StringVar(&cfg.TLSVersion, "tls-version", cfg.TLSVersion, "TLS protocol version: 1.1, 1.2 or 1.3")
+	fs.StringVar(&cfg.CipherSuites, "cipher-suites", cfg.CipherSuites, "comma-separated TLS cipher suites using IANA/Java, OpenSSL or hexadecimal names")
+	fs.BoolVar(&cfg.AllowInsecureCipherSuites, "allow-insecure-cipher-suites", cfg.AllowInsecureCipherSuites, "allow legacy cipher suites flagged insecure by the Go runtime")
 	fs.StringVar(&cfg.HTTP1Mode, "http1-mode", cfg.HTTP1Mode, "HTTP/1 server mode: codec or raw")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
@@ -107,6 +112,9 @@ func (c *config) resolve() error {
 		return err
 	}
 	c.TLSVersion = tlsVersion
+	if err := c.resolveCipherSuites(); err != nil {
+		return err
+	}
 	http1Mode, err := normalizeHTTP1Mode(c.HTTP1Mode)
 	if err != nil {
 		return err
@@ -179,6 +187,24 @@ func (c config) validate() error {
 	if c.Protocol == "http3" {
 		return ensureHTTP3Config(c)
 	}
+	return nil
+}
+
+func (c *config) resolveCipherSuites() error {
+	if strings.TrimSpace(c.CipherSuites) == "" {
+		c.CipherSuites = ""
+		c.CipherSuiteIDs = nil
+		return nil
+	}
+	ids, err := parseCipherSuiteList(c.CipherSuites, c.AllowInsecureCipherSuites)
+	if err != nil {
+		return err
+	}
+	if c.TLSVersion == tlsVersion13 {
+		return fmt.Errorf("%w: cipher-suites are configurable only for TLS 1.1 and TLS 1.2", errInvalidConfig)
+	}
+	c.CipherSuiteIDs = ids
+	c.CipherSuites = strings.Join(cipherSuiteNames(ids), ",")
 	return nil
 }
 
