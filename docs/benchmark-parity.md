@@ -249,6 +249,34 @@ Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
 `SslHandler` 的协议版本，并在 Java 21 进程内仅对显式 TLS 1.1 场景放开
 `TLSv1.1` 禁用项，避免影响默认 TLS 1.3 路径。
 
+2026-08-30 HTTP/1 和 HTTPS/1 串行优化后实测样本:
+
+| 平台 | 场景 | median ops/s | median ns/op | median p99 ns | 错误数 | 结论 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Windows/amd64 | gnalloy IOCP HTTP/1 128B | 323,576 | 3,090 | 1,074,800 | 0 | 高于 Netty NIO 298,561。 |
+| Windows/amd64 | gnalloy IOCP HTTP/1 1KiB | 322,296 | 3,103 | 1,310,300 | 0 | 高于 Netty NIO 286,746，低于 gnet 391,575。 |
+| Linux/amd64 | gnalloy epoll HTTP/1 128B | 157,830 | 6,336 | 2,613,274 | 0 | 高于 Netty epoll 140,943。 |
+| Linux/amd64 | gnalloy epoll HTTP/1 1KiB | 157,063 | 6,367 | 2,586,797 | 0 | 高于 Netty epoll 134,140，低于 gnet 170,426 和 netpoll 225,579。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.1 128B | 197,718 | 5,058 | 1,059,200 | 0 | 略高于 Netty NIO 197,271。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.1 1KiB | 189,024 | 5,290 | 1,100,700 | 0 | 略高于 Netty NIO 188,859。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.1 128B | 71,442 | 13,997 | 2,146,591 | 0 | 高于 Netty epoll 64,520。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.1 1KiB | 65,856 | 15,184 | 2,378,257 | 0 | 高于 Netty epoll 61,563。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.2 128B | 220,407 | 4,537 | 1,023,700 | 0 | 高于 Netty NIO 201,845。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.2 1KiB | 214,915 | 4,653 | 1,030,000 | 0 | 高于 Netty NIO 181,235。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.2 128B | 93,768 | 10,665 | 1,635,412 | 0 | 高于 Netty epoll 70,696。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.2 1KiB | 91,049 | 10,983 | 1,723,709 | 0 | 高于 Netty epoll 64,688。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.3 128B | 219,638 | 4,553 | 1,033,400 | 0 | 高于 Netty NIO 196,147。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.3 1KiB | 215,460 | 4,641 | 1,028,400 | 0 | 高于 Netty NIO 190,420。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.3 128B | 93,701 | 10,672 | 1,621,489 | 0 | 高于 Netty epoll 61,801。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.3 1KiB | 91,043 | 10,984 | 1,737,464 | 0 | 高于 Netty epoll 61,468。 |
+
+这些数据按协议串行执行，未并发跑多个矩阵；每个场景 3 次样本取 median，
+连接数 64、每连接 5000 个顺序 request、warmup 500、延迟采样率 1/64。
+HTTP/1 Windows 报告路径为
+`%TEMP%\gnalloy-http1-local-sharedbuf-20260830-114601.json`，Linux 报告路径为
+`/tmp/gnalloy-http1-linux-sharedbuf-20260830-114946.json`。TLS 1.1/1.2/1.3
+使用外部 harness 原生命令按版本分段串行执行，未把一次性机器负载样本外推为通用性能结论。
+
 harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；
 该目录是本机构建产物，不提交到仓库。Netty 使用独立 Maven 工程，
 gnalloy/gnet/netpoll 使用独立 Go module，避免把对标依赖引入 gnalloy 根 `go.mod`。
