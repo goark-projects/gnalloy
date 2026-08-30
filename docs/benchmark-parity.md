@@ -208,6 +208,24 @@ HTTP/3 矩阵按 RFC 9114/RFC 9000 边界固定 TLS 1.3 和 ALPN `h3`，负载�
 CloudWeGo netpoll 当前没有等价完整 HTTP/3 协议栈，HTTP/3 表格中记录为不适用，
 不把 TCP/UDP echo 结果混入 HTTP/3 结论。
 
+2026-08-30 HTTP/3 stream 实测样本:
+
+| 平台 | 场景 | median ops/s | median ns/op | median p99 ns | errors | 结论 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Windows/amd64 | gnalloy rfc9000 h3 128B | 46,660 | 21,432 | 1,783,540 | 0 | 吞吐超过 Netty NIO h3 27,922。 |
+| Windows/amd64 | gnalloy rfc9000 h3 1KiB | 46,179 | 21,655 | 1,798,882 | 0 | 吞吐超过 Netty NIO h3 27,245。 |
+| Linux/amd64 | gnalloy rfc9000 h3 128B | 33,248 | 30,077 | 3,182,043 | 0 | 吞吐超过 Netty epoll h3 11,812。 |
+| Linux/amd64 | gnalloy rfc9000 h3 1KiB | 32,005 | 31,245 | 3,402,783 | 0 | 吞吐超过 Netty epoll h3 11,727。 |
+| Windows/amd64 | Netty NIO h3 128B | 27,922 | 35,813 | 3,324,000 | 0 | Windows NIO 对照样本。 |
+| Windows/amd64 | Netty NIO h3 1KiB | 27,245 | 36,704 | 3,912,300 | 0 | Windows NIO 对照样本。 |
+| Linux/amd64 | Netty epoll h3 128B | 11,812 | 84,663 | 35,438,382 | 0 | Linux epoll 对照样本。 |
+| Linux/amd64 | Netty epoll h3 1KiB | 11,727 | 85,270 | 35,598,725 | 0 | Linux epoll 对照样本。 |
+
+这些数据只对同机、同 payload、64 条 QUIC 连接、每连接 5000 个顺序 HTTP/3 request
+stream、延迟采样率 1/64 的 request/response 场景有效。Windows 报告路径为
+`%TEMP%\gnalloy-http3-local-20260830-092504.json`；Linux 报告路径为
+`/tmp/gnalloy-http3-linux-20260830-093214.json`。
+
 TLS 版本矩阵:
 
 ```bash
