@@ -19,6 +19,11 @@ func ForEachReadableSlice(src ByteBuf, fn func([]byte) bool) bool {
 			return false
 		}
 		return fn(b.data[b.readerIndex:b.writerIndex])
+	case *sharedByteBuf:
+		if b.refs.Load() <= 0 {
+			return false
+		}
+		return fn(b.data[b.readerIndex:b.writerIndex])
 	case *CompositeByteBuf:
 		if b.refs.Load() <= 0 {
 			return false

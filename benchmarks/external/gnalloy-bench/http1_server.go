@@ -69,11 +69,17 @@ func addHTTP1Pipeline(ch channel.Channel, payload int) error {
 	if err := ch.Pipeline().AddLast("continue", http1.NewContinueHandler()); err != nil {
 		return err
 	}
-	return ch.Pipeline().AddLast("handler", http1Handler{body: benchhttp.ResponseBody(payload)})
+	return ch.Pipeline().AddLast("handler", http1Handler{
+		body: benchhttp.ResponseBody(payload),
+		headers: http1.Headers{
+			"Content-Type": "application/octet-stream",
+		},
+	})
 }
 
 type http1Handler struct {
-	body []byte
+	body    []byte
+	headers http1.Headers
 }
 
 func (h http1Handler) ChannelRead(ctx *channel.HandlerContext, msg any) {
@@ -83,22 +89,10 @@ func (h http1Handler) ChannelRead(ctx *channel.HandlerContext, msg any) {
 		return
 	}
 	defer req.Release()
-	body, err := ctx.Channel().Allocator().Acquire(len(h.body))
-	if err != nil {
-		ctx.FireExceptionCaught(err)
-		return
-	}
-	if _, err := body.WriteBytes(h.body); err != nil {
-		body.Release()
-		ctx.FireExceptionCaught(err)
-		return
-	}
 	resp := http1.Response{
 		StatusCode: 200,
-		Headers: http1.Headers{
-			"Content-Type": "application/octet-stream",
-		},
-		Body: body,
+		Headers:    h.headers,
+		Body:       buffer.NewSharedBuffer(h.body),
 	}
 	if err := ctx.Channel().WriteAndFlush(resp); err != nil {
 		ctx.FireExceptionCaught(err)

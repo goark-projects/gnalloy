@@ -27,6 +27,14 @@ func ContiguousReadableBytes(src ByteBuf) ([]byte, bool) {
 			return nil, true
 		}
 		return b.data[b.readerIndex:b.writerIndex], true
+	case *sharedByteBuf:
+		if b.refs.Load() <= 0 {
+			return nil, false
+		}
+		if b.readerIndex == b.writerIndex {
+			return nil, true
+		}
+		return b.data[b.readerIndex:b.writerIndex], true
 	case *CompositeByteBuf:
 		if b.refs.Load() <= 0 {
 			return nil, false
@@ -116,6 +124,11 @@ func CopyReadableBytes(dst []byte, src ByteBuf) int {
 		}
 		return copy(dst, b.data[b.readerIndex:b.writerIndex])
 	case *slicedByteBuf:
+		if b.refs.Load() <= 0 {
+			return 0
+		}
+		return copy(dst, b.data[b.readerIndex:b.writerIndex])
+	case *sharedByteBuf:
 		if b.refs.Load() <= 0 {
 			return 0
 		}
