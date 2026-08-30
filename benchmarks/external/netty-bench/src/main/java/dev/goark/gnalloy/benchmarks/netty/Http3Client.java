@@ -2,6 +2,7 @@ package dev.goark.gnalloy.benchmarks.netty;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http3.DefaultHttp3HeadersFrame;
 import io.netty.handler.codec.http3.Http3;
@@ -19,7 +20,7 @@ import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-record Http3Client(QuicChannel channel, Http3Headers headers, byte[] expected) implements AutoCloseable {
+record Http3Client(Channel datagram, QuicChannel channel, Http3Headers headers, byte[] expected) implements AutoCloseable {
     void request(Duration timeout) throws Exception {
         byte[] reply = new byte[expected.length];
         ResponseHandler handler = new ResponseHandler(expected, reply);
@@ -38,7 +39,11 @@ record Http3Client(QuicChannel channel, Http3Headers headers, byte[] expected) i
 
     @Override
     public void close() throws Exception {
-        channel.close(true, 0, Unpooled.EMPTY_BUFFER).get(5, TimeUnit.SECONDS);
+        try {
+            channel.close(true, 0, Unpooled.EMPTY_BUFFER).get(5, TimeUnit.SECONDS);
+        } finally {
+            datagram.close().sync();
+        }
     }
 
     private static final class ResponseHandler extends Http3RequestStreamInboundHandler {

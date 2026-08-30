@@ -1,7 +1,5 @@
 package dev.goark.gnalloy.benchmarks.netty;
 
-import io.netty.channel.Channel;
-
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
@@ -17,13 +15,11 @@ final class Http3LoadGenerator {
 
     static BenchmarkResult run(InetSocketAddress address, Config config) throws Exception {
         try (DatagramEventLoopResources resources = DatagramEventLoopResources.create(config)) {
-            Channel datagram = Http3ClientBootstrap.openDatagramChannel(resources, config);
-            Http3Client[] clients = Http3ClientBootstrap.prepareClients(address, config, datagram);
+            Http3Client[] clients = Http3ClientBootstrap.prepareClients(address, config, resources);
             try {
                 return runClients(config, clients);
             } finally {
                 closeClients(clients);
-                datagram.close().sync();
             }
         }
     }

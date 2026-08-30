@@ -5,6 +5,7 @@ import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.handler.codec.http3.Http3;
 import io.netty.handler.codec.http3.Http3ServerConnectionHandler;
@@ -84,7 +85,12 @@ final class Http3Server implements AutoCloseable {
                 .initialMaxStreamsBidirectional(Math.max(1024, config.connections() * 4L))
                 .initialMaxStreamsUnidirectional(Http3.MIN_INITIAL_MAX_STREAMS_UNIDIRECTIONAL)
                 .tokenHandler(InsecureQuicTokenHandler.INSTANCE)
-                .handler(new Http3ServerConnectionHandler(new Http3ServerHandler(config.payload())))
+                .handler(new ChannelInitializer<Channel>() {
+                    @Override
+                    protected void initChannel(Channel channel) {
+                        channel.pipeline().addLast(new Http3ServerConnectionHandler(new Http3ServerHandler(config.payload())));
+                    }
+                })
                 .build();
     }
 

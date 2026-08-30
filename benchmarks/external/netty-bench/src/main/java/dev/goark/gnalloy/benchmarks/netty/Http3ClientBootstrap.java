@@ -45,21 +45,31 @@ final class Http3ClientBootstrap {
                 .channel();
     }
 
-    static Http3Client[] prepareClients(InetSocketAddress address, Config config, Channel datagram) throws Exception {
+    static Http3Client[] prepareClients(InetSocketAddress address, Config config, DatagramEventLoopResources resources) throws Exception {
         Http3Client[] clients = new Http3Client[config.connections()];
         try {
             for (int i = 0; i < clients.length; i++) {
-                QuicChannel channel = QuicChannel.newBootstrap(datagram)
-                        .handler(new Http3ClientConnectionHandler())
-                        .streamHandler(new ChannelInboundHandlerAdapter())
-                        .remoteAddress(address)
-                        .connect()
-                        .get(config.timeout().toMillis(), TimeUnit.MILLISECONDS);
-                clients[i] = new Http3Client(channel, requestHeaders(config.host()), HttpPayload.body(config.payload()));
+                clients[i] = connectClient(address, config, resources);
             }
             return clients;
         } catch (Exception failure) {
             Http3LoadGenerator.closeClients(clients);
+            throw failure;
+        }
+    }
+
+    private static Http3Client connectClient(InetSocketAddress address, Config config, DatagramEventLoopResources resources) throws Exception {
+        Channel datagram = openDatagramChannel(resources, config);
+        try {
+            QuicChannel channel = QuicChannel.newBootstrap(datagram)
+                    .handler(new Http3ClientConnectionHandler())
+                    .streamHandler(new ChannelInboundHandlerAdapter())
+                    .remoteAddress(address)
+                    .connect()
+                    .get(config.timeout().toMillis(), TimeUnit.MILLISECONDS);
+            return new Http3Client(datagram, channel, requestHeaders(config.host()), HttpPayload.body(config.payload()));
+        } catch (Exception failure) {
+            datagram.close().sync();
             throw failure;
         }
     }
