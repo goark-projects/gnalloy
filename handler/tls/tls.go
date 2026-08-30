@@ -59,7 +59,7 @@ type Handler struct {
 	closed    chan struct{}
 	ready     chan struct{}
 	plain     chan byteChunk
-	app       chan byteChunk
+	app       chan buffer.ByteBuf
 	events    chan any
 	errs      chan error
 	notify    chan struct{}
@@ -90,7 +90,7 @@ func newHandler(mode Mode, cfg Config) *Handler {
 		closed:   make(chan struct{}),
 		ready:    make(chan struct{}),
 		plain:    make(chan byteChunk, 32),
-		app:      make(chan byteChunk, 32),
+		app:      make(chan buffer.ByteBuf, 32),
 		events:   make(chan any, 8),
 		errs:     make(chan error, 8),
 		notify:   make(chan struct{}, 1),
@@ -164,19 +164,17 @@ func (h *Handler) Write(ctx *channel.HandlerContext, msg any) error {
 	if !ok {
 		return ctx.Write(msg)
 	}
-	data := copyReadableBytes(buf, h.bytePool)
-	buf.Release()
-	if len(data) == 0 {
+	if buf.ReadableBytes() == 0 {
+		buf.Release()
 		return nil
 	}
-	chunk := newByteChunk(data, h.bytePool)
 	h.ensureStarted()
 	h.pending.Add(1)
 	select {
-	case h.app <- chunk:
+	case h.app <- buf:
 	case <-h.closed:
 		h.pending.Add(-1)
-		chunk.releaseOwned()
+		buf.Release()
 		return io.ErrClosedPipe
 	}
 	h.drain(ctx, drainOptions{})
@@ -300,14 +298,14 @@ func (h *Handler) runWriter() {
 	}
 	for {
 		select {
-		case chunk := <-h.app:
-			if _, err := h.conn.Write(chunk.data); err != nil {
-				chunk.releaseOwned()
+		case buf := <-h.app:
+			if err := writeTLSBuffer(h.conn, buf); err != nil {
+				buf.Release()
 				h.pending.Add(-1)
 				h.sendErr(err)
 				return
 			}
-			chunk.releaseOwned()
+			buf.Release()
 			h.pending.Add(-1)
 			h.notifyDrain()
 		case <-h.closed:
@@ -342,24 +340,22 @@ func (h *Handler) drain(ctx *channel.HandlerContext, opts drainOptions) {
 		select {
 		case chunk := <-h.raw.out:
 			drained = true
-			if err := h.writeCipher(ctx, chunk.data); err != nil {
+			if err := h.writeCipher(ctx, &chunk); err != nil {
 				chunk.releaseOwned()
 				h.fail(ctx, err)
 				return
 			}
-			chunk.releaseOwned()
 		default:
 		}
 		if opts.plain {
 			select {
 			case chunk := <-h.plain:
 				drained = true
-				if err := h.firePlain(ctx, chunk.data); err != nil {
+				if err := h.firePlain(ctx, &chunk); err != nil {
 					chunk.releaseOwned()
 					h.fail(ctx, err)
 					return
 				}
-				chunk.releaseOwned()
 			default:
 			}
 		}
@@ -411,14 +407,10 @@ func (h *Handler) drain(ctx *channel.HandlerContext, opts drainOptions) {
 	}
 }
 
-func (h *Handler) writeCipher(ctx *channel.HandlerContext, data []byte) error {
-	out, err := ctx.Channel().Allocator().Acquire(len(data))
-	if err != nil {
-		return err
-	}
-	if _, err := out.WriteBytes(data); err != nil {
-		out.Release()
-		return err
+func (h *Handler) writeCipher(ctx *channel.HandlerContext, chunk *byteChunk) error {
+	out := ownedBufferFromChunk(chunk)
+	if out == nil {
+		return nil
 	}
 	if err := ctx.Write(out); err != nil {
 		if out.RefCnt() > 0 {
@@ -429,14 +421,10 @@ func (h *Handler) writeCipher(ctx *channel.HandlerContext, data []byte) error {
 	return nil
 }
 
-func (h *Handler) firePlain(ctx *channel.HandlerContext, data []byte) error {
-	out, err := ctx.Channel().Allocator().Acquire(len(data))
-	if err != nil {
-		return err
-	}
-	if _, err := out.WriteBytes(data); err != nil {
-		out.Release()
-		return err
+func (h *Handler) firePlain(ctx *channel.HandlerContext, chunk *byteChunk) error {
+	out := ownedBufferFromChunk(chunk)
+	if out == nil {
+		return nil
 	}
 	ctx.FireChannelRead(out)
 	ctx.FireChannelReadComplete()
@@ -491,6 +479,7 @@ func (h *Handler) hasQueuedDrain() bool {
 func (h *Handler) close() {
 	h.closeOnce.Do(func() {
 		close(h.closed)
+		h.drainApp()
 		if h.conn != nil {
 			_ = h.conn.Close()
 		}
@@ -498,6 +487,20 @@ func (h *Handler) close() {
 			_ = h.raw.Close()
 		}
 	})
+}
+
+func (h *Handler) drainApp() {
+	for {
+		select {
+		case buf := <-h.app:
+			if buf != nil {
+				buf.Release()
+				h.pending.Add(-1)
+			}
+		default:
+			return
+		}
+	}
 }
 
 func (h *Handler) fail(ctx *channel.HandlerContext, err error) {
