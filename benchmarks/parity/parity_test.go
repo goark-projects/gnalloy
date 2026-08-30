@@ -722,6 +722,80 @@ func TestWindowsTCPMatrixExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *
 	}
 }
 
+func TestWindowsHTTP1MatrixExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *testing.T) {
+	file, err := os.Open("windows-http1-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateExternalHarnesses(spec, ExternalHarnessOptions{
+		LookPath: func(file string) (string, error) {
+			if file == "java" {
+				return "/usr/bin/java", nil
+			}
+			return "", os.ErrNotExist
+		},
+		Stat: func(name string) (os.FileInfo, error) {
+			switch filepath.ToSlash(filepath.Clean(name)) {
+			case "benchmarks/external/bin/netty-bench.jar",
+				"benchmarks/external/bin/gnalloy-bench",
+				"benchmarks/external/bin/gnalloy-bench.exe",
+				"benchmarks/external/bin/gnet-bench",
+				"benchmarks/external/bin/gnet-bench.exe":
+				return fakeFileInfo{name: filepath.Base(name)}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLinuxHTTP1MatrixExternalHarnessesCanPassStrictGateWithRepoArtifacts(t *testing.T) {
+	file, err := os.Open("linux-http1-matrix.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+
+	spec, err := LoadSpec(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateExternalHarnesses(spec, ExternalHarnessOptions{
+		LookPath: func(file string) (string, error) {
+			if file == "java" {
+				return "/usr/bin/java", nil
+			}
+			return "", os.ErrNotExist
+		},
+		Stat: func(name string) (os.FileInfo, error) {
+			switch filepath.ToSlash(filepath.Clean(name)) {
+			case "benchmarks/external/bin/netty-bench.jar",
+				"benchmarks/external/bin/gnalloy-bench",
+				"benchmarks/external/bin/gnalloy-bench.exe",
+				"benchmarks/external/bin/gnet-bench",
+				"benchmarks/external/bin/gnet-bench.exe",
+				"benchmarks/external/bin/netpoll-bench",
+				"benchmarks/external/bin/netpoll-bench.exe":
+				return fakeFileInfo{name: filepath.Base(name)}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateExternalHarnessesChecksGnalloyParityHarness(t *testing.T) {
 	spec := Spec{
 		Name:      "strict",

@@ -1,0 +1,92 @@
+{
+  "name": "gnalloy linux http1 parity matrix",
+  "notes": "Linux HTTP/1.1 keep-alive 对标矩阵。Gnalloy 固定 epoll + raw HTTP/1 响应路径；Netty 固定 epoll native transport；gnet 和 netpoll 使用各自 poller。固定 GET 请求头使用 384B read buffer，避免把通用对象编解码成本混入轻量 HTTP/1 server 对比。",
+  "variables": {
+    "REPO_ROOT": ".",
+    "CONNECTIONS": "128",
+    "MESSAGES": "10000",
+    "LATENCY_SAMPLE_RATE": "128",
+    "WARMUP_MESSAGES": "1000",
+    "GNALLOY_HTTP1_READ_BUFFER_SIZE": "384",
+    "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
+    "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
+    "GNET_BENCH": "./benchmarks/external/bin/gnet-bench",
+    "NETPOLL_BENCH": "./benchmarks/external/bin/netpoll-bench"
+  },
+  "scenarios": [
+    {
+      "name": "gnalloy epoll http1 128B",
+      "framework": "gnalloy",
+      "protocol": "http1",
+      "backend": "epoll",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "http1", "-backend", "epoll", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["linux", "parity-harness", "http1", "payload-128"]
+    },
+    {
+      "name": "gnalloy epoll http1 1KiB",
+      "framework": "gnalloy",
+      "protocol": "http1",
+      "backend": "epoll",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "workDir": "${REPO_ROOT}",
+      "command": ["${GNALLOY_BENCH}", "-protocol", "http1", "-backend", "epoll", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["linux", "parity-harness", "http1", "payload-1024"]
+    },
+    {
+      "name": "netty epoll http1 128B",
+      "framework": "netty",
+      "protocol": "http1",
+      "backend": "epoll",
+      "payload": "128B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "http1", "--backend", "epoll", "--payload", "128", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "http1", "payload-128"]
+    },
+    {
+      "name": "netty epoll http1 1KiB",
+      "framework": "netty",
+      "protocol": "http1",
+      "backend": "epoll",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["java", "-jar", "${NETTY_BENCH_JAR}", "--protocol", "http1", "--backend", "epoll", "--payload", "1024", "--connections", "${CONNECTIONS}", "--messages", "${MESSAGES}", "--latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "--warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netty", "http1", "payload-1024"]
+    },
+    {
+      "name": "gnet http1 1KiB",
+      "framework": "gnet",
+      "protocol": "http1",
+      "backend": "poller",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["${GNET_BENCH}", "-protocol", "http1", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "gnet", "http1", "payload-1024"]
+    },
+    {
+      "name": "netpoll http1 1KiB",
+      "framework": "netpoll",
+      "protocol": "http1",
+      "backend": "poller",
+      "payload": "1024B",
+      "warmup": 1,
+      "repeat": 3,
+      "command": ["${NETPOLL_BENCH}", "-protocol", "http1", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "timeout": "5m",
+      "tags": ["external", "netpoll", "http1", "payload-1024"]
+    }
+  ]
+}

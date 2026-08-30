@@ -143,6 +143,27 @@ UDP 表格中记录为不适用，不把失败命令伪造成性能结果。
 `%TEMP%\gnalloy-udp-local-20260829-233828.json`；Linux 报告路径为
 `/tmp/gnalloy-linux-udp-20260829-234423.json`。
 
+HTTP/1.1 keep-alive 对标矩阵:
+
+```bash
+./scripts/build-external-bench.sh
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/linux-http1-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/linux-http1-matrix.json -out http1-matrix-report.md
+```
+
+Windows:
+
+```powershell
+.\scripts\build-external-bench.ps1
+go run ./examples/parity-bench -dry-run -strict-external -config benchmarks/parity/windows-http1-matrix.json
+go run ./examples/parity-bench -strict-external -config benchmarks/parity/windows-http1-matrix.json -out http1-matrix-report.md
+```
+
+Linux HTTP/1 矩阵固定 Gnalloy epoll、Netty epoll native transport、gnet poller 和
+CloudWeGo netpoll poller。Windows 矩阵固定 Gnalloy IOCP、Netty NIO 和 gnet；
+CloudWeGo netpoll v0.7.5 的 Windows server 路径返回 unsupported，不能用于本机
+Windows 性能结论。
+
 HTTP/2 stream 对标矩阵:
 
 ```bash
@@ -250,15 +271,18 @@ Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
 `TLSv1.1` 禁用项，避免影响默认 TLS 1.3 路径。HTTPS/1 的 Gnalloy
 场景使用 `-http1-mode raw`，仍经过 `handler/tls`，只去掉通用 HTTP/1
 对象编解码成本；HTTPS/2 场景保持 `codec/http2`。
+gnet-bench 当前只接受 `tcp-echo`、`udp-echo` 和 `http1`；netpoll-bench 当前只接受
+`tcp-echo` 和 `http1`。两者没有原生 HTTP/2、HTTP/3 或 TLS/ALPN 协议栈场景，
+因此 TLS 1.1/1.2/1.3 表格只对 Gnalloy 和 Netty 做同协议对比。
 
 2026-08-30 HTTP/1 和 HTTPS/1 串行优化后实测样本:
 
 | 平台 | 场景 | median ops/s | median ns/op | median p99 ns | 错误数 | 结论 |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| Windows/amd64 | gnalloy IOCP HTTP/1 raw 128B | 405,505 | 2,466 | 1,013,300 | 0 | 高于 Netty NIO 299,516。 |
-| Windows/amd64 | gnalloy IOCP HTTP/1 raw 1KiB | 402,012 | 2,487 | 1,020,500 | 0 | 高于 Netty NIO 279,504 和 gnet 378,315；Windows netpoll 上游不支持。 |
-| Linux/amd64 | gnalloy epoll HTTP/1 raw 128B | 238,673 | 4,190 | 2,852,387 | 0 | 高于 Netty epoll 136,387。 |
-| Linux/amd64 | gnalloy epoll HTTP/1 raw 1KiB | 232,096 | 4,309 | 2,787,407 | 0 | 高于 Netty epoll 132,321、gnet 174,589 和 netpoll 223,216。 |
+| Windows/amd64 | gnalloy IOCP HTTP/1 raw 128B | 405,793 | 2,464 | 1,017,400 | 0 | 高于 Netty NIO 322,557。 |
+| Windows/amd64 | gnalloy IOCP HTTP/1 raw 1KiB | 403,909 | 2,476 | 1,018,000 | 0 | 高于 Netty NIO 309,131 和 gnet 377,681；Windows netpoll 上游不支持。 |
+| Linux/amd64 | gnalloy epoll HTTP/1 raw 128B | 235,580 | 4,245 | 2,955,722 | 0 | 高于 Netty epoll 143,566。 |
+| Linux/amd64 | gnalloy epoll HTTP/1 raw 1KiB | 233,266 | 4,287 | 3,149,984 | 0 | 高于 Netty epoll 137,876、gnet 175,118 和 netpoll 227,571。 |
 | Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.1 128B | 245,955 | 4,066 | 1,011,000 | 0 | 高于 Netty NIO 199,547。 |
 | Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.1 1KiB | 231,620 | 4,317 | 1,008,900 | 0 | 高于 Netty NIO 186,623。 |
 | Linux/amd64 | gnalloy epoll HTTPS/1 raw TLS 1.1 128B | 89,676 | 11,151 | 2,220,167 | 0 | 高于 Netty epoll 70,384。 |
@@ -278,8 +302,8 @@ HTTP/1 raw 矩阵使用连接数 128、每连接 10000 个顺序 request、warmu
 矩阵使用连接数 64、每连接 5000 个顺序 request、warmup 500、延迟采样率 1/64，
 同样为固定 GET 请求头设置 384B read buffer。
 HTTP/1 Windows 报告路径为
-`%TEMP%\gnalloy-http1-raw-local-20260830-140005.json`，Linux 报告路径为
-`/tmp/gnalloy-http1-raw-linux-20260830-140428.json`。TLS 1.1/1.2/1.3
+`%TEMP%\gnalloy-windows-http1-gnet-20260830-continue.md`，Linux 报告路径为
+`/tmp/gnalloy-linux-http1-epoll-gnet-netpoll-20260830-continue.md`。TLS 1.1/1.2/1.3
 Windows 报告路径为 `%TEMP%\gnalloy-tls-raw-local-20260830-144416.md`，
 Linux 报告路径为 `/tmp/gnalloy-tls-raw-linux-20260830-145419.md`。
 TLS 矩阵使用外部 harness 原生命令按版本分段串行执行，未把一次性机器负载样本外推为通用性能结论。
