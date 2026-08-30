@@ -247,7 +247,9 @@ TLS 1.2、1.3。HTTP/2 不纳入 TLS 1.1：这不是实现取舍，而是协议�
 Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
 `MinVersion/MaxVersion`，Netty harness 使用 `--tls-version` 固定
 `SslHandler` 的协议版本，并在 Java 21 进程内仅对显式 TLS 1.1 场景放开
-`TLSv1.1` 禁用项，避免影响默认 TLS 1.3 路径。
+`TLSv1.1` 禁用项，避免影响默认 TLS 1.3 路径。HTTPS/1 的 Gnalloy
+场景使用 `-http1-mode raw`，仍经过 `handler/tls`，只去掉通用 HTTP/1
+对象编解码成本；HTTPS/2 场景保持 `codec/http2`。
 
 2026-08-30 HTTP/1 和 HTTPS/1 串行优化后实测样本:
 
@@ -257,27 +259,30 @@ Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
 | Windows/amd64 | gnalloy IOCP HTTP/1 raw 1KiB | 402,012 | 2,487 | 1,020,500 | 0 | 高于 Netty NIO 279,504 和 gnet 378,315；Windows netpoll 上游不支持。 |
 | Linux/amd64 | gnalloy epoll HTTP/1 raw 128B | 238,673 | 4,190 | 2,852,387 | 0 | 高于 Netty epoll 136,387。 |
 | Linux/amd64 | gnalloy epoll HTTP/1 raw 1KiB | 232,096 | 4,309 | 2,787,407 | 0 | 高于 Netty epoll 132,321、gnet 174,589 和 netpoll 223,216。 |
-| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.1 128B | 197,718 | 5,058 | 1,059,200 | 0 | 略高于 Netty NIO 197,271。 |
-| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.1 1KiB | 189,024 | 5,290 | 1,100,700 | 0 | 略高于 Netty NIO 188,859。 |
-| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.1 128B | 71,442 | 13,997 | 2,146,591 | 0 | 高于 Netty epoll 64,520。 |
-| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.1 1KiB | 65,856 | 15,184 | 2,378,257 | 0 | 高于 Netty epoll 61,563。 |
-| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.2 128B | 220,407 | 4,537 | 1,023,700 | 0 | 高于 Netty NIO 201,845。 |
-| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.2 1KiB | 214,915 | 4,653 | 1,030,000 | 0 | 高于 Netty NIO 181,235。 |
-| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.2 128B | 93,768 | 10,665 | 1,635,412 | 0 | 高于 Netty epoll 70,696。 |
-| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.2 1KiB | 91,049 | 10,983 | 1,723,709 | 0 | 高于 Netty epoll 64,688。 |
-| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.3 128B | 219,638 | 4,553 | 1,033,400 | 0 | 高于 Netty NIO 196,147。 |
-| Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.3 1KiB | 215,460 | 4,641 | 1,028,400 | 0 | 高于 Netty NIO 190,420。 |
-| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.3 128B | 93,701 | 10,672 | 1,621,489 | 0 | 高于 Netty epoll 61,801。 |
-| Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.3 1KiB | 91,043 | 10,984 | 1,737,464 | 0 | 高于 Netty epoll 61,468。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.1 128B | 245,955 | 4,066 | 1,011,000 | 0 | 高于 Netty NIO 199,547。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.1 1KiB | 231,620 | 4,317 | 1,008,900 | 0 | 高于 Netty NIO 186,623。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 raw TLS 1.1 128B | 89,676 | 11,151 | 2,220,167 | 0 | 高于 Netty epoll 70,384。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 raw TLS 1.1 1KiB | 81,222 | 12,312 | 2,483,860 | 0 | 高于 Netty epoll 60,836。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.2 128B | 277,140 | 3,608 | 1,011,700 | 0 | 高于 Netty NIO 205,560。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.2 1KiB | 267,858 | 3,733 | 1,016,100 | 0 | 高于 Netty NIO 181,015。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 raw TLS 1.2 128B | 127,201 | 7,862 | 1,389,569 | 0 | 高于 Netty epoll 63,401。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 raw TLS 1.2 1KiB | 124,532 | 8,030 | 1,401,373 | 0 | 高于 Netty epoll 64,232。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.3 128B | 277,985 | 3,597 | 1,011,100 | 0 | 高于 Netty NIO 196,292。 |
+| Windows/amd64 | gnalloy IOCP HTTPS/1 raw TLS 1.3 1KiB | 270,447 | 3,698 | 1,015,000 | 0 | 高于 Netty NIO 184,625。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 raw TLS 1.3 128B | 127,642 | 7,834 | 1,399,871 | 0 | 高于 Netty epoll 61,599。 |
+| Linux/amd64 | gnalloy epoll HTTPS/1 raw TLS 1.3 1KiB | 124,966 | 8,002 | 1,458,223 | 0 | 高于 Netty epoll 57,888。 |
 
 这些数据按协议串行执行，未并发跑多个矩阵；每个场景 3 次样本取 median。
 HTTP/1 raw 矩阵使用连接数 128、每连接 10000 个顺序 request、warmup 1000、
-延迟采样率 1/128，并为固定 GET 请求头设置 384B read buffer。HTTPS/TLS
-矩阵使用连接数 64、每连接 5000 个顺序 request、warmup 500、延迟采样率 1/64。
+延迟采样率 1/128，并为固定 GET 请求头设置 384B read buffer。HTTPS/1 raw TLS
+矩阵使用连接数 64、每连接 5000 个顺序 request、warmup 500、延迟采样率 1/64，
+同样为固定 GET 请求头设置 384B read buffer。
 HTTP/1 Windows 报告路径为
 `%TEMP%\gnalloy-http1-raw-local-20260830-140005.json`，Linux 报告路径为
 `/tmp/gnalloy-http1-raw-linux-20260830-140428.json`。TLS 1.1/1.2/1.3
-使用外部 harness 原生命令按版本分段串行执行，未把一次性机器负载样本外推为通用性能结论。
+Windows 报告路径为 `%TEMP%\gnalloy-tls-raw-local-20260830-144416.md`，
+Linux 报告路径为 `/tmp/gnalloy-tls-raw-linux-20260830-145419.md`。
+TLS 矩阵使用外部 harness 原生命令按版本分段串行执行，未把一次性机器负载样本外推为通用性能结论。
 
 harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；
 该目录是本机构建产物，不提交到仓库。Netty 使用独立 Maven 工程，
