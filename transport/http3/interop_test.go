@@ -37,9 +37,10 @@ func TestSessionRoundTripOverRFC9000QUIC(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	clientDone := make(chan struct{})
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- serveHTTP3Once(ctx, listener, []byte("h3-response"))
+		serverErr <- serveHTTP3Once(ctx, listener, []byte("h3-response"), clientDone)
 	}()
 
 	conn, err := rfc9000.DialAddr(ctx, listener.Addr().String(), rfc9000.Config{
@@ -83,6 +84,7 @@ func TestSessionRoundTripOverRFC9000QUIC(t *testing.T) {
 	if err := readUntilHTTP3Response(ctx, streamCh, capture, []byte("h3-response")); err != nil {
 		t.Fatal(err)
 	}
+	close(clientDone)
 	select {
 	case err := <-serverErr:
 		if err != nil {
@@ -93,12 +95,12 @@ func TestSessionRoundTripOverRFC9000QUIC(t *testing.T) {
 	}
 }
 
-func serveHTTP3Once(ctx context.Context, listener rfc9000.Listener, body []byte) error {
+func serveHTTP3Once(ctx context.Context, listener rfc9000.Listener, body []byte, clientDone <-chan struct{}) error {
 	conn, err := listener.Accept(ctx)
 	if err != nil {
 		return err
 	}
-	defer conn.CloseWithError(0, "server done")
+	defer closeHTTP3TestConnection(ctx, conn, clientDone)
 	session, err := NewSession(conn, Config{})
 	if err != nil {
 		return err
@@ -116,6 +118,14 @@ func serveHTTP3Once(ctx context.Context, listener rfc9000.Listener, body []byte)
 		return err
 	}
 	return streamCh.Close()
+}
+
+func closeHTTP3TestConnection(ctx context.Context, conn rfc9000.Connection, clientDone <-chan struct{}) {
+	select {
+	case <-clientDone:
+	case <-ctx.Done():
+	}
+	_ = conn.CloseWithError(0, "server done")
 }
 
 type http3ResponseHandler struct {
