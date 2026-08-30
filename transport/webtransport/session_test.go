@@ -215,7 +215,7 @@ func newFakeConnection() *fakeConnection {
 }
 
 func rfc9000TestTLSState() tls.ConnectionState {
-	return tls.ConnectionState{Version: tls.VersionTLS13}
+	return tls.ConnectionState{Version: tls.VersionTLS13, NegotiatedProtocol: "h3"}
 }
 
 func (c *fakeConnection) LocalAddr() net.Addr {

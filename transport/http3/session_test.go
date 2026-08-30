@@ -23,6 +23,30 @@ func TestSessionRejectsNilConnection(t *testing.T) {
 	}
 }
 
+func TestSessionRejectsNonHTTP3ALPN(t *testing.T) {
+	conn := newFakeConnection()
+	conn.alpn = "gnalloy-quic"
+	if _, err := NewSession(conn, Config{}); !errors.Is(err, ErrInvalidALPN) {
+		t.Fatalf("err=%v, want %v", err, ErrInvalidALPN)
+	}
+}
+
+func TestSessionRejectsNonTLS13(t *testing.T) {
+	conn := newFakeConnection()
+	conn.tlsVersion = tls.VersionTLS12
+	if _, err := NewSession(conn, Config{}); !errors.Is(err, ErrInvalidTLSState) {
+		t.Fatalf("err=%v, want %v", err, ErrInvalidTLSState)
+	}
+}
+
+func TestSessionAcceptsConfiguredALPN(t *testing.T) {
+	conn := newFakeConnection()
+	conn.alpn = "h3-29"
+	if _, err := NewSession(conn, Config{AllowedALPN: []string{"h3-29"}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSessionOpenRequestStreamInstallsPipelineAndWritesFrames(t *testing.T) {
 	conn := newFakeConnection()
 	session, err := NewSession(conn, Config{})
@@ -173,6 +197,8 @@ type fakeConnection struct {
 	acceptedBidi *fakeBidiStream
 	openedUni    *fakeSendStream
 	acceptedUni  *fakeReceiveStream
+	alpn         string
+	tlsVersion   uint16
 }
 
 func newFakeConnection() *fakeConnection {
@@ -181,6 +207,8 @@ func newFakeConnection() *fakeConnection {
 		acceptedBidi: newFakeBidiStream(5),
 		openedUni:    newFakeSendStream(3),
 		acceptedUni:  newFakeReceiveStream(7),
+		alpn:         "h3",
+		tlsVersion:   tls.VersionTLS13,
 	}
 }
 
@@ -199,7 +227,7 @@ func (c *fakeConnection) HandshakeComplete() <-chan struct{} {
 }
 
 func (c *fakeConnection) ConnectionState() rfc9000.State {
-	return rfc9000.State{TLS: tls.ConnectionState{Version: tls.VersionTLS13}}
+	return rfc9000.State{TLS: tls.ConnectionState{Version: c.tlsVersion, NegotiatedProtocol: c.alpn}}
 }
 
 func (c *fakeConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {

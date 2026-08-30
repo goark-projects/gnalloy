@@ -2,6 +2,8 @@ package http3
 
 import (
 	"context"
+	cryptotls "crypto/tls"
+	"fmt"
 	"sync/atomic"
 
 	"goark.dev/gnalloy/channel"
@@ -35,7 +37,11 @@ func NewSession(conn rfc9000.Connection, cfg Config) (*Session, error) {
 	if conn == nil {
 		return nil, ErrInvalidConnection
 	}
-	return &Session{conn: conn, cfg: normalizeConfig(cfg)}, nil
+	normalized := normalizeConfig(cfg)
+	if err := validateConnection(conn, normalized); err != nil {
+		return nil, err
+	}
+	return &Session{conn: conn, cfg: normalized}, nil
 }
 
 // Connection 返回底层 RFC9000 QUIC 连接。
@@ -137,4 +143,24 @@ func (s *Session) newStreamChannel(kind StreamKind, reader streamReader, writer 
 		Writer:         writer,
 		Initializer:    init,
 	})
+}
+
+func validateConnection(conn rfc9000.Connection, cfg Config) error {
+	state := conn.ConnectionState()
+	if state.TLS.Version != cryptotls.VersionTLS13 {
+		return fmt.Errorf("%w: version %x", ErrInvalidTLSState, state.TLS.Version)
+	}
+	if !allowedALPN(state.TLS.NegotiatedProtocol, cfg.AllowedALPN) {
+		return fmt.Errorf("%w: %s", ErrInvalidALPN, state.TLS.NegotiatedProtocol)
+	}
+	return nil
+}
+
+func allowedALPN(protocol string, allowed []string) bool {
+	for _, candidate := range allowed {
+		if protocol == candidate {
+			return true
+		}
+	}
+	return false
 }
