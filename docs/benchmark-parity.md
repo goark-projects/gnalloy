@@ -253,10 +253,10 @@ Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
 
 | 平台 | 场景 | median ops/s | median ns/op | median p99 ns | 错误数 | 结论 |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| Windows/amd64 | gnalloy IOCP HTTP/1 128B | 323,576 | 3,090 | 1,074,800 | 0 | 高于 Netty NIO 298,561。 |
-| Windows/amd64 | gnalloy IOCP HTTP/1 1KiB | 322,296 | 3,103 | 1,310,300 | 0 | 高于 Netty NIO 286,746，低于 gnet 391,575。 |
-| Linux/amd64 | gnalloy epoll HTTP/1 128B | 157,830 | 6,336 | 2,613,274 | 0 | 高于 Netty epoll 140,943。 |
-| Linux/amd64 | gnalloy epoll HTTP/1 1KiB | 157,063 | 6,367 | 2,586,797 | 0 | 高于 Netty epoll 134,140，低于 gnet 170,426 和 netpoll 225,579。 |
+| Windows/amd64 | gnalloy IOCP HTTP/1 raw 128B | 405,505 | 2,466 | 1,013,300 | 0 | 高于 Netty NIO 299,516。 |
+| Windows/amd64 | gnalloy IOCP HTTP/1 raw 1KiB | 402,012 | 2,487 | 1,020,500 | 0 | 高于 Netty NIO 279,504 和 gnet 378,315；Windows netpoll 上游不支持。 |
+| Linux/amd64 | gnalloy epoll HTTP/1 raw 128B | 238,673 | 4,190 | 2,852,387 | 0 | 高于 Netty epoll 136,387。 |
+| Linux/amd64 | gnalloy epoll HTTP/1 raw 1KiB | 232,096 | 4,309 | 2,787,407 | 0 | 高于 Netty epoll 132,321、gnet 174,589 和 netpoll 223,216。 |
 | Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.1 128B | 197,718 | 5,058 | 1,059,200 | 0 | 略高于 Netty NIO 197,271。 |
 | Windows/amd64 | gnalloy IOCP HTTPS/1 TLS 1.1 1KiB | 189,024 | 5,290 | 1,100,700 | 0 | 略高于 Netty NIO 188,859。 |
 | Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.1 128B | 71,442 | 13,997 | 2,146,591 | 0 | 高于 Netty epoll 64,520。 |
@@ -270,11 +270,13 @@ Gnalloy harness 使用 `-tls-version` 精确固定 `crypto/tls` 的
 | Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.3 128B | 93,701 | 10,672 | 1,621,489 | 0 | 高于 Netty epoll 61,801。 |
 | Linux/amd64 | gnalloy epoll HTTPS/1 TLS 1.3 1KiB | 91,043 | 10,984 | 1,737,464 | 0 | 高于 Netty epoll 61,468。 |
 
-这些数据按协议串行执行，未并发跑多个矩阵；每个场景 3 次样本取 median，
-连接数 64、每连接 5000 个顺序 request、warmup 500、延迟采样率 1/64。
+这些数据按协议串行执行，未并发跑多个矩阵；每个场景 3 次样本取 median。
+HTTP/1 raw 矩阵使用连接数 128、每连接 10000 个顺序 request、warmup 1000、
+延迟采样率 1/128，并为固定 GET 请求头设置 384B read buffer。HTTPS/TLS
+矩阵使用连接数 64、每连接 5000 个顺序 request、warmup 500、延迟采样率 1/64。
 HTTP/1 Windows 报告路径为
-`%TEMP%\gnalloy-http1-local-sharedbuf-20260830-114601.json`，Linux 报告路径为
-`/tmp/gnalloy-http1-linux-sharedbuf-20260830-114946.json`。TLS 1.1/1.2/1.3
+`%TEMP%\gnalloy-http1-raw-local-20260830-140005.json`，Linux 报告路径为
+`/tmp/gnalloy-http1-raw-linux-20260830-140428.json`。TLS 1.1/1.2/1.3
 使用外部 harness 原生命令按版本分段串行执行，未把一次性机器负载样本外推为通用性能结论。
 
 harness 源码位于 `benchmarks/external`，构建产物输出到 `benchmarks/external/bin`；

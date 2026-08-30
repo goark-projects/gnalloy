@@ -1,12 +1,13 @@
 {
   "name": "gnalloy http1 parity matrix",
-  "notes": "HTTP/1.1 keep-alive 对标矩阵。Gnalloy 使用 codec/http1 pipeline，Netty 使用 HttpServerCodec，gnet/netpoll 使用事件循环上的轻量 HTTP/1 帧解析和固定响应。",
+  "notes": "HTTP/1.1 keep-alive 对标矩阵。Gnalloy 默认支持 codec/http1 pipeline；本矩阵的 Gnalloy 场景使用 -http1-mode raw，并按固定 GET 请求头使用 384B read buffer，使帧解析和固定响应路径与 gnet/netpoll 的轻量 HTTP/1 server 对齐。",
   "variables": {
     "REPO_ROOT": ".",
     "CONNECTIONS": "128",
     "MESSAGES": "10000",
     "LATENCY_SAMPLE_RATE": "128",
     "WARMUP_MESSAGES": "1000",
+    "GNALLOY_HTTP1_READ_BUFFER_SIZE": "384",
     "GNALLOY_BENCH": "./benchmarks/external/bin/gnalloy-bench",
     "NETTY_BENCH_JAR": "./benchmarks/external/bin/netty-bench.jar",
     "GNET_BENCH": "./benchmarks/external/bin/gnet-bench",
@@ -22,7 +23,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "http1", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "http1", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "128", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
       "timeout": "5m",
       "tags": ["local", "parity-harness", "http1", "payload-128"]
     },
@@ -35,7 +36,7 @@
       "warmup": 1,
       "repeat": 3,
       "workDir": "${REPO_ROOT}",
-      "command": ["${GNALLOY_BENCH}", "-protocol", "http1", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
+      "command": ["${GNALLOY_BENCH}", "-protocol", "http1", "-http1-mode", "raw", "-read-buffer-size", "${GNALLOY_HTTP1_READ_BUFFER_SIZE}", "-payload", "1024", "-connections", "${CONNECTIONS}", "-messages", "${MESSAGES}", "-latency-sample-rate", "${LATENCY_SAMPLE_RATE}", "-warmup-messages", "${WARMUP_MESSAGES}"],
       "timeout": "5m",
       "tags": ["local", "parity-harness", "http1", "payload-1024"]
     },

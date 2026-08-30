@@ -36,6 +36,7 @@ type config struct {
 	WarmupMessages         int
 	ALPN                   string
 	TLSVersion             string
+	HTTP1Mode              string
 }
 
 func parseConfig(args []string) (config, error) {
@@ -54,6 +55,7 @@ func parseConfig(args []string) (config, error) {
 		MmapBlocks:     4096,
 		ALPN:           "http/1.1",
 		TLSVersion:     defaultTLSVersion,
+		HTTP1Mode:      defaultHTTP1Mode,
 	}
 	fs := flag.NewFlagSet("gnalloy-bench", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -78,6 +80,7 @@ func parseConfig(args []string) (config, error) {
 	fs.IntVar(&cfg.WarmupMessages, "warmup-messages", cfg.WarmupMessages, "messages per connection sent before timed measurement; 0 disables in-process warmup")
 	fs.StringVar(&cfg.ALPN, "alpn", cfg.ALPN, "comma-separated TLS ALPN protocols for HTTPS protocols")
 	fs.StringVar(&cfg.TLSVersion, "tls-version", cfg.TLSVersion, "TLS protocol version: 1.1, 1.2 or 1.3")
+	fs.StringVar(&cfg.HTTP1Mode, "http1-mode", cfg.HTTP1Mode, "HTTP/1 server mode: codec or raw")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -104,6 +107,11 @@ func (c *config) resolve() error {
 		return err
 	}
 	c.TLSVersion = tlsVersion
+	http1Mode, err := normalizeHTTP1Mode(c.HTTP1Mode)
+	if err != nil {
+		return err
+	}
+	c.HTTP1Mode = http1Mode
 	if c.Workers == 0 {
 		c.Workers = defaultWorkerCount(workerSizingInput{
 			GOOS:       runtime.GOOS,
@@ -164,6 +172,9 @@ func (c config) validate() error {
 	}
 	if c.Protocol == "https2" && c.TLSVersion == tlsVersion11 {
 		return fmt.Errorf("%w: HTTP/2 over TLS requires TLS 1.2 or newer", errInvalidConfig)
+	}
+	if c.HTTP1Mode != defaultHTTP1Mode && c.Protocol != "http1" && c.Protocol != "https1" {
+		return fmt.Errorf("%w: http1-mode requires HTTP/1 protocol", errInvalidConfig)
 	}
 	if c.Protocol == "http3" {
 		return ensureHTTP3Config(c)

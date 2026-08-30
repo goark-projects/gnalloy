@@ -1,9 +1,16 @@
 package channel
 
-import "goark.dev/gnalloy/transport"
+import (
+	"goark.dev/gnalloy/buffer"
+	"goark.dev/gnalloy/transport"
+)
 
 type writeAndFlushSink interface {
 	WriteAndFlush(msg any) error
+}
+
+type staticBytesWriteAndFlushSink interface {
+	WriteStaticBytesAndFlush(data []byte) error
 }
 
 type HandlerContext struct {
@@ -192,6 +199,20 @@ func (c *HandlerContext) WriteAndFlush(msg any) error {
 	return c.Flush()
 }
 
+// WriteStaticBytesAndFlush 写出不可变静态字节并立即 flush。
+//
+// 调用方必须保证 data 在写出完成或连接关闭前不被修改；该方法用于协议常量帧、
+// 固定响应体等高频路径。有出站 handler 时仍走常规 ByteBuf pipeline。
+func (c *HandlerContext) WriteStaticBytesAndFlush(data []byte) error {
+	if len(data) == 0 {
+		return c.Flush()
+	}
+	if sink, ok := c.directStaticBytesWriteAndFlushSink(); ok {
+		return sink.WriteStaticBytesAndFlush(data)
+	}
+	return c.WriteAndFlush(buffer.NewSharedBuffer(data))
+}
+
 func (c *HandlerContext) directWriteAndFlushSink() (writeAndFlushSink, bool) {
 	if c == nil || c.pipeline == nil || c.pipeline.writeAndFlush == nil {
 		return nil, false
@@ -200,6 +221,14 @@ func (c *HandlerContext) directWriteAndFlushSink() (writeAndFlushSink, bool) {
 		return nil, false
 	}
 	return c.pipeline.writeAndFlush, true
+}
+
+func (c *HandlerContext) directStaticBytesWriteAndFlushSink() (staticBytesWriteAndFlushSink, bool) {
+	if c == nil || c.pipeline == nil || c.pipeline.outboundHandlers != 0 {
+		return nil, false
+	}
+	sink, ok := c.pipeline.sink.(staticBytesWriteAndFlushSink)
+	return sink, ok
 }
 
 func (c *HandlerContext) CloseFuture() Future {

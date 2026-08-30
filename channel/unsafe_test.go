@@ -410,6 +410,143 @@ func TestUnsafeWriteAndFlushUseNoPromiseFastPath(t *testing.T) {
 	}
 }
 
+func TestUnsafeWriteAndFlushDirectSmallBufferSkipsOutboundEntry(t *testing.T) {
+	rw := &fullWriteRW{}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:                 1,
+		FD:                 transport.FDRef{FD: 1},
+		Allocator:          buffer.NewHeapAllocator(),
+		Poller:             &fakeReadyPoller{},
+		ReadWriter:         rw,
+		WriteHighWatermark: 1024,
+		WriteLowWatermark:  512,
+	})
+	recorder := &flushCompleteRecorder{}
+	if err := ch.Pipeline().AddLast("flush", recorder); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := buffer.NewSharedBuffer([]byte("ok"))
+	if err := ch.WriteAndFlush(buf); err != nil {
+		t.Fatal(err)
+	}
+
+	if rw.writes != 1 {
+		t.Fatalf("writes=%d, want 1", rw.writes)
+	}
+	if recorder.count != 1 {
+		t.Fatalf("flush complete count=%d, want 1", recorder.count)
+	}
+	if ch.PendingOutboundBytes() != 0 || unsafeCh.outHead != nil || unsafeCh.outFree != nil {
+		t.Fatalf("pending=%d outHead=%v outFree=%v, want direct drain", ch.PendingOutboundBytes(), unsafeCh.outHead, unsafeCh.outFree)
+	}
+	if buf.RefCnt() != 0 {
+		t.Fatalf("ref=%d, want 0", buf.RefCnt())
+	}
+}
+
+func TestUnsafeWriteAndFlushDirectPartialQueuesRemainingBytes(t *testing.T) {
+	poller := &fakeReadyPoller{}
+	rw := &partialWriteRW{steps: []writeStep{{n: 1, again: true}, {n: 1}}}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:                 1,
+		FD:                 transport.FDRef{FD: 1},
+		Allocator:          buffer.NewHeapAllocator(),
+		Poller:             poller,
+		ReadWriter:         rw,
+		WriteHighWatermark: 1024,
+		WriteLowWatermark:  512,
+	})
+
+	buf := buffer.NewSharedBuffer([]byte("ok"))
+	if err := ch.WriteAndFlush(buf); err != nil {
+		t.Fatal(err)
+	}
+	if ch.PendingOutboundBytes() != 1 || unsafeCh.outHead == nil {
+		t.Fatalf("pending=%d outHead=%v, want queued remainder", ch.PendingOutboundBytes(), unsafeCh.outHead)
+	}
+	if len(poller.modified) != 1 || poller.modified[0] != transport.ReadyRead|transport.ReadyWrite {
+		t.Fatalf("modified=%v, want write interest", poller.modified)
+	}
+	if buf.RefCnt() != 1 {
+		t.Fatalf("ref=%d, want queued buffer", buf.RefCnt())
+	}
+
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
+	if ch.PendingOutboundBytes() != 0 || buf.RefCnt() != 0 {
+		t.Fatalf("pending=%d ref=%d, want drained", ch.PendingOutboundBytes(), buf.RefCnt())
+	}
+	if len(rw.writes) != 2 || rw.writes[0] != "ok" || rw.writes[1] != "k" {
+		t.Fatalf("writes=%v, want direct partial then queued tail", rw.writes)
+	}
+}
+
+func TestUnsafeWriteStaticBytesAndFlushDirectDrains(t *testing.T) {
+	rw := &vectorWriteRW{}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:                 1,
+		FD:                 transport.FDRef{FD: 1},
+		Allocator:          buffer.NewHeapAllocator(),
+		Poller:             &fakeReadyPoller{},
+		ReadWriter:         rw,
+		WriteHighWatermark: 1024,
+		WriteLowWatermark:  512,
+	})
+	recorder := &flushCompleteRecorder{}
+	if err := ch.Pipeline().AddLast("flush", recorder); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := unsafeCh.WriteStaticBytesAndFlush([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+
+	if rw.scalar != 1 || rw.writev != 0 {
+		t.Fatalf("scalar=%d writev=%d, want 1/0", rw.scalar, rw.writev)
+	}
+	if len(rw.writes) != 1 || len(rw.writes[0]) != 1 || rw.writes[0][0] != "ok" {
+		t.Fatalf("writes=%v, want static bytes", rw.writes)
+	}
+	if recorder.count != 1 {
+		t.Fatalf("flush complete count=%d, want 1", recorder.count)
+	}
+	if ch.PendingOutboundBytes() != 0 || unsafeCh.outHead != nil || unsafeCh.outFree != nil {
+		t.Fatalf("pending=%d outHead=%v outFree=%v, want direct static drain", ch.PendingOutboundBytes(), unsafeCh.outHead, unsafeCh.outFree)
+	}
+}
+
+func TestUnsafeWriteStaticBytesAndFlushPartialQueuesRemainder(t *testing.T) {
+	poller := &fakeReadyPoller{}
+	rw := &partialWriteRW{steps: []writeStep{{n: 1, again: true}, {n: 1}}}
+	ch, unsafeCh := NewUnsafeChannel(UnsafeConfig{
+		ID:                 1,
+		FD:                 transport.FDRef{FD: 1},
+		Allocator:          buffer.NewHeapAllocator(),
+		Poller:             poller,
+		ReadWriter:         rw,
+		WriteHighWatermark: 1024,
+		WriteLowWatermark:  512,
+	})
+
+	if err := unsafeCh.WriteStaticBytesAndFlush([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	if ch.PendingOutboundBytes() != 1 || unsafeCh.outHead == nil {
+		t.Fatalf("pending=%d outHead=%v, want queued static remainder", ch.PendingOutboundBytes(), unsafeCh.outHead)
+	}
+	if len(poller.modified) != 1 || poller.modified[0] != transport.ReadyRead|transport.ReadyWrite {
+		t.Fatalf("modified=%v, want write interest", poller.modified)
+	}
+
+	unsafeCh.HandleEvent(transport.PollEvent{Model: transport.PollerReadiness, Ready: transport.ReadyWrite})
+	if ch.PendingOutboundBytes() != 0 {
+		t.Fatalf("pending=%d, want drained", ch.PendingOutboundBytes())
+	}
+	if len(rw.writes) != 2 || rw.writes[0] != "ok" || rw.writes[1] != "k" {
+		t.Fatalf("writes=%v, want direct partial then queued tail", rw.writes)
+	}
+}
+
 func TestUnsafeWriteAndFlushFileRegionUsesFileRegionWriter(t *testing.T) {
 	writer := &recordingFileRegionWriter{}
 	ch, _ := NewUnsafeChannel(UnsafeConfig{

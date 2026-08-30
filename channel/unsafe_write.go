@@ -36,8 +36,25 @@ func (u *Unsafe) WriteAndFlush(msg any) error {
 		u.ch.Pipeline().FireFlushComplete()
 		return nil
 	}
+	if done, err := u.tryWriteAndFlushDirect(out); done {
+		return err
+	}
 	u.enqueueOutboundMessage(out, nil)
 	return u.flushOutbound()
+}
+
+func (u *Unsafe) WriteStaticBytesAndFlush(data []byte) error {
+	if u.closed.Load() {
+		return ErrPromiseFailed
+	}
+	if len(data) == 0 {
+		u.ch.Pipeline().FireFlushComplete()
+		return nil
+	}
+	if done, err := u.tryWriteStaticBytesAndFlushDirect(data); done {
+		return err
+	}
+	return u.WriteAndFlush(buffer.NewSharedBuffer(data))
 }
 
 func (u *Unsafe) WriteFuture(msg any) Future {
@@ -101,7 +118,10 @@ func (u *Unsafe) flushOutbound() error {
 }
 
 func (u *Unsafe) flushReady() error {
-	spinCount := u.maxWriteSpinCount()
+	return u.flushReadyWithSpinBudget(u.maxWriteSpinCount())
+}
+
+func (u *Unsafe) flushReadyWithSpinBudget(spinCount int) error {
 	for spins := 0; u.outHead != nil && spins < spinCount; spins++ {
 		n, again, err := u.writeReadyBatch()
 		if n > 0 {
@@ -152,6 +172,117 @@ func readableWriteBytes(buf buffer.ByteBuf) []byte {
 		return data
 	}
 	return buf.Bytes()
+}
+
+func (u *Unsafe) tryWriteAndFlushDirect(out outboundMessage) (bool, error) {
+	if !u.canWriteAndFlushDirect(out) {
+		return false, nil
+	}
+	data, ok := buffer.ContiguousReadableBytes(out.buf)
+	if !ok {
+		return false, nil
+	}
+	n, again, err := u.rw.Write(u.fd, data)
+	if n < 0 {
+		if again && err == nil {
+			n = 0
+		} else {
+			out.release()
+			return true, ErrInvalidMessage
+		}
+	}
+	if n > len(data) {
+		out.release()
+		return true, ErrInvalidMessage
+	}
+	if n > 0 {
+		_ = out.buf.SkipBytes(n)
+	}
+	if out.buf.ReadableBytes() == 0 {
+		out.release()
+		u.ch.Pipeline().FireFlushComplete()
+		if err != nil {
+			return true, err
+		}
+		if again {
+			return true, u.enableWriteInterest()
+		}
+		if u.writeInterest {
+			return true, u.disableWriteInterest()
+		}
+		return true, nil
+	}
+	out.bytes = int64(out.buf.ReadableBytes())
+	u.enqueueOutboundMessage(out, nil)
+	if err != nil {
+		return true, err
+	}
+	if again || n == 0 {
+		return true, u.enableWriteInterest()
+	}
+	return true, u.flushReadyWithSpinBudget(u.maxWriteSpinCount() - 1)
+}
+
+func (u *Unsafe) canWriteAndFlushDirect(out outboundMessage) bool {
+	if u.outHead != nil || out.region != nil || out.buf == nil || out.bytes <= 0 || u.rw == nil {
+		return false
+	}
+	if u.poller == nil || u.poller.Model() == transport.PollerCompletion {
+		return false
+	}
+	return out.bytes < u.writeHighWatermark
+}
+
+func (u *Unsafe) tryWriteStaticBytesAndFlushDirect(data []byte) (bool, error) {
+	if !u.canWriteStaticBytesAndFlushDirect(len(data)) {
+		return false, nil
+	}
+	n, again, err := u.rw.Write(u.fd, data)
+	if n < 0 {
+		if again && err == nil {
+			n = 0
+		} else {
+			return true, ErrInvalidMessage
+		}
+	}
+	if n > len(data) {
+		return true, ErrInvalidMessage
+	}
+	if n == len(data) {
+		u.ch.Pipeline().FireFlushComplete()
+		if err != nil {
+			return true, err
+		}
+		if again {
+			return true, u.enableWriteInterest()
+		}
+		if u.writeInterest {
+			return true, u.disableWriteInterest()
+		}
+		return true, nil
+	}
+	out := outboundMessage{
+		buf:   buffer.NewSharedBuffer(data[n:]),
+		bytes: int64(len(data) - n),
+	}
+	u.enqueueOutboundMessage(out, nil)
+	if err != nil {
+		return true, err
+	}
+	if again || n == 0 {
+		return true, u.enableWriteInterest()
+	}
+	return true, u.flushReadyWithSpinBudget(u.maxWriteSpinCount() - 1)
+}
+
+func (u *Unsafe) canWriteStaticBytesAndFlushDirect(size int) bool {
+	if size <= 0 || u.outHead != nil || u.rw == nil {
+		return false
+	}
+	if u.poller == nil || u.poller.Model() == transport.PollerCompletion {
+		return false
+	}
+	return int64(size) < u.writeHighWatermark
 }
 
 func (u *Unsafe) submitWrite() error {

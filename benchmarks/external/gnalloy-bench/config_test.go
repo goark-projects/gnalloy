@@ -58,6 +58,29 @@ func TestParseConfigSupportsHTTPS1ALPN(t *testing.T) {
 	}
 }
 
+func TestParseConfigSupportsHTTP1RawMode(t *testing.T) {
+	cfg, err := parseConfig([]string{
+		"-protocol", "http1",
+		"-http1-mode", "raw",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTP1Mode != http1ModeRaw {
+		t.Fatalf("http1Mode=%q, want raw", cfg.HTTP1Mode)
+	}
+}
+
+func TestParseConfigRejectsHTTP1ModeForHTTP2(t *testing.T) {
+	_, err := parseConfig([]string{
+		"-protocol", "http2",
+		"-http1-mode", "raw",
+	})
+	if !errors.Is(err, errInvalidConfig) {
+		t.Fatalf("err=%v, want %v", err, errInvalidConfig)
+	}
+}
+
 func TestParseConfigSupportsTLSVersions(t *testing.T) {
 	for _, version := range []string{"1.1", "1.2", "1.3"} {
 		cfg, err := parseConfig([]string{
