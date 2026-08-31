@@ -79,7 +79,7 @@
 | `XmlFrameDecoder/XmlDecoder` | `codec/xml` | done | 支持完整 XML document 切帧和 Go 化 token 流。 |
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
-| `SslHandler` | `handler/tls` | done | 默认基于 `crypto/tls` 的 pipeline TLS handler，并提供可插拔 TLS provider 边界、handler 级 TLS1.3/ALPN/SNI 能力校验、握手事件和 stapled OCSP required/event/validator 边界；QUIC packet protection 仍按 native QUIC provider 独立评估。 |
+| `SslHandler` | `handler/tls`、`handler/tls/provider/standard` | done | 默认基于 `crypto/tls` 的 pipeline TLS handler，并提供可插拔 TLS provider 边界、标准库 provider 子包、handler 级 TLS1.3/ALPN/SNI 能力校验、握手事件和 stapled OCSP required/event/validator 边界；QUIC packet protection 仍按 native QUIC provider 独立评估。 |
 | `SniHandler` / `StartTls` / `OptionalSslHandler` | `handler/tls` | done | 支持 StartTLS 事件启动、SNI 配置选择、ClientHello SNI/ALPN/cipher/version inspection、provider-based 配置选择、Optional TLS 探测事件、握手事件和握手后主机名校验。 |
 
 ## 延后或独立扩展

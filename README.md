@@ -70,9 +70,10 @@ blocks:
   events; StartTLS, SNI-driven config selection, stable ByteBuf copy reduction,
   ClientHello inspection/provider-based config selection, Optional TLS
   detection, TLS 1.0-1.2 cipher-suite catalog/name parsing/configuration,
-  stapled OCSP response policy/events, handler-level provider capability
-  validation, and separate native QUIC packet-protection capability evaluation
-  are handled as explicit pipeline controls.
+  stapled OCSP response policy/events, standard-library provider package,
+  handler-level provider capability validation, and separate native QUIC
+  packet-protection capability evaluation are handled as explicit pipeline
+  controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
 - `handler/cors`: HTTP/1 CORS Pipeline handler with request Origin matching,
