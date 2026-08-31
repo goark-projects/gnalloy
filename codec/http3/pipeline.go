@@ -21,6 +21,8 @@ const (
 	HandlerNameHTTP3ControlStream = "http3-control-stream"
 	// HandlerNameHTTP3LocalControlStream 是 HTTP/3 control stream 本端 SETTINGS 写入器的默认名称。
 	HandlerNameHTTP3LocalControlStream = "http3-local-control-stream"
+	// HandlerNameHTTP3StateManager 是 HTTP/3 连接级状态管理器的默认名称。
+	HandlerNameHTTP3StateManager = "http3-state-manager"
 )
 
 // PipelineConfig 描述 HTTP/3 stream pipeline 的装配参数。
@@ -33,6 +35,8 @@ type PipelineConfig struct {
 	HeaderCodec HeaderCodecConfig
 	// Settings 是本端 control stream 激活时主动发送的 SETTINGS。
 	Settings []Setting
+	// State 是连接级 HTTP/3 状态管理器；为空时仅安装流内编解码链。
+	State *StateManager
 }
 
 type pipelineHandlerSpec struct {

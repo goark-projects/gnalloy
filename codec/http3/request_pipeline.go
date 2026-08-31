@@ -8,10 +8,14 @@ func ApplyRequestStreamPipeline(p *channel.Pipeline, cfg PipelineConfig) error {
 	if err != nil {
 		return err
 	}
-	return addPipelineHandlers(p, []pipelineHandlerSpec{
+	specs := []pipelineHandlerSpec{
 		{name: HandlerNameHTTP3FrameDecoder, handler: frameDecoder},
 		{name: HandlerNameHTTP3HeaderDecoder, handler: NewHeaderDecoder(cfg.HeaderCodec)},
 		{name: HandlerNameHTTP3FrameEncoder, handler: NewEncoder()},
 		{name: HandlerNameHTTP3HeaderEncoder, handler: NewHeaderEncoder()},
-	})
+	}
+	if cfg.State != nil {
+		specs = append(specs, pipelineHandlerSpec{name: HandlerNameHTTP3StateManager, handler: cfg.State})
+	}
+	return addPipelineHandlers(p, specs)
 }

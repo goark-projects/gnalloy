@@ -47,7 +47,8 @@ blocks:
   Cookie/Set-Cookie values, HTTP/2 stream child channel flow, bounded
   multipart/form-data decode/encode,
   HTTP/3 frames, lifecycle events, low-cardinality frame stats, QPACK header
-  blocks, HTTP/3 control/QPACK stream pipelines,
+  blocks, connection-level SETTINGS/GOAWAY/server-push state, HTTP/3
+  control/QPACK stream pipelines,
   SCTP stream messages and byte-stream adapters, WebTransport SETTINGS and
   extended CONNECT helpers, Protobuf object adapters and varint32 frames, MQTT
   frames, Redis RESP frames, Memcached binary full request/response objects,
