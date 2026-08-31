@@ -20,8 +20,20 @@ func TestNormalizeConfigDefaults(t *testing.T) {
 	if cfg.OutboundStreams != defaultOutboundStreams || cfg.InboundStreams != defaultInboundStreams {
 		t.Fatalf("streams=%d/%d, want defaults", cfg.OutboundStreams, cfg.InboundStreams)
 	}
+	if !cfg.NoDelay || cfg.MaxInitAttempts != defaultMaxInitAttempts || cfg.MaxInitTimeoutMillis != defaultMaxInitTimeoutMillis {
+		t.Fatalf("sctp init options=%+v", cfg)
+	}
 	if cfg.WriteBufferWatermark.High <= cfg.WriteBufferWatermark.Low {
 		t.Fatalf("watermark=%+v, want normalized", cfg.WriteBufferWatermark)
+	}
+}
+
+func TestSocketOptionsApplySCTPNoDelayOverride(t *testing.T) {
+	options := channel.NewChannelOptions()
+	options.Apply(channel.OptionTcpNoDelay.Assignment(false))
+	opts := normalizeConfig(Config{}).socketOptions().withChildOptions(options)
+	if opts.noDelay {
+		t.Fatal("tcp no delay override must map to SCTP_NODELAY")
 	}
 }
 
@@ -141,6 +153,12 @@ func TestDetectRuntimeSupportReportsStableBoundary(t *testing.T) {
 	support := DetectRuntimeSupport()
 	if support.Platform != runtime.GOOS {
 		t.Fatalf("platform=%q, want %q", support.Platform, runtime.GOOS)
+	}
+	if support.KernelAvailable && !support.NativeSocket {
+		t.Fatalf("support=%+v, kernel support requires native socket support", support)
+	}
+	if runtime.GOOS != "linux" && support.KernelAvailable {
+		t.Fatalf("support=%+v, non-linux must not claim SCTP kernel support", support)
 	}
 	if support.CompletionPoller {
 		t.Fatalf("support=%+v, SCTP must not claim completion poller support", support)

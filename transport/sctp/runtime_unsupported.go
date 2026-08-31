@@ -7,8 +7,11 @@ func detectRuntimeSupport() RuntimeSupport {
 	return RuntimeSupport{
 		Platform:         runtimePlatform(),
 		NativeSocket:     false,
+		KernelAvailable:  false,
 		ReadinessPoller:  false,
 		CompletionPoller: false,
 		OneToOneStream:   false,
+		InitMessage:      false,
+		NoDelay:          false,
 	}
 }

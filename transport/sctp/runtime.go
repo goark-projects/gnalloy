@@ -22,9 +22,12 @@ const (
 type RuntimeSupport struct {
 	Platform         string
 	NativeSocket     bool
+	KernelAvailable  bool
 	ReadinessPoller  bool
 	CompletionPoller bool
 	OneToOneStream   bool
+	InitMessage      bool
+	NoDelay          bool
 }
 
 // RuntimeCheck 是 SCTP 启动前 runtime 校验的输入快照。
@@ -75,7 +78,8 @@ func ValidateRuntime(check RuntimeCheck) error {
 	default:
 		return fmt.Errorf("%w: invalid endpoint role", ErrInvalidConfig)
 	}
-	if !DetectRuntimeSupport().NativeSocket {
+	support := DetectRuntimeSupport()
+	if !support.NativeSocket || !support.KernelAvailable {
 		return ErrUnsupportedSCTP
 	}
 	return nil

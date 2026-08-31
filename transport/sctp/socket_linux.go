@@ -6,11 +6,24 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"unsafe"
 
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/transport"
 	"golang.org/x/sys/unix"
 )
+
+const (
+	sctpInitMsgOpt = 2
+	sctpNoDelayOpt = 3
+)
+
+type sctpInitMsg struct {
+	numOStreams    uint16
+	maxInStreams   uint16
+	maxAttempts    uint16
+	maxInitTimeout uint16
+}
 
 type nativeReadWriter struct{}
 
@@ -90,6 +103,10 @@ func dialSCTP(address string, opts socketOptions) (transport.FDRef, error) {
 	if err != nil {
 		return transport.FDRef{}, err
 	}
+	if err := setPreConnectOptions(fd, opts); err != nil {
+		_ = unix.Close(fd)
+		return transport.FDRef{}, err
+	}
 	if err := unix.Connect(fd, sa); err != nil && !connectInProgress(err) {
 		_ = unix.Close(fd)
 		return transport.FDRef{}, err
@@ -128,7 +145,10 @@ func setListenOptions(fd int, family int, opts socketOptions) error {
 			return err
 		}
 	}
-	return setCommonOptions(fd, opts)
+	if err := setPreConnectOptions(fd, opts); err != nil {
+		return err
+	}
+	return setConnectedOptions(fd, opts)
 }
 
 func setAcceptedOptions(fd transport.FDRef, opts socketOptions) error {
@@ -137,10 +157,37 @@ func setAcceptedOptions(fd transport.FDRef, opts socketOptions) error {
 			return err
 		}
 	}
-	return setCommonOptions(fd.FD, opts)
+	return setConnectedOptions(fd.FD, opts)
 }
 
-func setCommonOptions(fd int, opts socketOptions) error {
+func setPreConnectOptions(fd int, opts socketOptions) error {
+	msg := sctpInitMsg{
+		numOStreams:    opts.outboundStreams,
+		maxInStreams:   opts.inboundStreams,
+		maxAttempts:    opts.maxInitAttempts,
+		maxInitTimeout: opts.maxInitTimeoutMillis,
+	}
+	_, _, errno := unix.Syscall6(
+		unix.SYS_SETSOCKOPT,
+		uintptr(fd),
+		uintptr(unix.IPPROTO_SCTP),
+		uintptr(sctpInitMsgOpt),
+		uintptr(unsafe.Pointer(&msg)),
+		unsafe.Sizeof(msg),
+		0,
+	)
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+func setConnectedOptions(fd int, opts socketOptions) error {
+	if opts.noDelay {
+		if err := unix.SetsockoptInt(fd, unix.IPPROTO_SCTP, sctpNoDelayOpt, 1); err != nil {
+			return err
+		}
+	}
 	if opts.sendBufferSize > 0 {
 		if err := unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_SNDBUF, opts.sendBufferSize); err != nil {
 			return err
