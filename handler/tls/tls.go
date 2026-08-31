@@ -26,6 +26,8 @@ const (
 
 type Config struct {
 	TLS *cryptotls.Config
+	// Provider 创建底层 TLS 引擎；nil 使用 Go 标准库 crypto/tls。
+	Provider Provider
 	// CipherSuites 覆盖 TLS 1.0-1.2 密码套件；TLS 1.3 套件由 Go 运行时管理，不能写入 crypto/tls.Config。
 	CipherSuites []uint16
 	// StartTLS 表示连接建立后先透传明文，收到 StartEvent 后再启动 TLS 握手。
@@ -54,7 +56,7 @@ type Handler struct {
 	cfg  Config
 
 	raw  *memoryConn
-	conn *cryptotls.Conn
+	conn Conn
 
 	startOnce sync.Once
 	closeOnce sync.Once
@@ -219,11 +221,13 @@ func (h *Handler) ensureStarted() {
 			h.sendErr(err)
 			return
 		}
-		if h.mode == ModeServer {
-			h.conn = cryptotls.Server(h.raw, cfg)
-		} else {
-			h.conn = cryptotls.Client(h.raw, cfg)
+		conn, err := h.newTLSConn(cfg)
+		if err != nil {
+			h.started.Store(true)
+			h.sendErr(err)
+			return
 		}
+		h.conn = conn
 		h.started.Store(true)
 		go h.runHandshake()
 		go h.runWriter()
@@ -233,6 +237,11 @@ func (h *Handler) ensureStarted() {
 func (h *Handler) validateConfig() error {
 	if h.mode != ModeClient && h.mode != ModeServer {
 		return ErrInvalidConfig
+	}
+	if !nativeProviderMissing(h.cfg.Provider) {
+		if err := providerEvaluationError(EvaluateProvider(h.cfg.Provider)); err != nil {
+			return err
+		}
 	}
 	return ValidateConfigurableCipherSuites(h.cfg.CipherSuites)
 }
@@ -246,6 +255,14 @@ func (h *Handler) tlsConfig() (*cryptotls.Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func (h *Handler) newTLSConn(cfg *cryptotls.Config) (Conn, error) {
+	provider := normalizeProvider(h.cfg.Provider)
+	if h.mode == ModeServer {
+		return provider.Server(h.raw, cfg)
+	}
+	return provider.Client(h.raw, cfg)
 }
 
 func (h *Handler) runHandshake() {

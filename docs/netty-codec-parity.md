@@ -7,7 +7,7 @@
 - `done`: 已有可用实现，并有单元测试或基准覆盖。
 - `partial`: 已有核心路径，仍缺少 Netty 的部分参数、异常语义或协议边界。
 - `planned`: 应实现，且适合无外部依赖的 Go 化版本。
-- `defer`: 需要压缩、TLS、ASN.1、序列化框架等额外依赖或较大协议面，后续独立设计。
+- `defer`: 需要 ASN.1、序列化框架等额外依赖或较大协议面，后续独立设计。
 - `skip`: 不适合 gnalloy 核心，应该由业务或独立扩展包承担。
 
 ## 基础模板
@@ -79,7 +79,7 @@
 | `XmlFrameDecoder/XmlDecoder` | `codec/xml` | done | 支持完整 XML document 切帧和 Go 化 token 流。 |
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
-| `SslHandler` | `handler/tls` | done | 基于 `crypto/tls` 的 pipeline TLS handler，保持和 TCP/QUIC 等传输入口一致，并提供 stapled OCSP required/event/validator 边界。 |
+| `SslHandler` | `handler/tls` | done | 默认基于 `crypto/tls` 的 pipeline TLS handler，并提供可插拔 TLS provider 边界、handler 级 TLS1.3/ALPN/SNI 能力校验、握手事件和 stapled OCSP required/event/validator 边界；QUIC packet protection 仍按 native QUIC provider 独立评估。 |
 | `SniHandler` / `StartTls` / `OptionalSslHandler` | `handler/tls` | done | 支持 StartTLS 事件启动、SNI 配置选择、ClientHello SNI/ALPN/cipher/version inspection、provider-based 配置选择、Optional TLS 探测事件、握手事件和握手后主机名校验。 |
 
 ## 延后或独立扩展

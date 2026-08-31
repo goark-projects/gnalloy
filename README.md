@@ -64,13 +64,15 @@ blocks:
 - `handler/timeout`: time-wheel based `IdleStateHandler`,
   `ReadTimeoutHandler`, and `WriteTimeoutHandler` without per-connection
   `time.Timer` allocation.
-- `handler/tls`: Go-native TLS handler backed by `crypto/tls`, exposing
-  plaintext `ByteBuf` to business handlers while preserving SNI and ALPN
-  negotiation events; StartTLS, SNI-driven config selection, stable ByteBuf
-  copy reduction, ClientHello inspection/provider-based config selection,
-  Optional TLS detection, TLS 1.0-1.2 cipher-suite catalog/name
-  parsing/configuration, stapled OCSP response policy/events, and optional
-  native TLS capability evaluation are handled as explicit pipeline controls.
+- `handler/tls`: Go-native TLS handler backed by `crypto/tls` by default, with
+  an injectable TLS provider boundary for native engines. It exposes plaintext
+  `ByteBuf` to business handlers while preserving SNI and ALPN negotiation
+  events; StartTLS, SNI-driven config selection, stable ByteBuf copy reduction,
+  ClientHello inspection/provider-based config selection, Optional TLS
+  detection, TLS 1.0-1.2 cipher-suite catalog/name parsing/configuration,
+  stapled OCSP response policy/events, handler-level provider capability
+  validation, and separate native QUIC packet-protection capability evaluation
+  are handled as explicit pipeline controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
 - `handler/cors`: HTTP/1 CORS Pipeline handler with request Origin matching,

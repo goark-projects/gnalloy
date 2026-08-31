@@ -1,13 +1,12 @@
 package tls
 
 import (
-	"crypto/tls"
 	"io"
 
 	"goark.dev/gnalloy/buffer"
 )
 
-func writeTLSBuffer(conn *tls.Conn, buf buffer.ByteBuf) error {
+func writeTLSBuffer(conn interface{ Write([]byte) (int, error) }, buf buffer.ByteBuf) error {
 	if conn == nil || buf == nil || buf.ReadableBytes() == 0 {
 		return nil
 	}
@@ -23,7 +22,7 @@ func writeTLSBuffer(conn *tls.Conn, buf buffer.ByteBuf) error {
 	return nil
 }
 
-func writeAllTLS(conn *tls.Conn, data []byte) error {
+func writeAllTLS(conn interface{ Write([]byte) (int, error) }, data []byte) error {
 	for len(data) > 0 {
 		n, err := conn.Write(data)
 		if n > 0 {
