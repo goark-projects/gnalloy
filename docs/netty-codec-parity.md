@@ -68,7 +68,7 @@
 | `Http2MultiplexHandler` / `DefaultHttp2RemoteFlowController` helper | `codec/http2.StreamMultiplexer` / `StreamChildChannel` / `OutboundFlowController` | done | 支持 stream 生命周期事件、奇偶性校验、END_STREAM 半关闭、RST/GOAWAY、连接/stream 窗口校验、出站 DATA 有界排队和 Netty 风格 child-channel 入站体验。 |
 | `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE、未知扩展帧、QPACK header block、control stream 顺序校验、QUIC 单向 stream type 前缀、生命周期事件和低基数 frame stats；已覆盖 fuzz smoke。 |
 | `SctpInboundByteStreamHandler` / `SctpOutboundByteStreamHandler` / `SctpMessageCompletionHandler` | `codec/sctp` | done | 支持 SCTP stream 元数据、按 protocol/stream 的 ByteBuf 适配和分片聚合；payload 通过 `ByteBuf` 引用计数传递，避免额外复制。 |
-| `BinaryMemcache*` | `codec/memcache` | done | 支持 Memcached binary request/response header、extras、key、value、opaque 和 CAS。 |
+| `BinaryMemcache*` | `codec/memcache` | done | 支持 Memcached binary request/response frame、Full request/response 对象、零拷贝对象聚合、client/server 方向 codec helper、extras/key/value、opaque 和 CAS。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧和值解码能力；已覆盖 fuzz smoke。 |
 | `MQTT` | `codec/mqtt` | done | 支持 MQTT 3.1.1/MQTT5 固定头、结构化包、属性、原因码、AUTH 和零拷贝 PUBLISH payload。 |
 | `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | done | 支持 DNS wire message、name 压缩、A/AAAA/NS/CNAME/PTR/MX/TXT/SRV/SOA/OPT 常用记录和 resolver；已覆盖 fuzz smoke。 |
