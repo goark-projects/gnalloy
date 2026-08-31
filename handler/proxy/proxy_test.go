@@ -265,6 +265,94 @@ func TestSOCKS5ClientRejectsHandshakeFailure(t *testing.T) {
 	sink.release()
 }
 
+func TestSOCKS4ConnectHelpers(t *testing.T) {
+	req, err := AppendSOCKS4Connect(nil, "example.com:443", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrefix := []byte{0x04, 0x01, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x01}
+	if !bytes.Equal(req[:len(wantPrefix)], wantPrefix) || !bytes.Contains(req, []byte("user\x00example.com\x00")) {
+		t.Fatalf("request=%v", req)
+	}
+	reply, consumed, err := ParseSOCKS4Reply([]byte{0x00, 0x5a, 0x01, 0xbb, 127, 0, 0, 1, 'x'})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.Status != SOCKS4StatusGranted || reply.Address != "127.0.0.1:443" || consumed != 8 {
+		t.Fatalf("reply=%+v consumed=%d", reply, consumed)
+	}
+}
+
+func TestSOCKS4ClientWritesConnectAndEmitsEvent(t *testing.T) {
+	sink := &proxyCaptureSink{}
+	events := &proxyEventCapture{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	client, err := NewSOCKS4Client("example.com:443", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("socks4", client); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("events", events); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelActive()
+	if len(sink.writes) != 1 || sink.flushes != 1 {
+		t.Fatalf("writes=%d flushes=%d", len(sink.writes), sink.flushes)
+	}
+	first := sink.writes[0].(buffer.ByteBuf)
+	if want := []byte{0x04, 0x01, 0x01, 0xbb, 0x00, 0x00, 0x00, 0x01}; !bytes.Equal(first.Bytes()[:len(want)], want) {
+		t.Fatalf("connect=%v", first.Bytes())
+	}
+
+	ch.Pipeline().FireChannelRead(byteBufWithBytes([]byte{0x00, 0x5a, 0x01}))
+	if len(events.events) != 0 {
+		t.Fatalf("events=%d, want no event before full reply", len(events.events))
+	}
+	ch.Pipeline().FireChannelRead(byteBufWithBytes([]byte{0xbb, 127, 0, 0, 1, 'h', 'i'}))
+	if len(events.events) != 1 {
+		t.Fatalf("events=%d, want SOCKS4 event", len(events.events))
+	}
+	event, ok := events.events[0].(SOCKS4Event)
+	if !ok || event.Reply.Status != SOCKS4StatusGranted {
+		t.Fatalf("event=%+v", events.events[0])
+	}
+	if len(events.reads) != 1 {
+		t.Fatalf("reads=%d, want leftover data", len(events.reads))
+	}
+	leftover := events.reads[0].(buffer.ByteBuf)
+	if string(leftover.Bytes()) != "hi" {
+		t.Fatalf("leftover=%q", leftover.Bytes())
+	}
+	leftover.Release()
+	sink.release()
+}
+
+func TestSOCKS4ClientRejectsHandshakeFailure(t *testing.T) {
+	sink := &proxyCaptureSink{}
+	errorsSeen := &proxyErrorCapture{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	client, err := NewSOCKS4Client("127.0.0.1:443", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("socks4", client); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("errors", errorsSeen); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelActive()
+	ch.Pipeline().FireChannelRead(byteBufWithBytes([]byte{0x00, 0x5b, 0x00, 0x00, 127, 0, 0, 1}))
+	if len(errorsSeen.errors) != 1 || !errors.Is(errorsSeen.errors[0], ErrHandshakeFailed) {
+		t.Fatalf("errors=%v, want ErrHandshakeFailed", errorsSeen.errors)
+	}
+	sink.release()
+}
+
 func TestParseHAProxyV1AndV2(t *testing.T) {
 	v1 := []byte("PROXY TCP4 192.0.2.1 198.51.100.1 12345 443\r\nGET / HTTP/1.1\r\n")
 	info, consumed, err := ParseHAProxyHeader(v1)
