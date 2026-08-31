@@ -153,7 +153,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | --- | --- | --- |
 | HTTP multipart 高级工具 | `codec/http1/multipart` done | 提供 Content-Type boundary 提取、受限流式解码、ByteBuf/Request 适配和 append-style form-data 编码；part 数量、头部、单 part 和总正文都有预算保护。 |
 | WebSocket extension compression | `codec/websocket/deflate` done | 支持 permessage-deflate 协商参数、RSV1 显式 decoder 配置、data message 压缩/解压、分片最终聚合、控制帧透传和解压膨胀预算。 |
-| brotli/snappy/lz4 等压缩 codec | `codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4` done | 外部算法依赖隔离在独立子包；保留 ByteBuf pipeline handler、writer/reader 复用和最大解压大小限制。 |
+| brotli/snappy/lz4/FastLZ/LZF 等压缩 codec | `codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4`、`codec/compression/fastlz`、`codec/compression/lzf` done | 外部算法依赖隔离在独立子包；保留 ByteBuf pipeline handler、writer/reader 复用、Netty chunk/frame 兼容和最大解压大小限制。 |
 | TLS cipher suite catalog/name conversion/config | `handler/tls` done | 基于 Go 运行时目录提供 IANA/Java/OpenSSL/hex 名称解析、insecure 显式 opt-in、TLS 1.0-1.2 配置应用、TLS 1.3 不可配置边界、ClientHello provider 和 Optional TLS 探测。 |
 | OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS provider 需要平台依赖、复制预算和安全审计独立切片。 |
 | true sendfile/splice 零拷贝文件传输 | `transport/zerocopy` done | Linux/macOS `sendfile` 和 Windows `TransmitFile` 可直接传输 `DefaultFileRegion` backed by `*os.File`；TCP `Unsafe` 出站默认接入该 writer，非原生 region 明确返回 unsupported，保留 `Copy` 与 `FileRegionEncoder` fallback。 |
