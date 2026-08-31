@@ -27,9 +27,10 @@ const (
 
 // Session 把 RFC9000 QUIC 连接装配为 HTTP/3 stream channel 工厂。
 type Session struct {
-	conn rfc9000.Connection
-	cfg  Config
-	next atomic.Uint64
+	conn  rfc9000.Connection
+	cfg   Config
+	next  atomic.Uint64
+	stats *sessionStats
 }
 
 // NewSession 创建 HTTP/3 transport binding。
@@ -41,7 +42,7 @@ func NewSession(conn rfc9000.Connection, cfg Config) (*Session, error) {
 	if err := validateConnection(conn, normalized); err != nil {
 		return nil, err
 	}
-	return &Session{conn: conn, cfg: normalized}, nil
+	return &Session{conn: conn, cfg: normalized, stats: newSessionStats()}, nil
 }
 
 // Connection 返回底层 RFC9000 QUIC 连接。
@@ -50,6 +51,14 @@ func (s *Session) Connection() rfc9000.Connection {
 		return nil
 	}
 	return s.conn
+}
+
+// Stats 返回 HTTP/3 stream 绑定层的低基数计数快照。
+func (s *Session) Stats() SessionStats {
+	if s == nil {
+		return SessionStats{StreamsByKind: map[StreamKind]uint64{}}
+	}
+	return s.stats.snapshot()
 }
 
 // OpenRequestStream 打开本端发起的 HTTP/3 request stream。
@@ -61,7 +70,7 @@ func (s *Session) OpenRequestStream(ctx context.Context) (*StreamChannel, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.newStreamChannel(StreamKindRequest, stream, stream, codechttp3.RequestStreamInitializer(s.cfg.Pipeline))
+	return s.newStreamChannel(StreamKindRequest, stream, stream, codechttp3.RequestStreamInitializer(s.cfg.Pipeline), true)
 }
 
 // AcceptRequestStream 接受对端发起的 HTTP/3 request stream。
@@ -73,7 +82,7 @@ func (s *Session) AcceptRequestStream(ctx context.Context) (*StreamChannel, erro
 	if err != nil {
 		return nil, err
 	}
-	return s.newStreamChannel(StreamKindRequest, stream, stream, codechttp3.RequestStreamInitializer(s.cfg.Pipeline))
+	return s.newStreamChannel(StreamKindRequest, stream, stream, codechttp3.RequestStreamInitializer(s.cfg.Pipeline), false)
 }
 
 // OpenLocalControlStream 打开本端 HTTP/3 control stream，并在 active 时写出 SETTINGS。
@@ -118,7 +127,7 @@ func (s *Session) openSendStream(ctx context.Context, kind StreamKind, init code
 	if err != nil {
 		return nil, err
 	}
-	return s.newStreamChannel(kind, nil, stream, init)
+	return s.newStreamChannel(kind, nil, stream, init, true)
 }
 
 func (s *Session) acceptReceiveStream(ctx context.Context, kind StreamKind, init codechttp3.PipelineInitializer) (*StreamChannel, error) {
@@ -129,10 +138,10 @@ func (s *Session) acceptReceiveStream(ctx context.Context, kind StreamKind, init
 	if err != nil {
 		return nil, err
 	}
-	return s.newStreamChannel(kind, stream, nil, init)
+	return s.newStreamChannel(kind, stream, nil, init, false)
 }
 
-func (s *Session) newStreamChannel(kind StreamKind, reader streamReader, writer streamWriter, init codechttp3.PipelineInitializer) (*StreamChannel, error) {
+func (s *Session) newStreamChannel(kind StreamKind, reader streamReader, writer streamWriter, init codechttp3.PipelineInitializer, opened bool) (*StreamChannel, error) {
 	id := transport.ChannelID(uint64(s.cfg.ChannelIDBase) + s.next.Add(1) - 1)
 	return newStreamChannel(streamChannelConfig{
 		ID:             id,
@@ -142,6 +151,8 @@ func (s *Session) newStreamChannel(kind StreamKind, reader streamReader, writer 
 		Reader:         reader,
 		Writer:         writer,
 		Initializer:    init,
+		Stats:          s.stats,
+		Opened:         opened,
 	})
 }
 

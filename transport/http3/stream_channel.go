@@ -35,6 +35,8 @@ type streamChannelConfig struct {
 	Reader         streamReader
 	Writer         streamWriter
 	Initializer    func(channel.Channel) error
+	Stats          *sessionStats
+	Opened         bool
 }
 
 // StreamChannel 是绑定到单条 QUIC stream 的 gnalloy Channel。
@@ -47,6 +49,7 @@ type StreamChannel struct {
 	readBufferSize int
 	closed         atomic.Bool
 	inactive       atomic.Bool
+	stats          *sessionStats
 }
 
 func newStreamChannel(cfg streamChannelConfig) (*StreamChannel, error) {
@@ -61,13 +64,14 @@ func newStreamChannel(cfg streamChannelConfig) (*StreamChannel, error) {
 	if readBufferSize <= 0 {
 		readBufferSize = defaultReadBufferSize
 	}
-	sink := &streamSink{writer: cfg.Writer}
+	sink := &streamSink{writer: cfg.Writer, stats: cfg.Stats}
 	out := &StreamChannel{
 		kind:           cfg.Kind,
 		streamID:       streamIDOf(cfg.Reader, cfg.Writer),
 		reader:         cfg.Reader,
 		sink:           sink,
 		readBufferSize: readBufferSize,
+		stats:          cfg.Stats,
 	}
 	out.ch = channel.NewLocalChannel(cfg.ID, alloc, sink)
 	if cfg.Initializer != nil {
@@ -75,6 +79,9 @@ func newStreamChannel(cfg streamChannelConfig) (*StreamChannel, error) {
 			_ = sink.Close()
 			return nil, err
 		}
+	}
+	if cfg.Stats != nil {
+		cfg.Stats.recordStream(cfg.Kind, cfg.Opened)
 	}
 	out.ch.Pipeline().FireChannelRegistered()
 	out.ch.Pipeline().FireChannelActive()
@@ -131,6 +138,7 @@ func (c *StreamChannel) ReadOnce(ctx context.Context) (int, error) {
 	view := buf.WritableBytesView()
 	n, readErr := c.reader.Read(view)
 	if n > 0 {
+		c.stats.recordReadBytes(n)
 		if err := buf.AdvanceWriter(n); err != nil {
 			buf.Release()
 			return n, err
@@ -181,6 +189,7 @@ func (c *StreamChannel) fireInactiveOnce(cancelRead bool) {
 		c.reader.CancelRead(0)
 	}
 	c.closed.Store(true)
+	c.stats.recordClosed()
 	c.ch.Pipeline().FireChannelInactive()
 	c.ch.Pipeline().FireChannelUnregistered()
 }

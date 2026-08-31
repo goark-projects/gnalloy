@@ -44,7 +44,8 @@ blocks:
   flow-control queuing, h2c Upgrade settings, HPACK header blocks, HTTP/1
   object bridge, HTTP/1 Cookie/Set-Cookie values, HTTP/2 stream child channel
   flow, bounded multipart/form-data decode/encode,
-  HTTP/3 frames, QPACK header blocks, HTTP/3 control/QPACK stream pipelines,
+  HTTP/3 frames, lifecycle events, low-cardinality frame stats, QPACK header
+  blocks, HTTP/3 control/QPACK stream pipelines,
   SCTP stream messages and byte-stream adapters, WebTransport SETTINGS and
   extended CONNECT helpers, Protobuf varint32 frames, MQTT frames, Redis RESP
   frames, WebSocket frames, and permessage-deflate extension compression.
@@ -149,7 +150,8 @@ blocks:
   exchangers, including length-prefixed stream request/response framing and
   datagram response matching for protocols such as DNS-over-QUIC.
 - `transport/http3`: HTTP/3 transport binding that maps RFC9000 QUIC request,
-  control, and QPACK streams into gnalloy `Channel` pipelines.
+  control, and QPACK streams into gnalloy `Channel` pipelines with stream
+  lifecycle and byte-count session snapshots.
 - `transport/webtransport`: WebTransport over HTTP/3 session binding with
   CONNECT stream session IDs, bidirectional/unidirectional stream prefixes,
   QUIC datagram mapping, and negotiated capability validation.

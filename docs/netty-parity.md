@@ -84,7 +84,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `ByteBufAllocator` / `PooledByteBufAllocator` | `buffer.Allocator` / `buffer.PooledAllocator` | done | heap、跨平台 size-class pooled allocator、stat allocator、Linux mmap slab allocator。 |
 | 基础 codec 模板 | `codec` | done | `ByteToMessageDecoder`、message-to-message、message-to-byte 和 duplex 组合。 |
 | 常用帧 decoder/encoder | `codec` | done | length-field、line、delimiter、fixed-length。 |
-| 协议 codec | `codec/*` | done | HTTP/1 object/query/compression/upgrade、HTTP/2 preface/settings ACK/h2c/http1 bridge/outbound flow helper、HTTP/3 frame、SCTP、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
+| 协议 codec | `codec/*` | done | HTTP/1 object/query/compression/upgrade、HTTP/2 preface/settings ACK/h2c/http1 bridge/outbound flow helper、HTTP/3 frame/lifecycle/stats、SCTP、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
 
 完整 codec 细分矩阵见 `docs/netty-codec-parity.md`。
 
@@ -122,7 +122,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | QUIC packet/runtime | `transport/quic` | done | 提供 UDP 上的 QUIC packet/header/frame、连接 ID 路由、ACK tracking、packet-threshold loss recovery、Reno 风格 congestion、stream flow-control 和 path validation/migration 基础。 |
 | QUIC RFC9000 connection stack | `transport/quic/rfc9000` | done | 通过生产级 QUIC 实现承接 RFC 9000 QUIC v1、TLS 1.3 packet protection、ALPN、双向 stream、单向 stream、datagram、localhost 互通和显式启用的外部互通测试。 |
 | QUIC application assembly | `transport/quic/application` | done | 提供 stream request/response 和 datagram request/response 装配，当前覆盖 length-prefixed stream codec 和 datagram matcher。 |
-| HTTP/3 transport binding | `transport/http3` | done | 把 RFC9000 QUIC request、control、QPACK stream 绑定为 gnalloy `Channel` pipeline，复用 `codec/http3` 的 frame/header/control/QPACK 初始化器。 |
+| HTTP/3 transport binding | `transport/http3` | done | 把 RFC9000 QUIC request、control、QPACK stream 绑定为 gnalloy `Channel` pipeline，复用 `codec/http3` 的 frame/header/control/QPACK 初始化器，并提供 stream 生命周期和读写字节 session 快照。 |
 | WebTransport over HTTP/3 | `transport/webtransport` + `codec/http3` | done | 提供 SETTINGS/extended CONNECT helper、CONNECT stream session ID、WT_STREAM/单向 stream 前缀、HTTP Datagram Quarter Stream ID 映射和 QUIC datagram/reset capability 校验。 |
 
 完整 transport 边界见 `docs/transport-completion-matrix.md`。

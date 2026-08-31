@@ -11,6 +11,7 @@ type streamSink struct {
 	mu     sync.Mutex
 	writer streamWriter
 	closed bool
+	stats  *sessionStats
 }
 
 func (s *streamSink) Write(msg any) error {
@@ -31,11 +32,16 @@ func (s *streamSink) Write(msg any) error {
 	}
 	defer buf.Release()
 	var stack [8][]byte
+	written := 0
 	for _, segment := range buf.ReadableSlices(stack[:0]) {
-		if err := writeAll(s.writer, segment); err != nil {
+		n, err := writeAll(s.writer, segment)
+		written += n
+		if err != nil {
+			s.stats.recordWriteBytes(written)
 			return err
 		}
 	}
+	s.stats.recordWriteBytes(written)
 	return nil
 }
 
@@ -64,18 +70,20 @@ func (s *streamSink) Close() error {
 	return s.writer.Close()
 }
 
-func writeAll(writer streamWriter, data []byte) error {
+func writeAll(writer streamWriter, data []byte) (int, error) {
+	written := 0
 	for len(data) > 0 {
 		n, err := writer.Write(data)
 		if err != nil {
-			return err
+			return written, err
 		}
 		if n <= 0 {
-			return ErrWriteUnsupported
+			return written, ErrWriteUnsupported
 		}
+		written += n
 		data = data[n:]
 	}
-	return nil
+	return written, nil
 }
 
 func releaseMessage(msg any) {

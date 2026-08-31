@@ -65,7 +65,7 @@
 | `PerMessageDeflate*ExtensionHandshaker`、`WebSocketClient/ServerCompressionHandler` | `codec/websocket/deflate` | done | 支持 permessage-deflate 参数解析、RSV1 承载、无上下文复用压缩/解压、分片最终聚合和解压大小限制。 |
 | `Http2FrameCodec` / `Http2ConnectionHandler` helpers | `codec/http2`、`codec/http2/h2c`、`codec/http2/http1bridge` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame、client preface、SETTINGS ACK 生命周期事件、h2c HTTP2-Settings header、HPACK header block 编解码和 HTTP/1 对象语义桥接；已覆盖 fuzz smoke。 |
 | `Http2MultiplexHandler` / `DefaultHttp2RemoteFlowController` helper | `codec/http2.StreamMultiplexer` / `StreamChildChannel` / `OutboundFlowController` | done | 支持 stream 生命周期事件、奇偶性校验、END_STREAM 半关闭、RST/GOAWAY、连接/stream 窗口校验、出站 DATA 有界排队和 Netty 风格 child-channel 入站体验。 |
-| `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE、未知扩展帧、QPACK header block、control stream 顺序校验和 QUIC 单向 stream type 前缀；已覆盖 fuzz smoke。 |
+| `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE、未知扩展帧、QPACK header block、control stream 顺序校验、QUIC 单向 stream type 前缀、生命周期事件和低基数 frame stats；已覆盖 fuzz smoke。 |
 | `SctpInboundByteStreamHandler` / `SctpOutboundByteStreamHandler` / `SctpMessageCompletionHandler` | `codec/sctp` | done | 支持 SCTP stream 元数据、按 protocol/stream 的 ByteBuf 适配和分片聚合；payload 通过 `ByteBuf` 引用计数传递，避免额外复制。 |
 | `BinaryMemcache*` | `codec/memcache` | done | 支持 Memcached binary request/response header、extras、key、value、opaque 和 CAS。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧和值解码能力；已覆盖 fuzz smoke。 |
