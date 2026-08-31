@@ -64,9 +64,10 @@ blocks:
 - `handler/tls`: Go-native TLS handler backed by `crypto/tls`, exposing
   plaintext `ByteBuf` to business handlers while preserving SNI and ALPN
   negotiation events; StartTLS, SNI-driven config selection, stable ByteBuf
-  copy reduction, TLS 1.0-1.2 cipher-suite catalog/name parsing/configuration,
-  stapled OCSP response policy/events, and optional native TLS capability
-  evaluation are handled as explicit pipeline controls.
+  copy reduction, ClientHello inspection/provider-based config selection,
+  Optional TLS detection, TLS 1.0-1.2 cipher-suite catalog/name
+  parsing/configuration, stapled OCSP response policy/events, and optional
+  native TLS capability evaluation are handled as explicit pipeline controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
 - `handler/cors`: HTTP/1 CORS Pipeline handler with request Origin matching,

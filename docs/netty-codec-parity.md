@@ -79,7 +79,7 @@
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
 | `SslHandler` | `handler/tls` | done | 基于 `crypto/tls` 的 pipeline TLS handler，保持和 TCP/QUIC 等传输入口一致，并提供 stapled OCSP required/event/validator 边界。 |
-| `SniHandler` / `StartTls` | `handler/tls` | done | 支持 StartTLS 事件启动、SNI 配置选择、握手事件和握手后主机名校验。 |
+| `SniHandler` / `StartTls` / `OptionalSslHandler` | `handler/tls` | done | 支持 StartTLS 事件启动、SNI 配置选择、ClientHello SNI/ALPN/cipher/version inspection、provider-based 配置选择、Optional TLS 探测事件、握手事件和握手后主机名校验。 |
 
 ## 延后或独立扩展
 

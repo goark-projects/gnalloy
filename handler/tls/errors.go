@@ -7,6 +7,7 @@ var (
 	ErrInvalidConfig                   = errors.New("gnalloy/handler/tls: invalid config")
 	ErrPeerCertificateUnavailable      = errors.New("gnalloy/handler/tls: peer certificate unavailable")
 	ErrNativeTLSUnavailable            = errors.New("gnalloy/handler/tls: native tls provider unavailable")
+	ErrInvalidClientHello              = errors.New("gnalloy/handler/tls: invalid client hello")
 	ErrOCSPStapleRequired              = errors.New("gnalloy/handler/tls: ocsp staple required")
 	ErrOCSPValidationFailed            = errors.New("gnalloy/handler/tls: ocsp validation failed")
 	ErrUnknownCipherSuite              = errors.New("gnalloy/handler/tls: unknown cipher suite")
