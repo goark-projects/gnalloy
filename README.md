@@ -168,6 +168,9 @@ blocks:
   unidirectional streams for HTTP/3 control/QPACK integration, datagrams,
   connection state/stats, qlog writer factory, provider capability metadata,
   localhost interop tests, and opt-in external interop tests.
+- `transport/quic/provider` and `transport/quic/provider/quicgo`: stable QUIC
+  provider contracts, startup capability inspection, and the default quic-go
+  RFC9000 provider adapter.
 - `transport/quic/application`: reusable QUIC stream/datagram application
   exchangers, including length-prefixed stream request/response framing and
   datagram response matching for protocols such as DNS-over-QUIC.
