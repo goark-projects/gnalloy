@@ -13,4 +13,5 @@ var (
 	ErrMissingChildInit   = errors.New("gnalloy/codec/http2: child initializer is required")
 	ErrChildClosed        = errors.New("gnalloy/codec/http2: child channel closed")
 	ErrChildMessage       = errors.New("gnalloy/codec/http2: unsupported child channel message")
+	ErrStreamBufferFull   = errors.New("gnalloy/codec/http2: stream buffer full")
 )
