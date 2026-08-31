@@ -54,6 +54,7 @@
 
 | Netty 类型 | gnalloy 对应 | 状态 | 说明 |
 | --- | --- | --- | --- |
+| `ProtobufEncoder` / `ProtobufDecoder` | `codec/protobuf.Encoder` / `codec/protobuf.Decoder` | done | 支持 `proto.Message` 对象到 `ByteBuf` 编码、显式 factory 解码、空消息保留、碎片输入按需复制和最大消息大小限制。 |
 | `ProtobufVarint32FrameDecoder` | `codec/protobuf.ProtobufVarint32FrameDecoder` | done | 支持跨 buffer varint header、超长帧、非法 varint。 |
 | `ProtobufVarint32LengthFieldPrepender` | `codec/protobuf.ProtobufVarint32LengthFieldPrepender` | done | 出站 varint32 header + payload 零拷贝。 |
 | `HAProxyMessageDecoder/Encoder` | `codec/haproxy` | done | 支持 PROXY protocol v1/v2、TCP/UDP IPv4/IPv6、UNIX 地址和 TLV。 |

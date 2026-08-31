@@ -48,8 +48,9 @@ blocks:
   HTTP/3 frames, lifecycle events, low-cardinality frame stats, QPACK header
   blocks, HTTP/3 control/QPACK stream pipelines,
   SCTP stream messages and byte-stream adapters, WebTransport SETTINGS and
-  extended CONNECT helpers, Protobuf varint32 frames, MQTT frames, Redis RESP
-  frames, WebSocket frames, and permessage-deflate extension compression.
+  extended CONNECT helpers, Protobuf object adapters and varint32 frames, MQTT
+  frames, Redis RESP frames, WebSocket frames, and permessage-deflate extension
+  compression.
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`,
   direct `FileRegion` outbound writes through a pluggable native writer, and
   fallback chunk encoding with optional native source metadata; the `Unsafe`
