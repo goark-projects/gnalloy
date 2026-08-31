@@ -119,7 +119,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | native epoll/kqueue | `transport/poller/epoll`, `transport/poller/kqueue` | done | 平台原生 readiness backend。 |
 | io_uring/IOCP completion | `transport/poller/iouring`, `transport/poller/iocp` | done | accept/read/write/close 与 datagram completion 路径。 |
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
-| SCTP transport | `transport/sctp` | partial | Linux one-to-one SCTP stream socket 已接入 `ServerBootstrap`/`Dialer`；依赖内核 SCTP 支持，非 Linux 和 completion poller 明确返回 unsupported。 |
+| SCTP transport | `transport/sctp` | partial | Linux one-to-one SCTP stream socket 已接入 `ServerBootstrap`/`Dialer`；提供启动前 runtime/config/address 校验和能力快照，依赖内核 SCTP 支持，非 Linux 和 completion poller 明确返回 unsupported。 |
 | in-VM local transport | `transport/local` | done | 提供进程内 client/server 成对 Channel，接入 `ServerBootstrap`/`Dialer`，保留 ChannelOption/Attribute、ByteBuf 所有权、read-complete、关闭传播和出站水位线语义。 |
 | UDT transport boundary | `transport/udt`、`transport/udt/driver` | done | 核心包提供 Bootstrap/Dialer 和可注入 Driver 合同；driver 子包提供 Backend、函数式后端、缺失能力错误包装和示例；默认无 driver 时明确返回 unsupported，native UDT 由独立扩展承接。 |
 | RXTX/serial transport boundary | `transport/rxtx`、`transport/rxtx/driver` | done | 提供串口 client transport、波特率/数据位/停止位/校验位默认归一和可注入 Driver 合同；driver 子包提供 BackendFunc 适配、缺失能力错误包装和示例；不在核心绑定平台串口库。 |

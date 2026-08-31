@@ -127,7 +127,9 @@ blocks:
   defaults, and explicit elevated-permission runtime boundaries.
 - `transport/sctp`: Linux SCTP one-to-one stream socket transport for
   `ServerBootstrap` and `Dialer`; non-Linux platforms and completion pollers
-  return explicit unsupported errors.
+  return explicit unsupported errors. Runtime validation checks platform,
+  address, config, and boss/worker/client poller model before opening SCTP
+  sockets.
 - `transport/local`: in-process local transport with paired client/server child
   `Channel` pipelines, Bootstrap/Dialer integration, ChannelOption/Attribute
   application, ByteBuf ownership transfer, read-complete events, close
@@ -382,6 +384,10 @@ Current validation boundary:
   AF_PACKET requires the same class of privilege, while BPF/Npcap runtime
   validation requires a native host with the BPF device or Npcap runtime
   installed and an explicit interface selected.
+- SCTP runtime validation is Linux-only and readiness-poller-only. Client
+  addresses must use a non-zero numeric port, and completion pollers fail before
+  socket creation; actual bind/connect success still depends on kernel SCTP
+  module availability.
 - `mmap` allocator refuses to close while buffers are still in use. This is
   intentional: unmapping memory that an active `ByteBuf` still references is
   unsafe.

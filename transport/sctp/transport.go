@@ -36,12 +36,14 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 	if cfg.ChildInitializer == nil {
 		return nil, bootstrap.ErrMissingChildHandler
 	}
-	loops := cfg.BossGroup.Loops()
-	if len(loops) == 0 {
-		return nil, transport.ErrNoEventLoop
-	}
-	if loops[0].Poller().Model() == transport.PollerCompletion {
-		return nil, ErrUnsupportedCompletion
+	if err := ValidateRuntime(RuntimeCheck{
+		Role:        EndpointRoleServer,
+		Address:     cfg.Address,
+		Config:      t.cfg,
+		BossGroup:   cfg.BossGroup,
+		WorkerGroup: cfg.WorkerGroup,
+	}); err != nil {
+		return nil, err
 	}
 	base := t.cfg.socketOptions()
 	listenOptions := base.withListenOptions(cfg.Options)
@@ -84,6 +86,14 @@ func (t *Transport) Dial(ctx context.Context, cfg bootstrap.ClientConfig) (chann
 	if cfg.Initializer == nil {
 		cfg.Initializer = func(channel.Channel) error { return nil }
 	}
+	if err := ValidateRuntime(RuntimeCheck{
+		Role:    EndpointRoleClient,
+		Address: cfg.Address,
+		Config:  t.cfg,
+		Group:   cfg.Group,
+	}); err != nil {
+		return nil, err
+	}
 	opts := t.cfg.socketOptions().withClientOptions(cfg.Options)
 	fd, err := dialSCTP(cfg.Address, opts)
 	if err != nil {
@@ -93,10 +103,6 @@ func (t *Transport) Dial(ctx context.Context, cfg bootstrap.ClientConfig) (chann
 	if err != nil {
 		_ = closeFD(fd)
 		return nil, err
-	}
-	if loop.Poller().Model() == transport.PollerCompletion {
-		_ = closeFD(fd)
-		return nil, ErrUnsupportedCompletion
 	}
 	alloc, err := t.clientAllocator(loop)
 	if err != nil {

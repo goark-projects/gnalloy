@@ -4,6 +4,7 @@ import "errors"
 
 var (
 	ErrInvalidAddress        = errors.New("gnalloy/transport/sctp: invalid sctp address")
+	ErrInvalidConfig         = errors.New("gnalloy/transport/sctp: invalid sctp config")
 	ErrConnectTimeout        = errors.New("gnalloy/transport/sctp: connect timeout")
 	ErrServerClosed          = errors.New("gnalloy/transport/sctp: server closed")
 	ErrCloseActiveTimeout    = errors.New("gnalloy/transport/sctp: timeout closing active child channel")
