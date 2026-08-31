@@ -97,6 +97,7 @@ func (c *fakeDoQConnection) HandshakeComplete() <-chan struct{} {
 	return done
 }
 func (c *fakeDoQConnection) ConnectionState() rfc9000.State { return rfc9000.State{} }
+func (c *fakeDoQConnection) Stats() rfc9000.ConnectionStats { return rfc9000.ConnectionStats{} }
 func (c *fakeDoQConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {
 	return c.stream, nil
 }

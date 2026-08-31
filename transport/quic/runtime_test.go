@@ -217,6 +217,49 @@ func TestRuntimeRecordSentPacketTracksLossAndCongestionTogether(t *testing.T) {
 	}
 }
 
+func TestRuntimeStatsSnapshotsConnectionState(t *testing.T) {
+	conn := &Connection{
+		Remote: quicUDPAddr,
+		State:  ConnectionStateActive,
+	}
+	runtime, err := NewRuntime(conn, RuntimeConfig{
+		Congestion: CongestionConfig{MaxDatagramSize: 100, InitialWindow: 300, MinimumWindow: 100},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.RecordSentPacket(SentPacket{
+		Space:        PacketNumberSpaceApplication,
+		Number:       1,
+		Bytes:        120,
+		AckEliciting: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data := quicTestBuf("abc")
+	defer data.Release()
+	if _, err := runtime.Streams.Receive(StreamFrame{StreamID: 7, Data: data}); err != nil {
+		t.Fatal(err)
+	}
+
+	stats := runtime.Stats()
+	if stats.State != ConnectionStateActive {
+		t.Fatalf("state=%v", stats.State)
+	}
+	if stats.CongestionWindow != 300 || stats.CongestionInFlight != 120 {
+		t.Fatalf("congestion stats=%+v", stats)
+	}
+	if stats.ActiveStreams != 1 {
+		t.Fatalf("active streams=%d", stats.ActiveStreams)
+	}
+	if stats.InFlightPacketsBySpace[PacketNumberSpaceApplication] != 1 {
+		t.Fatalf("packet stats=%+v", stats.InFlightPacketsBySpace)
+	}
+	if stats.ActivePath.String() != quicUDPAddr.String() {
+		t.Fatalf("active path=%s", stats.ActivePath)
+	}
+}
+
 func TestRuntimeHandlerAppliesFrameEventsAndDropsDuplicatePackets(t *testing.T) {
 	conn := &Connection{Remote: quicUDPAddr}
 	collector := &quicCaptureInbound{}

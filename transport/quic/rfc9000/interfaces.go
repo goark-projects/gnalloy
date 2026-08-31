@@ -71,6 +71,8 @@ type Connection interface {
 	HandshakeComplete() <-chan struct{}
 	// ConnectionState 返回握手、版本和扩展能力状态快照。
 	ConnectionState() State
+	// Stats 返回连接级 RTT、包和字节计数快照。
+	Stats() ConnectionStats
 	// OpenStreamSync 打开双向 stream；无可用额度时阻塞到 ctx 结束或额度恢复。
 	OpenStreamSync(ctx context.Context) (Stream, error)
 	// AcceptStream 接受对端打开的双向 stream。

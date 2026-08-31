@@ -230,6 +230,10 @@ func (c *fakeConnection) ConnectionState() rfc9000.State {
 	return rfc9000.State{TLS: tls.ConnectionState{Version: c.tlsVersion, NegotiatedProtocol: c.alpn}}
 }
 
+func (c *fakeConnection) Stats() rfc9000.ConnectionStats {
+	return rfc9000.ConnectionStats{}
+}
+
 func (c *fakeConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {
 	return c.openedBidi, nil
 }

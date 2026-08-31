@@ -74,6 +74,8 @@ type Config struct {
 	ClientTokenStoreTokensPerOrigin int
 	// EnableWebTransport 启用 WebTransport over HTTP/3 所需的 QUIC datagram 和 reset 扩展。
 	EnableWebTransport bool
+	// QLog 为每条连接打开 qlog trace；默认关闭，避免热路径额外开销。
+	QLog QLogConfig
 }
 
 type normalizedConfig struct {
@@ -284,5 +286,6 @@ func toNativeConfig(cfg Config, versions []nativequic.Version) *nativequic.Confi
 		EnableStreamResetPartialDelivery: cfg.EnableStreamResetPartialDelivery,
 		Allow0RTT:                        cfg.Enable0RTT,
 		TokenStore:                       cfg.ClientTokenStore,
+		Tracer:                           newNativeTracer(cfg.QLog),
 	}
 }

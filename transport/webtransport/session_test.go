@@ -236,6 +236,10 @@ func (c *fakeConnection) ConnectionState() rfc9000.State {
 	return c.state
 }
 
+func (c *fakeConnection) Stats() rfc9000.ConnectionStats {
+	return rfc9000.ConnectionStats{}
+}
+
 func (c *fakeConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {
 	if c.openBidiNext >= len(c.openBidi) {
 		return nil, io.EOF

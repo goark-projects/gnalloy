@@ -103,6 +103,7 @@ func (c *fakeConnection) HandshakeComplete() <-chan struct{} {
 	return done
 }
 func (c *fakeConnection) ConnectionState() rfc9000.State { return rfc9000.State{} }
+func (c *fakeConnection) Stats() rfc9000.ConnectionStats { return rfc9000.ConnectionStats{} }
 func (c *fakeConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {
 	return c.stream, nil
 }

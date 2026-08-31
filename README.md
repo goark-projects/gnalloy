@@ -156,11 +156,12 @@ blocks:
 - `transport/quic`: QUIC packet/runtime engine over UDP, including packet
   encode/decode, connection-ID routing, frame dispatch, ACK range tracking,
   packet-threshold loss detection, Reno-style congestion window, stream
-  flow-control state, and path validation/migration state.
+  flow-control state, path validation/migration state, and runtime stats snapshots.
 - `transport/quic/rfc9000`: RFC 9000 QUIC v1 connection adapter backed by a
   mature TLS 1.3 packet-protection stack, exposing bidirectional streams,
   unidirectional streams for HTTP/3 control/QPACK integration, datagrams,
-  connection state, localhost interop tests, and opt-in external interop tests.
+  connection state/stats, qlog writer factory, provider capability metadata,
+  localhost interop tests, and opt-in external interop tests.
 - `transport/quic/application`: reusable QUIC stream/datagram application
   exchangers, including length-prefixed stream request/response framing and
   datagram response matching for protocols such as DNS-over-QUIC.

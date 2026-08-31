@@ -48,6 +48,13 @@ func (c *quicConnection) ConnectionState() State {
 	return stateFromNative(c.inner.ConnectionState())
 }
 
+func (c *quicConnection) Stats() ConnectionStats {
+	if c == nil || c.inner == nil {
+		return ConnectionStats{}
+	}
+	return statsFromNative(c.inner.ConnectionStats())
+}
+
 func (c *quicConnection) OpenStreamSync(ctx context.Context) (Stream, error) {
 	if c == nil || c.inner == nil {
 		return nil, ErrClosed
