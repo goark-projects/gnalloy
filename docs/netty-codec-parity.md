@@ -47,7 +47,7 @@
 | `StringEncoder` | `codec.StringEncoder` | done | 使用只读 string view 写入 `ByteBuf`。 |
 | `Base64Encoder` | `codec.Base64Encoder` | done | 支持标准和 URL dialect。 |
 | `Base64Decoder` | `codec.Base64Decoder` | done | 解码失败走 `ExceptionCaught`。 |
-| `JdkZlibEncoder/JdkZlibDecoder` | `codec/compression` | done | 支持 gzip/zlib，解码器提供最大解压大小限制。 |
+| `JdkZlibEncoder/JdkZlibDecoder`、brotli/snappy/lz4 compression codecs | `codec/compression`、`codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4` | done | 根包支持标准库 gzip/zlib；扩展子包支持 Brotli、Snappy stream 和 LZ4 stream，解码器提供最大解压大小限制。 |
 | `ByteBufUtil` | `buffer` 工具函数 | done | 覆盖 hex dump、equals、compare、index 等基础能力。 |
 
 ## 协议 codec
@@ -85,7 +85,7 @@
 
 | Netty 模块 | 状态 | 原因 |
 | --- | --- | --- |
-| compression (`brotli`, `snappy`, `lz4`) | defer | 涉及外部算法依赖，应拆成独立扩展包。 |
+| compression (`brotli`, `snappy`, `lz4`) | done | 已拆到 `codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4` 子包，避免根包直接绑定外部算法依赖。 |
 | serialization/marshalling | skip | Go 生态不应在核心网络层绑定对象序列化框架。 |
 
 ## 热路径约束

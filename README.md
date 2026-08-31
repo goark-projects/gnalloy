@@ -33,7 +33,8 @@ blocks:
   fixed-length, matching outbound frame encoders, string, and byte-slice
   codecs.
 - `codec/compression`: gzip and zlib ByteBuf encoders/decoders backed by the
-  Go standard library, with explicit decoded-size limits.
+  Go standard library, plus isolated brotli, snappy, and lz4 extension
+  subpackages with explicit decoded-size limits.
 - `codec/dns`, `codec/http1`, `codec/http1/cookie`,
   `codec/http1/multipart`, `codec/http2`, `codec/http3`, `codec/sctp`,
   `codec/protobuf`, `codec/mqtt`, `codec/redis`, `codec/websocket`, and

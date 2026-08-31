@@ -3,6 +3,9 @@ module goark.dev/gnalloy
 go 1.25.0
 
 require (
+	github.com/andybalholm/brotli v1.2.3
+	github.com/golang/snappy v1.0.0
+	github.com/pierrec/lz4/v4 v4.1.29
 	github.com/quic-go/qpack v0.6.0
 	github.com/quic-go/quic-go v0.61.0
 	go.opentelemetry.io/otel v1.46.0
