@@ -11,13 +11,13 @@ func TestLookupHotPathSuiteBuildsStableBenchdiffInputs(t *testing.T) {
 		t.Fatal("missing hotpath suite")
 	}
 	packages := suite.Packages()
-	for _, want := range []string{"./buffer", "./channel", "./codec", "./transport/quic"} {
+	for _, want := range []string{"./buffer", "./channel", "./codec", "./codec/http3"} {
 		if !contains(packages, want) {
 			t.Fatalf("packages=%v, want %s", packages, want)
 		}
 	}
 	bench := suite.BenchmarkRegexp()
-	for _, want := range []string{"BenchmarkPooledAllocatorAcquireRelease", "BenchmarkPipelineInboundNoop", "BenchmarkFrameScanner", "BenchmarkHeaderDecoderFragmentedBlock"} {
+	for _, want := range []string{"BenchmarkPooledAllocatorAcquireRelease", "BenchmarkPipelineInboundNoop", "BenchmarkHeaderDecoderFragmentedBlock"} {
 		if !strings.Contains(bench, want) {
 			t.Fatalf("bench=%s, want %s", bench, want)
 		}

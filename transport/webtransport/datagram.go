@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	quicwire "goark.dev/gnalloy/transport/quic"
 	"goark.dev/gnalloy/transport/quic/rfc9000"
 )
 
@@ -19,7 +18,7 @@ type Datagram struct {
 }
 
 func encodeDatagram(quarterStreamID uint64, payload []byte) ([]byte, error) {
-	out, err := quicwire.AppendVarInt(nil, quarterStreamID)
+	out, err := appendQUICVarInt(nil, quarterStreamID)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +27,7 @@ func encodeDatagram(quarterStreamID uint64, payload []byte) ([]byte, error) {
 }
 
 func decodeDatagram(payload []byte) (Datagram, error) {
-	quarter, n, err := quicwire.ParseVarInt(payload)
+	quarter, n, err := parseQUICVarInt(payload)
 	if err != nil {
 		return Datagram{}, fmt.Errorf("%w: %v", ErrInvalidDatagram, err)
 	}

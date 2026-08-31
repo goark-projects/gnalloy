@@ -4,15 +4,14 @@ import (
 	"io"
 
 	codechttp3 "goark.dev/gnalloy/codec/http3"
-	quicwire "goark.dev/gnalloy/transport/quic"
 )
 
 func writeBidirectionalPrefix(writer io.Writer, sessionID uint64) error {
-	prefix, err := quicwire.AppendVarInt(nil, uint64(codechttp3.FrameWTStream))
+	prefix, err := appendQUICVarInt(nil, uint64(codechttp3.FrameWTStream))
 	if err != nil {
 		return err
 	}
-	prefix, err = quicwire.AppendVarInt(prefix, sessionID)
+	prefix, err = appendQUICVarInt(prefix, sessionID)
 	if err != nil {
 		return err
 	}
@@ -20,11 +19,11 @@ func writeBidirectionalPrefix(writer io.Writer, sessionID uint64) error {
 }
 
 func writeUnidirectionalPrefix(writer io.Writer, sessionID uint64) error {
-	prefix, err := quicwire.AppendVarInt(nil, uint64(codechttp3.StreamTypeWebTransport))
+	prefix, err := appendQUICVarInt(nil, uint64(codechttp3.StreamTypeWebTransport))
 	if err != nil {
 		return err
 	}
-	prefix, err = quicwire.AppendVarInt(prefix, sessionID)
+	prefix, err = appendQUICVarInt(prefix, sessionID)
 	if err != nil {
 		return err
 	}
@@ -72,7 +71,7 @@ func readVarIntFrom(reader io.Reader) (uint64, error) {
 			return 0, err
 		}
 	}
-	value, _, err := quicwire.ParseVarInt(buf[:size])
+	value, _, err := parseQUICVarInt(buf[:size])
 	return value, err
 }
 

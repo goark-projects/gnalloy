@@ -3,56 +3,35 @@ package quic
 import (
 	"context"
 
-	"goark.dev/gnalloy/bootstrap"
-	"goark.dev/gnalloy/channel"
-	"goark.dev/gnalloy/transport/udp"
+	"goark.dev/gnalloy/transport/quic/rfc9000"
 )
 
-const packetHandlerName = "quicPacketHandler"
-const packetFrameDecoderName = "quicPacketFrameDecoder"
-const runtimeHandlerName = "quicRuntimeHandler"
+type (
+	// Transport 将 quic-go-backed QUIC stream 接入 Gnalloy Bootstrap/Dialer。
+	Transport = rfc9000.Transport
+)
 
-// Transport 是 QUIC 最小包引擎的 ServerBootstrap 入口。
-type Transport struct {
-	cfg Config
-}
-
+// NewTransport 创建 quic-go-backed QUIC stream transport。
 func NewTransport(cfg Config) *Transport {
-	return &Transport{cfg: cfg}
+	return rfc9000.NewTransport(cfg)
 }
 
-func (t *Transport) Bind(ctx context.Context, serverCfg bootstrap.ServerConfig) (bootstrap.Server, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if serverCfg.WorkerGroup == nil {
-		return nil, bootstrap.ErrMissingGroup
-	}
-	if serverCfg.ChildInitializer == nil {
-		return nil, bootstrap.ErrMissingChildHandler
-	}
-	qcfg, err := NormalizeConfig(t.cfg)
-	if err != nil {
-		return nil, err
-	}
-	initializer := serverCfg.ChildInitializer
-	serverCfg.ChildInitializer = func(ch channel.Channel) error {
-		handler := NewPacketHandler(PacketHandlerConfig{
-			HeaderParseOptions: HeaderParseOptions{
-				ShortDestinationIDLength: qcfg.ShortDestinationIDLength,
-			},
-			Router: NewConnectionIDRouter(qcfg.ActiveConnectionIDLimit),
-		})
-		if err := ch.Pipeline().AddLast(packetHandlerName, handler); err != nil {
-			return err
-		}
-		if err := ch.Pipeline().AddLast(packetFrameDecoderName, NewPacketFrameDecoder()); err != nil {
-			return err
-		}
-		if err := ch.Pipeline().AddLast(runtimeHandlerName, NewRuntimeHandler(RuntimeHandlerConfig{})); err != nil {
-			return err
-		}
-		return initializer(ch)
-	}
-	return udp.NewTransport(qcfg.UDP).Bind(ctx, serverCfg)
+// ListenAddr 在 addr 上创建 RFC9000 QUIC v1 监听器。
+func ListenAddr(addr string, cfg Config) (Listener, error) {
+	return rfc9000.ListenAddr(addr, cfg)
+}
+
+// ListenAddrEarly 在 addr 上创建允许 0-RTT 的 RFC9000 QUIC v1 监听器。
+func ListenAddrEarly(addr string, cfg Config) (EarlyListener, error) {
+	return rfc9000.ListenAddrEarly(addr, cfg)
+}
+
+// DialAddr 使用系统 UDP socket 连接远端 RFC9000 QUIC v1 服务端。
+func DialAddr(ctx context.Context, addr string, cfg Config) (Connection, error) {
+	return rfc9000.DialAddr(ctx, addr, cfg)
+}
+
+// DialAddrEarly 使用系统 UDP socket 连接远端 RFC9000 QUIC v1 服务端，并尝试 0-RTT。
+func DialAddrEarly(ctx context.Context, addr string, cfg Config) (Connection, error) {
+	return rfc9000.DialAddrEarly(ctx, addr, cfg)
 }

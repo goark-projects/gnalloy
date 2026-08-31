@@ -1,6 +1,6 @@
 # gnalloy Transport Completion Matrix
 
-本文档记录 transport 层 readiness/completion 后端的当前事实边界。目标是避免把“可编译”“有包引擎”误写成完整协议栈能力。
+本文档记录 transport 层 readiness/completion 后端的当前事实边界。目标是避免把“可编译”“有包装门面”误写成完整协议栈能力。
 
 ## Backend Model
 
@@ -23,8 +23,7 @@
 | SCTP | Linux `epoll` and `std` when kernel SCTP is available | unsupported | `transport/sctp` exposes one-to-one stream sockets through `ServerBootstrap`/`Dialer`; runtime validation checks platform, numeric address, config, and every boss/worker/client poller before opening SCTP sockets. Non-Linux platforms and completion pollers fail fast with explicit unsupported errors. |
 | local in-VM | in-process | in-process | `transport/local` pairs client and server child `Channel` pipelines without OS fd registration; EventLoop ownership, read-complete events, close propagation, and ByteBuf ownership are covered by unit tests. |
 | L2 frame transport | Linux AF_PACKET native driver; macOS/BSD BPF native driver; Windows Npcap native driver | driver-provided | `transport/l2` exposes `ServerBootstrap`/`Dialer` over injectable `Driver`/`Endpoint` contracts. BPF/Npcap native details live in core under `transport/l2/internal/nativeframe`; Npcap uses runtime DLL loading and no cgo. |
-| QUIC packet/runtime | inherits UDP | inherits UDP | `transport/quic` implements packet/header/frame parsing, DCID routing, frame decoder, default runtime handler, ACK range tracking, packet-threshold loss detection, Reno-style congestion window, stream flow-control state, path validation/migration state, and runtime stats snapshots. |
-| QUIC RFC9000 connection | system UDP socket | system UDP socket | `transport/quic/rfc9000` exposes a complete RFC 9000 QUIC v1 connection adapter backed by TLS 1.3 packet protection, ALPN, 0-RTT opt-in path, bidirectional streams, unidirectional streams, datagrams, WebTransport prerequisites, connection state/stats, qlog writer factory, and provider capability metadata. `transport/quic/provider` and `transport/quic/provider/quicgo` expose the stable provider contract and default quic-go adapter. |
+| QUIC RFC9000 connection | system UDP socket | system UDP socket | `transport/quic` is the Gnalloy facade and `transport/quic/rfc9000` exposes the concrete RFC 9000 QUIC v1 connection adapter backed by quic-go, TLS 1.3 packet protection, ALPN, 0-RTT opt-in path, bidirectional streams, unidirectional streams, datagrams, WebTransport prerequisites, connection state/stats, qlog writer factory, and provider capability metadata. `transport/quic/provider` and `transport/quic/provider/quicgo` expose the stable provider contract and default quic-go adapter. |
 | QUIC application assembly | RFC9000 stream/datagram API | RFC9000 stream/datagram API | `transport/quic/application` provides reusable stream request/response and datagram request/response exchangers for protocols such as DNS-over-QUIC. |
 | HTTP/3 transport binding | RFC9000 stream API | RFC9000 stream API | `transport/http3` maps request, local/remote control, and QPACK streams into gnalloy `Channel` pipelines using `codec/http3` initializers. |
 | WebTransport session binding | RFC9000 stream/datagram API | RFC9000 stream/datagram API | `transport/webtransport` binds an established HTTP/3 CONNECT stream to WebTransport stream channels and HTTP Datagram payload routing. |
@@ -38,7 +37,6 @@
 - local transport validation is a unit-test gate because it intentionally has no native fd, kernel readiness, or completion backend.
 - UDT/RXTX are intentionally excluded from the transport matrix because Netty has removed or stopped maintaining those transports; gnalloy does not keep core adapter packages for them.
 - L2 core integration is validated with an injected fake driver, Linux AF_PACKET cross compilation, BPF/Npcap package tests, and platform matrix metadata. `scripts/verify-privileged.*` opens Linux raw sockets, AF_PACKET endpoints, BPF endpoints, and Npcap endpoints on native hosts when the corresponding interface environment variable is set.
-- QUIC packet/runtime validation covers packet parsing/routing, frame decoder, runtime handler, ACK/loss/congestion, stream state, path state, and runtime stats unit tests.
 - DNS-over-QUIC validation uses `resolver/dns/quic` unit tests for ALPN/default-port behavior and QUIC application length-prefixed framing. External DoQ server tests are an opt-in runtime gate.
 - `scripts/verify-protocol.*` validates protocol assembly packages, dry-runs DoQ and stream/datagram/raw/L2 unified examples, validates the parity benchmark spec, and optionally runs an external DoQ query through `GNALLOY_DOQ_ADDR`.
 - `protocol.Server` provides the server-side counterpart to `protocol.ChannelExchanger`, preserving UDP source addresses, raw IP protocol metadata, and L2 frame metadata through explicit adapters.

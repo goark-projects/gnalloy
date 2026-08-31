@@ -46,12 +46,11 @@ run_fuzz_smoke "dns message" "FuzzDNSParseMessage" "./codec/dns"
 run_fuzz_smoke "redis frame pipeline" "FuzzRedisFramePipeline" "./codec/redis"
 run_fuzz_smoke "http2 frame pipeline" "FuzzHTTP2FramePipeline" "./codec/http2"
 run_fuzz_smoke "http3 frame pipeline" "FuzzHTTP3FramePipeline" "./codec/http3"
-run_fuzz_smoke "quic frame scanner" "FuzzQUICFrameScanner" "./transport/quic"
 
 echo "== benchmarks: hot path allocation guards"
-"$GO_CMD" test ./buffer ./channel/pool ./codec ./codec/http2 ./handler/ipfilter ./handler/pcap ./queue ./timer ./observability ./transport/quic \
+"$GO_CMD" test ./buffer ./channel/pool ./codec ./codec/http2 ./handler/ipfilter ./handler/pcap ./queue ./timer ./observability \
     -run '^$' \
-    -bench 'Benchmark(HeapAllocatorAcquireRelease|PooledAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedPoolGetPut|ChannelPoolMapGet|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|StreamMultiplexerReadData|IPFilterAllowedDatagram|PCAPCaptureByteBuf|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead|PrometheusExporter|QUICRuntimeApplyACK|QUICRuntimeReceiveStream)$' \
+    -bench 'Benchmark(HeapAllocatorAcquireRelease|PooledAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedPoolGetPut|ChannelPoolMapGet|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|StreamMultiplexerReadData|IPFilterAllowedDatagram|PCAPCaptureByteBuf|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead|PrometheusExporter)$' \
     -benchmem \
     -benchtime "$BENCHTIME" \
     -count="$COUNT"

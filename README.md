@@ -152,10 +152,9 @@ blocks:
 - `transport/poller/kqueue`: macOS/BSD kqueue readiness backend.
 - `transport/poller/iocp`: Windows IOCP completion backend with
   AcceptEx/WSARecv/WSASend close completion support.
-- `transport/quic`: QUIC packet/runtime engine over UDP, including packet
-  encode/decode, connection-ID routing, frame dispatch, ACK range tracking,
-  packet-threshold loss detection, Reno-style congestion window, stream
-  flow-control state, path validation/migration state, and runtime stats snapshots.
+- `transport/quic`: Gnalloy QUIC 门面包，公开 Bootstrap/Dialer、连接、stream、
+  datagram、0-RTT、qlog 和 provider capability API；底层协议栈全部委托给
+  `quic-go`，不保留自研 packet/frame/runtime 实现。
 - `transport/quic/rfc9000`: RFC 9000 QUIC v1 connection adapter backed by a
   mature TLS 1.3 packet-protection stack, exposing bidirectional streams,
   unidirectional streams for HTTP/3 control/QPACK integration, datagrams,

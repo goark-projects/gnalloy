@@ -37,29 +37,6 @@
       "tags": ["local", "parity-harness", "tcp", "echo"]
     },
     {
-      "name": "gnalloy quic runtime",
-      "framework": "gnalloy",
-      "protocol": "quic-runtime",
-      "backend": "pure-go",
-      "payload": "${PAYLOAD}B",
-      "workDir": "${REPO_ROOT}",
-      "command": [
-        "${GO}",
-        "test",
-        "-run",
-        "^$",
-        "-bench",
-        "BenchmarkQUICRuntimeApplyACK|BenchmarkQUICRuntimeReceiveStream",
-        "-benchmem",
-        "./transport/quic"
-      ],
-      "env": {
-        "GOWORK": "off"
-      },
-      "timeout": "2m",
-      "tags": ["local", "quic", "runtime"]
-    },
-    {
       "name": "gnalloy udp endpoint backpressure",
       "framework": "gnalloy",
       "protocol": "udp-endpoint",
@@ -104,29 +81,6 @@
       },
       "timeout": "2m",
       "tags": ["local", "raw", "endpoint"]
-    },
-    {
-      "name": "gnalloy quic frame codec",
-      "framework": "gnalloy",
-      "protocol": "quic-frame",
-      "backend": "pure-go",
-      "payload": "${PAYLOAD}B",
-      "workDir": "${REPO_ROOT}",
-      "command": [
-        "${GO}",
-        "test",
-        "-run",
-        "^$",
-        "-bench",
-        "Benchmark(FrameScanner|EncodeFrames)$",
-        "-benchmem",
-        "./transport/quic"
-      ],
-      "env": {
-        "GOWORK": "off"
-      },
-      "timeout": "2m",
-      "tags": ["local", "quic", "codec"]
     },
     {
       "name": "gnalloy l2 driver runtime",

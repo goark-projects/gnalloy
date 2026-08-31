@@ -10,7 +10,7 @@ func TestResolveBenchmarkSelectionUsesSuiteDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsPackage(packages, "./buffer") || !containsPackage(packages, "./transport/quic") {
+	if !containsPackage(packages, "./buffer") || !containsPackage(packages, "./codec/http3") {
 		t.Fatalf("packages=%v, want suite packages", packages)
 	}
 	if !strings.Contains(bench, "BenchmarkPooledAllocatorAcquireRelease") {

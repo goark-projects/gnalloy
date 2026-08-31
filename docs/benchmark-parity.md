@@ -9,7 +9,7 @@
 | --- | --- |
 | 平台 | Linux、macOS、Windows 分开记录，不允许跨平台混写结论。 |
 | 后端 | `epoll`、`kqueue`、`io_uring`、`iocp`、`std` 分别记录。 |
-| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、HTTP/3 stream、UDP echo、raw IP、L2 frame、QUIC packet/runtime、QUIC stream/datagram、DNS-over-QUIC。 |
+| 协议 | TCP echo、length-field、HTTP/1、HTTP/2 stream、HTTP/3 stream、UDP echo、raw IP、L2 frame、QUIC stream/datagram、DNS-over-QUIC。 |
 | 负载 | 小包、MTU 附近包、大包、长连接、短连接、连接 churn。 |
 | 指标 | throughput、P50/P95/P99/P999 latency、allocs/op、B/op、RSS、CPU、错误率。 |
 | 回压 | 高/低水位线、慢消费者、写队列增长、flush 合并策略。 |
@@ -18,7 +18,7 @@
 ## gnalloy 本地入口
 
 ```sh
-BENCHTIME=1s COUNT=3 GROUPS=buffer,codec,quic,observability ./scripts/verify-bench.sh
+BENCHTIME=1s COUNT=3 GROUPS=buffer,codec,observability ./scripts/verify-bench.sh
 BACKENDS=epoll,iouring WORKERS=4 MMAP=1 GROUPS=tcp ./scripts/verify-bench.sh
 ```
 
@@ -379,7 +379,7 @@ Go benchmark 兼容的 `Benchmark* ns/op` 行，分别用于报告吞吐/错误�
 - `codec/http3` 提供 frame、QPACK、control stream 顺序校验、QUIC 单向 stream type 前缀、WebTransport SETTINGS 和 extended CONNECT helper。
 - `transport/http3` 已提供 HTTP/3 request/control/QPACK stream 到 gnalloy `Channel` pipeline 的 transport binding。
 - `transport/webtransport` 已提供 WebTransport session、stream prefix、HTTP Datagram Quarter Stream ID 映射和 capability 校验。
-- `transport/quic.Runtime` 提供 ACK、loss、congestion、stream、path 状态和默认 runtime pipeline；`transport/quic/rfc9000` 提供 RFC9000/TLS1.3 互通连接栈。
+- `transport/quic` 是 Gnalloy QUIC 门面；`transport/quic/rfc9000` 通过 quic-go 提供 RFC9000/TLS1.3 互通连接栈，不保留自研 ACK/loss/congestion/runtime pipeline。
 - `transport/quic/application` 提供 QUIC stream/datagram 应用协议装配；`resolver/dns/quic` 以 DNS-over-QUIC 覆盖真实应用协议用例。
 - `transport/l2` 已提供可注入 Driver 的二层帧 transport 抽象；Linux AF_PACKET、macOS/BSD BPF、Windows Npcap 均在核心库提供 native driver，运行时验证需要本机权限、接口环境变量和对应平台驱动。
 - `scripts/platform-matrix.json` 是跨平台验证事实源；`scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json` 会输出 passed/skipped/failed gate 结果。

@@ -54,8 +54,6 @@ try {
     Invoke-FuzzSmoke "redis frame pipeline" "FuzzRedisFramePipeline" "./codec/redis"
     Invoke-FuzzSmoke "http2 frame pipeline" "FuzzHTTP2FramePipeline" "./codec/http2"
     Invoke-FuzzSmoke "http3 frame pipeline" "FuzzHTTP3FramePipeline" "./codec/http3"
-    Invoke-FuzzSmoke "quic frame scanner" "FuzzQUICFrameScanner" "./transport/quic"
-
     Write-Host "== benchmarks: hot path allocation guards"
     Invoke-CheckedGo @(
         "test",
@@ -68,9 +66,8 @@ try {
         "./queue",
         "./timer",
         "./observability",
-        "./transport/quic",
         "-run", "^$",
-        "-bench", "Benchmark(HeapAllocatorAcquireRelease|PooledAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedPoolGetPut|ChannelPoolMapGet|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|StreamMultiplexerReadData|IPFilterAllowedDatagram|PCAPCaptureByteBuf|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead|PrometheusExporter|QUICRuntimeApplyACK|QUICRuntimeReceiveStream)$",
+        "-bench", "Benchmark(HeapAllocatorAcquireRelease|PooledAllocatorAcquireRelease|MmapAllocatorAcquireRelease|FixedPoolGetPut|ChannelPoolMapGet|FixedLengthFrameDecoder|LineBasedFrameDecoder|DelimiterBasedFrameDecoder|ByteToMessageListDecoder|StreamMultiplexerReadData|IPFilterAllowedDatagram|PCAPCaptureByteBuf|MPSCOfferPoll|WheelScheduleAdvance|AtomicChannelRecorderRead|PrometheusExporter)$",
         "-benchmem",
         "-benchtime", $Benchtime,
         "-count=$Count"

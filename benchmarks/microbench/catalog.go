@@ -24,7 +24,7 @@ type Suite struct {
 var catalog = []Suite{
 	{
 		Name:        "hotpath",
-		Description: "ByteBuf、Pipeline、codec、timer、queue、QUIC runtime 和观测热路径。",
+		Description: "ByteBuf、Pipeline、codec、timer、queue 和观测热路径。",
 		Scenarios: []Scenario{
 			{Name: "buffer", Package: "./buffer", Benchmarks: []string{
 				"BenchmarkHeapAllocatorAcquireRelease",
@@ -79,12 +79,6 @@ var catalog = []Suite{
 			}, Tags: []string{"websocket"}},
 			{Name: "tls", Package: "./handler/tls", Benchmarks: []string{"BenchmarkCopyReadableBytesComposite"}, Tags: []string{"tls"}},
 			{Name: "runtime", Package: "./transport", Benchmarks: []string{"BenchmarkEventLoopSubmitBurst"}, Tags: []string{"eventloop"}},
-			{Name: "quic-runtime", Package: "./transport/quic", Benchmarks: []string{
-				"BenchmarkFrameScanner",
-				"BenchmarkEncodeFrames",
-				"BenchmarkQUICRuntimeApplyACK",
-				"BenchmarkQUICRuntimeReceiveStream",
-			}, Tags: []string{"quic"}},
 			{Name: "queue", Package: "./queue", Benchmarks: []string{"BenchmarkMPSCOfferPoll"}, Tags: []string{"queue"}},
 			{Name: "timer", Package: "./timer", Benchmarks: []string{"BenchmarkWheelScheduleAdvance"}, Tags: []string{"timer"}},
 			{Name: "observability", Package: "./observability", Benchmarks: []string{

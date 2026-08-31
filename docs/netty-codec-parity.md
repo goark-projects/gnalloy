@@ -103,4 +103,4 @@
 | 基础帧 | `FuzzLengthFieldBasedFrameDecoder`、`FuzzLineBasedFrameDecoder`、`FuzzDelimiterBasedFrameDecoder` | 覆盖半包、超长帧和分隔符边界。 |
 | HTTP/WebSocket/MQTT | `FuzzHTTP1RequestDecoder`、`FuzzWebSocketFrameDecoder`、`FuzzMQTTFramePipeline` | 覆盖常用应用层协议 pipeline。 |
 | DNS/Redis/HTTP2/HTTP3 | `FuzzDNSParseMessage`、`FuzzRedisFramePipeline`、`FuzzHTTP2FramePipeline`、`FuzzHTTP3FramePipeline` | 覆盖 P2 新增的 Netty 常用协议 smoke。 |
-| QUIC | `FuzzQUICParseHeaderBytes`、`FuzzQUICFrameScanner`、`TestListenDialAddrEchoOverRFC9000QUIC` | 覆盖 QUIC packet/header/frame 边界，以及 RFC9000/TLS1.3 本机互通连接栈。 |
+| QUIC | `TestListenDialAddrEchoOverRFC9000QUIC`、`TestFacadeExposesQUICGoBackedTransport` | 覆盖 quic-go-backed RFC9000/TLS1.3 本机互通连接栈和 Gnalloy QUIC 门面边界。 |
