@@ -71,9 +71,8 @@ blocks:
   ClientHello inspection/provider-based config selection, Optional TLS
   detection, TLS 1.0-1.2 cipher-suite catalog/name parsing/configuration,
   stapled OCSP response policy/events, standard-library provider package,
-  handler-level provider capability validation, and separate native QUIC
-  packet-protection capability evaluation are handled as explicit pipeline
-  controls.
+  handler-level provider capability validation, and separate QUIC
+  packet-protection capability evaluation are handled as explicit pipeline controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
 - `handler/cors`: HTTP/1 CORS Pipeline handler with request Origin matching,
@@ -152,17 +151,10 @@ blocks:
 - `transport/poller/kqueue`: macOS/BSD kqueue readiness backend.
 - `transport/poller/iocp`: Windows IOCP completion backend with
   AcceptEx/WSARecv/WSASend close completion support.
-- `transport/quic`: Gnalloy QUIC 门面包，公开 Bootstrap/Dialer、连接、stream、
-  datagram、0-RTT、qlog 和 provider capability API；底层协议栈全部委托给
-  `quic-go`，不保留自研 packet/frame/runtime 实现。
-- `transport/quic/rfc9000`: RFC 9000 QUIC v1 connection adapter backed by a
-  mature TLS 1.3 packet-protection stack, exposing bidirectional streams,
-  unidirectional streams for HTTP/3 control/QPACK integration, datagrams,
-  connection state/stats, qlog writer factory, provider capability metadata,
-  localhost interop tests, and opt-in external interop tests.
-- `transport/quic/provider` and `transport/quic/provider/quicgo`: stable QUIC
-  provider contracts, startup capability inspection, and the default quic-go
-  RFC9000 provider adapter.
+- `transport/quic`: Gnalloy QUIC 生产包，公开 Bootstrap/Dialer、连接、stream、
+  datagram、0-RTT、qlog 和能力快照 API；底层 RFC 9000 QUIC v1、TLS 1.3
+  packet protection、重传和拥塞控制全部委托给 `quic-go`，不保留自研
+  packet/frame/runtime 实现，也不再暴露额外 provider 子包。
 - `transport/quic/application`: reusable QUIC stream/datagram application
   exchangers, including length-prefixed stream request/response framing and
   datagram response matching for protocols such as DNS-over-QUIC.

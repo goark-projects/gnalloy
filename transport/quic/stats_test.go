@@ -1,4 +1,4 @@
-package rfc9000
+package quic
 
 import (
 	"bytes"
@@ -117,8 +117,8 @@ func TestQLogFactoryFuncNilSkipsTrace(t *testing.T) {
 
 func TestDetectNativeSupportReportsRFC9000Boundary(t *testing.T) {
 	support := DetectNativeSupport()
-	if support.Provider != NativeProviderQUICGo {
-		t.Fatalf("provider=%s", support.Provider)
+	if support.Engine != NativeEngineQUICGo {
+		t.Fatalf("engine=%s", support.Engine)
 	}
 	if !support.RFC9000 || !support.TLS13Only || !support.ConnectionStats || !support.QLog {
 		t.Fatalf("support=%+v", support)

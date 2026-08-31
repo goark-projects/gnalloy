@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	h3transport "goark.dev/gnalloy/transport/http3"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 func prepareClients(ctx context.Context, cfg Config) ([]client, error) {
@@ -35,9 +35,9 @@ func prepareClients(ctx context.Context, cfg Config) ([]client, error) {
 	return clients, nil
 }
 
-func dial(ctx context.Context, cfg Config) (rfc9000.Connection, error) {
+func dial(ctx context.Context, cfg Config) (quic.Connection, error) {
 	tlsCfg := clientTLSConfig(cfg)
-	return rfc9000.DialAddr(ctx, cfg.Addr, rfc9000.Config{
+	return quic.DialAddr(ctx, cfg.Addr, quic.Config{
 		TLS:        tlsCfg,
 		NextProtos: []string{alpnHTTP3},
 	})

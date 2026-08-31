@@ -9,7 +9,7 @@ import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	"goark.dev/gnalloy/transport"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 // StreamKind 描述 WebTransport stream 的方向。
@@ -26,17 +26,17 @@ const (
 
 type streamReader interface {
 	io.Reader
-	CancelRead(code rfc9000.StreamErrorCode)
+	CancelRead(code quic.StreamErrorCode)
 }
 
 type streamWriter interface {
 	io.Writer
 	io.Closer
-	CancelWrite(code rfc9000.StreamErrorCode)
+	CancelWrite(code quic.StreamErrorCode)
 }
 
 type streamIdentifier interface {
-	ID() rfc9000.StreamID
+	ID() quic.StreamID
 }
 
 type streamConfig struct {
@@ -52,7 +52,7 @@ type streamConfig struct {
 // Stream 是绑定到单条 WebTransport stream 的 gnalloy Channel。
 type Stream struct {
 	kind           StreamKind
-	streamID       rfc9000.StreamID
+	streamID       quic.StreamID
 	sessionID      uint64
 	ch             *channel.LocalChannel
 	reader         streamReader
@@ -96,7 +96,7 @@ func (s *Stream) Kind() StreamKind {
 }
 
 // StreamID 返回底层 QUIC stream ID。
-func (s *Stream) StreamID() rfc9000.StreamID {
+func (s *Stream) StreamID() quic.StreamID {
 	if s == nil {
 		return -1
 	}
@@ -196,7 +196,7 @@ func (s *Stream) fireInactiveOnce(cancelRead bool) {
 	s.ch.Pipeline().FireChannelUnregistered()
 }
 
-func streamIDOf(reader streamReader, writer streamWriter) rfc9000.StreamID {
+func streamIDOf(reader streamReader, writer streamWriter) quic.StreamID {
 	if reader != nil {
 		if id, ok := reader.(streamIdentifier); ok {
 			return id.ID()

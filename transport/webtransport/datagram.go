@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 // Datagram 是已归属到 WebTransport session 的 HTTP Datagram。
@@ -34,7 +34,7 @@ func decodeDatagram(payload []byte) (Datagram, error) {
 	return Datagram{QuarterStreamID: quarter, Payload: payload[n:]}, nil
 }
 
-func sessionIDToQuarterStreamID(streamID rfc9000.StreamID) (uint64, error) {
+func sessionIDToQuarterStreamID(streamID quic.StreamID) (uint64, error) {
 	if streamID < 0 {
 		return 0, ErrInvalidSessionID
 	}

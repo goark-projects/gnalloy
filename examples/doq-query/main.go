@@ -13,7 +13,7 @@ import (
 
 	dnscodec "goark.dev/gnalloy/codec/dns"
 	doq "goark.dev/gnalloy/resolver/dns/quic"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 func main() {
@@ -63,7 +63,7 @@ func run(args []string, stdout io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	reply, err := doq.Exchanger{
-		Config:  rfc9000.Config{TLS: tlsConfig},
+		Config:  quic.Config{TLS: tlsConfig},
 		Timeout: *timeout,
 	}.Exchange(ctx, *server, dnscodec.NewQuery(1, *name, qtype))
 	if err != nil {

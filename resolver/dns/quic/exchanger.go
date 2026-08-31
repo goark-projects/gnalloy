@@ -8,8 +8,8 @@ import (
 
 	dnscodec "goark.dev/gnalloy/codec/dns"
 	resolverdns "goark.dev/gnalloy/resolver/dns"
+	"goark.dev/gnalloy/transport/quic"
 	"goark.dev/gnalloy/transport/quic/application"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
 )
 
 const (
@@ -21,8 +21,8 @@ const (
 
 // Exchanger 使用 DNS-over-QUIC 执行单次 DNS 查询。
 type Exchanger struct {
-	Dialer         rfc9000.Dialer
-	Config         rfc9000.Config
+	Dialer         quic.Dialer
+	Config         quic.Config
 	Timeout        time.Duration
 	MaxMessageSize int
 }
@@ -47,7 +47,7 @@ func (e Exchanger) Exchange(ctx context.Context, server string, query dnscodec.M
 	return dnscodec.ParseMessage(response)
 }
 
-func (e Exchanger) config() rfc9000.Config {
+func (e Exchanger) config() quic.Config {
 	cfg := e.Config
 	if len(cfg.NextProtos) == 0 {
 		cfg.NextProtos = []string{DefaultALPN}

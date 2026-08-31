@@ -1,6 +1,6 @@
 {
   "name": "gnalloy linux http3 parity matrix",
-  "notes": "Linux HTTP/3 over QUIC 对标矩阵。HTTP/3 按 RFC 9114/RFC 9000 约束固定 TLS 1.3 + ALPN h3；Gnalloy 使用 transport/quic/rfc9000 + transport/http3，Netty 使用 epoll + Http3.newQuic*CodecBuilder。gnet/netpoll 没有等价 HTTP/3 协议栈，不纳入本矩阵。",
+  "notes": "Linux HTTP/3 over QUIC 对标矩阵。HTTP/3 按 RFC 9114/RFC 9000 约束固定 TLS 1.3 + ALPN h3；Gnalloy 使用 transport/quic + transport/http3，Netty 使用 epoll + Http3.newQuic*CodecBuilder。gnet/netpoll 没有等价 HTTP/3 协议栈，不纳入本矩阵。",
   "variables": {
     "REPO_ROOT": ".",
     "CONNECTIONS": "64",

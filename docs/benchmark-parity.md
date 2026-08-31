@@ -223,7 +223,7 @@ go run ./examples/parity-bench -strict-external -config benchmarks/parity/http3-
 
 HTTP/3 矩阵按 RFC 9114/RFC 9000 边界固定 TLS 1.3 和 ALPN `h3`，负载模型为
 64 条 QUIC 连接、每连接 5000 个顺序 request stream、每场景 1 次 warmup 和 3 次
-正式采样。Gnalloy 使用 `transport/quic/rfc9000`、`transport/http3` 和
+正式采样。Gnalloy 使用 `transport/quic`、`transport/http3` 和
 `codec/http3`；Netty 使用 `Http3.newQuicServerCodecBuilder`、
 `Http3.newQuicClientCodecBuilder` 和对应平台 DatagramChannel。gnet 与
 CloudWeGo netpoll 当前没有等价完整 HTTP/3 协议栈，HTTP/3 表格中记录为不适用，
@@ -379,7 +379,7 @@ Go benchmark 兼容的 `Benchmark* ns/op` 行，分别用于报告吞吐/错误�
 - `codec/http3` 提供 frame、QPACK、control stream 顺序校验、QUIC 单向 stream type 前缀、WebTransport SETTINGS 和 extended CONNECT helper。
 - `transport/http3` 已提供 HTTP/3 request/control/QPACK stream 到 gnalloy `Channel` pipeline 的 transport binding。
 - `transport/webtransport` 已提供 WebTransport session、stream prefix、HTTP Datagram Quarter Stream ID 映射和 capability 校验。
-- `transport/quic` 是 Gnalloy QUIC 门面；`transport/quic/rfc9000` 通过 quic-go 提供 RFC9000/TLS1.3 互通连接栈，不保留自研 ACK/loss/congestion/runtime pipeline。
+- `transport/quic` 通过 quic-go 提供 RFC9000/TLS1.3 互通连接栈，不保留自研 ACK/loss/congestion/runtime pipeline，也不暴露独立 provider 子包。
 - `transport/quic/application` 提供 QUIC stream/datagram 应用协议装配；`resolver/dns/quic` 以 DNS-over-QUIC 覆盖真实应用协议用例。
 - `transport/l2` 已提供可注入 Driver 的二层帧 transport 抽象；Linux AF_PACKET、macOS/BSD BPF、Windows Npcap 均在核心库提供 native driver，运行时验证需要本机权限、接口环境变量和对应平台驱动。
 - `scripts/platform-matrix.json` 是跨平台验证事实源；`scripts/verify-platform.ps1 -SkipBench -ReportPath platform-report.json` 会输出 passed/skipped/failed gate 结果。

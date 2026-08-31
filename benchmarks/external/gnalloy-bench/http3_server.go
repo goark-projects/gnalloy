@@ -12,12 +12,12 @@ import (
 	"goark.dev/gnalloy/channel"
 	codechttp3 "goark.dev/gnalloy/codec/http3"
 	h3transport "goark.dev/gnalloy/transport/http3"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 type http3Server struct {
 	addr     string
-	listener rfc9000.Listener
+	listener quic.Listener
 	body     []byte
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -32,7 +32,7 @@ func startHTTP3Server(parent context.Context, cfg config) (*http3Server, error) 
 	if err != nil {
 		return nil, err
 	}
-	listener, err := rfc9000.ListenAddr(cfg.Addr, rfc9000.Config{
+	listener, err := quic.ListenAddr(cfg.Addr, quic.Config{
 		TLS:        tlsConfig,
 		NextProtos: []string{http3ALPN(cfg)},
 	})
@@ -77,7 +77,7 @@ func (s *http3Server) accept() {
 	}
 }
 
-func (s *http3Server) serveConn(conn rfc9000.Connection) {
+func (s *http3Server) serveConn(conn quic.Connection) {
 	defer s.wg.Done()
 	defer conn.CloseWithError(0, "benchmark done")
 	session, err := h3transport.NewSession(conn, h3transport.Config{AllowedALPN: []string{http3ALPNValue}})

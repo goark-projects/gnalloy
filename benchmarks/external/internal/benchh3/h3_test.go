@@ -13,7 +13,7 @@ import (
 	"goark.dev/gnalloy/channel"
 	codechttp3 "goark.dev/gnalloy/codec/http3"
 	h3transport "goark.dev/gnalloy/transport/http3"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 func TestRunLoadHTTP3QUIC(t *testing.T) {
@@ -21,7 +21,7 @@ func TestRunLoadHTTP3QUIC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := rfc9000.ListenAddr("127.0.0.1:0", rfc9000.Config{
+	listener, err := quic.ListenAddr("127.0.0.1:0", quic.Config{
 		TLS: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			MinVersion:   tls.VersionTLS13,
@@ -65,7 +65,7 @@ func TestRunLoadHTTP3QUIC(t *testing.T) {
 	<-done
 }
 
-func serveH3(t *testing.T, ctx context.Context, listener rfc9000.Listener, payload int, requests int, clientDone <-chan struct{}) <-chan struct{} {
+func serveH3(t *testing.T, ctx context.Context, listener quic.Listener, payload int, requests int, clientDone <-chan struct{}) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
 	go func() {
@@ -97,7 +97,7 @@ func serveH3(t *testing.T, ctx context.Context, listener rfc9000.Listener, paylo
 	return done
 }
 
-func closeH3TestConnection(ctx context.Context, conn rfc9000.Connection, clientDone <-chan struct{}) {
+func closeH3TestConnection(ctx context.Context, conn quic.Connection, clientDone <-chan struct{}) {
 	select {
 	case <-clientDone:
 	case <-ctx.Done():

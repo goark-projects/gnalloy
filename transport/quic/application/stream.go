@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 // Stream 是应用协议装配使用的 QUIC 双向 stream 最小契约。
-type Stream = rfc9000.Stream
+type Stream = quic.Stream
 
 // StreamCodec 定义 QUIC stream 上的 request-response 编解码。
 type StreamCodec interface {
@@ -18,8 +18,8 @@ type StreamCodec interface {
 
 // StreamExchanger 在每次请求中建立连接、打开双向 stream、写请求并读取响应。
 type StreamExchanger struct {
-	Dialer  rfc9000.Dialer
-	Config  rfc9000.Config
+	Dialer  quic.Dialer
+	Config  quic.Config
 	Codec   StreamCodec
 	Timeout time.Duration
 }
@@ -36,7 +36,7 @@ func (e StreamExchanger) Exchange(ctx context.Context, address string, payload [
 	}
 	dialer := e.Dialer
 	if dialer == nil {
-		dialer = rfc9000.DefaultDialer{}
+		dialer = quic.DefaultDialer{}
 	}
 	codec := e.Codec
 	if codec == nil {

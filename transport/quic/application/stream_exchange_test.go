@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 func TestStreamExchangerUsesLengthPrefixedStream(t *testing.T) {
@@ -17,7 +17,7 @@ func TestStreamExchangerUsesLengthPrefixedStream(t *testing.T) {
 	conn := newFakeConnection(newFakeStream(1, response))
 	exchanger := StreamExchanger{
 		Dialer: fakeDialer{conn: conn},
-		Config: rfc9000.Config{
+		Config: quic.Config{
 			TLS:        &tls.Config{InsecureSkipVerify: true},
 			NextProtos: []string{"app-test"},
 		},
@@ -43,7 +43,7 @@ func TestDatagramExchangerFiltersUnmatchedPayloads(t *testing.T) {
 	conn.datagrams = [][]byte{[]byte("noise"), []byte("pong")}
 	exchanger := DatagramExchanger{
 		Dialer: fakeDialer{conn: conn},
-		Config: rfc9000.Config{
+		Config: quic.Config{
 			TLS:             &tls.Config{InsecureSkipVerify: true},
 			NextProtos:      []string{"app-dgram"},
 			EnableDatagrams: true,
@@ -75,10 +75,10 @@ func encodeTestFrame(t *testing.T, payload []byte) []byte {
 
 type fakeDialer struct {
 	conn *fakeConnection
-	cfg  rfc9000.Config
+	cfg  quic.Config
 }
 
-func (d fakeDialer) DialAddr(context.Context, string, rfc9000.Config) (rfc9000.Connection, error) {
+func (d fakeDialer) DialAddr(context.Context, string, quic.Config) (quic.Connection, error) {
 	d.conn.dialed = true
 	return d.conn, nil
 }
@@ -102,18 +102,18 @@ func (c *fakeConnection) HandshakeComplete() <-chan struct{} {
 	close(done)
 	return done
 }
-func (c *fakeConnection) ConnectionState() rfc9000.State { return rfc9000.State{} }
-func (c *fakeConnection) Stats() rfc9000.ConnectionStats { return rfc9000.ConnectionStats{} }
-func (c *fakeConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {
+func (c *fakeConnection) ConnectionState() quic.State { return quic.State{} }
+func (c *fakeConnection) Stats() quic.ConnectionStats { return quic.ConnectionStats{} }
+func (c *fakeConnection) OpenStreamSync(context.Context) (quic.Stream, error) {
 	return c.stream, nil
 }
-func (c *fakeConnection) AcceptStream(context.Context) (rfc9000.Stream, error) {
+func (c *fakeConnection) AcceptStream(context.Context) (quic.Stream, error) {
 	return nil, io.EOF
 }
-func (c *fakeConnection) OpenUniStreamSync(context.Context) (rfc9000.SendStream, error) {
+func (c *fakeConnection) OpenUniStreamSync(context.Context) (quic.SendStream, error) {
 	return nil, io.EOF
 }
-func (c *fakeConnection) AcceptUniStream(context.Context) (rfc9000.ReceiveStream, error) {
+func (c *fakeConnection) AcceptUniStream(context.Context) (quic.ReceiveStream, error) {
 	return nil, io.EOF
 }
 func (c *fakeConnection) SendDatagram(payload []byte) error {
@@ -128,23 +128,23 @@ func (c *fakeConnection) ReceiveDatagram(context.Context) ([]byte, error) {
 	c.datagrams = c.datagrams[1:]
 	return out, nil
 }
-func (c *fakeConnection) CloseWithError(rfc9000.ApplicationErrorCode, string) error {
+func (c *fakeConnection) CloseWithError(quic.ApplicationErrorCode, string) error {
 	c.closed = true
 	return nil
 }
 
 type fakeStream struct {
-	id      rfc9000.StreamID
+	id      quic.StreamID
 	read    *bytes.Reader
 	written bytes.Buffer
 	closed  bool
 }
 
-func newFakeStream(id rfc9000.StreamID, read []byte) *fakeStream {
+func newFakeStream(id quic.StreamID, read []byte) *fakeStream {
 	return &fakeStream{id: id, read: bytes.NewReader(read)}
 }
 
-func (s *fakeStream) ID() rfc9000.StreamID { return s.id }
+func (s *fakeStream) ID() quic.StreamID { return s.id }
 func (s *fakeStream) Read(p []byte) (int, error) {
 	return s.read.Read(p)
 }
@@ -158,10 +158,10 @@ func (s *fakeStream) Close() error {
 func (s *fakeStream) SetDeadline(time.Time) error      { return nil }
 func (s *fakeStream) SetReadDeadline(time.Time) error  { return nil }
 func (s *fakeStream) SetWriteDeadline(time.Time) error { return nil }
-func (s *fakeStream) CancelRead(rfc9000.StreamErrorCode) {
+func (s *fakeStream) CancelRead(quic.StreamErrorCode) {
 	s.closed = true
 }
-func (s *fakeStream) CancelWrite(rfc9000.StreamErrorCode) {
+func (s *fakeStream) CancelWrite(quic.StreamErrorCode) {
 	s.closed = true
 }
 

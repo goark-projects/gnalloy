@@ -20,13 +20,13 @@ import (
 	"goark.dev/gnalloy/buffer"
 	"goark.dev/gnalloy/channel"
 	codechttp3 "goark.dev/gnalloy/codec/http3"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 func TestSessionRoundTripOverRFC9000QUIC(t *testing.T) {
 	const alpn = "h3"
 	cert, roots := http3TestCertificate(t, "gnalloy.local")
-	listener, err := rfc9000.ListenAddr("127.0.0.1:0", rfc9000.Config{
+	listener, err := quic.ListenAddr("127.0.0.1:0", quic.Config{
 		TLS:        &tls.Config{Certificates: []tls.Certificate{cert}},
 		NextProtos: []string{alpn},
 	})
@@ -43,7 +43,7 @@ func TestSessionRoundTripOverRFC9000QUIC(t *testing.T) {
 		serverErr <- serveHTTP3Once(ctx, listener, []byte("h3-response"), clientDone)
 	}()
 
-	conn, err := rfc9000.DialAddr(ctx, listener.Addr().String(), rfc9000.Config{
+	conn, err := quic.DialAddr(ctx, listener.Addr().String(), quic.Config{
 		TLS: &tls.Config{
 			RootCAs:    roots,
 			ServerName: "gnalloy.local",
@@ -95,7 +95,7 @@ func TestSessionRoundTripOverRFC9000QUIC(t *testing.T) {
 	}
 }
 
-func serveHTTP3Once(ctx context.Context, listener rfc9000.Listener, body []byte, clientDone <-chan struct{}) error {
+func serveHTTP3Once(ctx context.Context, listener quic.Listener, body []byte, clientDone <-chan struct{}) error {
 	conn, err := listener.Accept(ctx)
 	if err != nil {
 		return err
@@ -120,7 +120,7 @@ func serveHTTP3Once(ctx context.Context, listener rfc9000.Listener, body []byte,
 	return streamCh.Close()
 }
 
-func closeHTTP3TestConnection(ctx context.Context, conn rfc9000.Connection, clientDone <-chan struct{}) {
+func closeHTTP3TestConnection(ctx context.Context, conn quic.Connection, clientDone <-chan struct{}) {
 	select {
 	case <-clientDone:
 	case <-ctx.Done():

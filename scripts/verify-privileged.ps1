@@ -199,7 +199,7 @@ try {
         Set-EnvValue "GNALLOY_QUIC_INTEROP_ADDR" $QuicInteropAddr
     }
     if (-not [string]::IsNullOrWhiteSpace($env:GNALLOY_QUIC_INTEROP_ADDR)) {
-        Invoke-Gate -Name "external-quic-interop" -Action { Invoke-Checked -FilePath $go -Arguments @("test", "-count=1", "./transport/quic/rfc9000", "-run", "TestExternalInteropHandshake") }
+        Invoke-Gate -Name "external-quic-interop" -Action { Invoke-Checked -FilePath $go -Arguments @("test", "-count=1", "./transport/quic", "-run", "TestExternalInteropHandshake") }
     } else {
         Add-SkippedGate -Name "external-quic-interop" -Reason "set GNALLOY_QUIC_INTEROP_ADDR"
     }

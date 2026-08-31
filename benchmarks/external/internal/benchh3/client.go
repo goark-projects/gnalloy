@@ -8,11 +8,11 @@ import (
 
 	codechttp3 "goark.dev/gnalloy/codec/http3"
 	h3transport "goark.dev/gnalloy/transport/http3"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 type client struct {
-	conn     rfc9000.Connection
+	conn     quic.Connection
 	session  *h3transport.Session
 	headers  codechttp3.HeadersBlock
 	expected []byte

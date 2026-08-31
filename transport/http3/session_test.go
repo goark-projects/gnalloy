@@ -14,7 +14,7 @@ import (
 
 	"goark.dev/gnalloy/channel"
 	codechttp3 "goark.dev/gnalloy/codec/http3"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 func TestSessionRejectsNilConnection(t *testing.T) {
@@ -226,27 +226,27 @@ func (c *fakeConnection) HandshakeComplete() <-chan struct{} {
 	return done
 }
 
-func (c *fakeConnection) ConnectionState() rfc9000.State {
-	return rfc9000.State{TLS: tls.ConnectionState{Version: c.tlsVersion, NegotiatedProtocol: c.alpn}}
+func (c *fakeConnection) ConnectionState() quic.State {
+	return quic.State{TLS: tls.ConnectionState{Version: c.tlsVersion, NegotiatedProtocol: c.alpn}}
 }
 
-func (c *fakeConnection) Stats() rfc9000.ConnectionStats {
-	return rfc9000.ConnectionStats{}
+func (c *fakeConnection) Stats() quic.ConnectionStats {
+	return quic.ConnectionStats{}
 }
 
-func (c *fakeConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {
+func (c *fakeConnection) OpenStreamSync(context.Context) (quic.Stream, error) {
 	return c.openedBidi, nil
 }
 
-func (c *fakeConnection) AcceptStream(context.Context) (rfc9000.Stream, error) {
+func (c *fakeConnection) AcceptStream(context.Context) (quic.Stream, error) {
 	return c.acceptedBidi, nil
 }
 
-func (c *fakeConnection) OpenUniStreamSync(context.Context) (rfc9000.SendStream, error) {
+func (c *fakeConnection) OpenUniStreamSync(context.Context) (quic.SendStream, error) {
 	return c.openedUni, nil
 }
 
-func (c *fakeConnection) AcceptUniStream(context.Context) (rfc9000.ReceiveStream, error) {
+func (c *fakeConnection) AcceptUniStream(context.Context) (quic.ReceiveStream, error) {
 	return c.acceptedUni, nil
 }
 
@@ -258,7 +258,7 @@ func (c *fakeConnection) ReceiveDatagram(context.Context) ([]byte, error) {
 	return nil, io.EOF
 }
 
-func (c *fakeConnection) CloseWithError(rfc9000.ApplicationErrorCode, string) error {
+func (c *fakeConnection) CloseWithError(quic.ApplicationErrorCode, string) error {
 	return nil
 }
 
@@ -272,11 +272,11 @@ type fakeBidiStream struct {
 	*fakeSendStream
 }
 
-func newFakeBidiStream(id rfc9000.StreamID) *fakeBidiStream {
+func newFakeBidiStream(id quic.StreamID) *fakeBidiStream {
 	return &fakeBidiStream{fakeReceiveStream: newFakeReceiveStream(id), fakeSendStream: newFakeSendStream(id)}
 }
 
-func (s *fakeBidiStream) ID() rfc9000.StreamID {
+func (s *fakeBidiStream) ID() quic.StreamID {
 	return s.fakeSendStream.ID()
 }
 
@@ -285,22 +285,22 @@ func (s *fakeBidiStream) SetDeadline(time.Time) error {
 }
 
 type fakeSendStream struct {
-	id      rfc9000.StreamID
+	id      quic.StreamID
 	written bytes.Buffer
 	closed  bool
 }
 
-func newFakeSendStream(id rfc9000.StreamID) *fakeSendStream {
+func newFakeSendStream(id quic.StreamID) *fakeSendStream {
 	return &fakeSendStream{id: id}
 }
 
-func (s *fakeSendStream) ID() rfc9000.StreamID {
+func (s *fakeSendStream) ID() quic.StreamID {
 	return s.id
 }
 
 func (s *fakeSendStream) Write(p []byte) (int, error) {
 	if s.closed {
-		return 0, rfc9000.ErrClosed
+		return 0, quic.ErrClosed
 	}
 	return s.written.Write(p)
 }
@@ -314,22 +314,22 @@ func (s *fakeSendStream) SetWriteDeadline(time.Time) error {
 	return nil
 }
 
-func (s *fakeSendStream) CancelWrite(rfc9000.StreamErrorCode) {
+func (s *fakeSendStream) CancelWrite(quic.StreamErrorCode) {
 	s.closed = true
 }
 
 type fakeReceiveStream struct {
-	id       rfc9000.StreamID
+	id       quic.StreamID
 	mu       sync.Mutex
 	readable bytes.Buffer
 	canceled bool
 }
 
-func newFakeReceiveStream(id rfc9000.StreamID) *fakeReceiveStream {
+func newFakeReceiveStream(id quic.StreamID) *fakeReceiveStream {
 	return &fakeReceiveStream{id: id}
 }
 
-func (s *fakeReceiveStream) ID() rfc9000.StreamID {
+func (s *fakeReceiveStream) ID() quic.StreamID {
 	return s.id
 }
 
@@ -346,7 +346,7 @@ func (s *fakeReceiveStream) SetReadDeadline(time.Time) error {
 	return nil
 }
 
-func (s *fakeReceiveStream) CancelRead(rfc9000.StreamErrorCode) {
+func (s *fakeReceiveStream) CancelRead(quic.StreamErrorCode) {
 	s.canceled = true
 }
 
@@ -356,7 +356,7 @@ func (s *fakeReceiveStream) feed(data []byte) {
 	s.mu.Unlock()
 }
 
-var _ rfc9000.Connection = (*fakeConnection)(nil)
-var _ rfc9000.Stream = (*fakeBidiStream)(nil)
-var _ rfc9000.SendStream = (*fakeSendStream)(nil)
-var _ rfc9000.ReceiveStream = (*fakeReceiveStream)(nil)
+var _ quic.Connection = (*fakeConnection)(nil)
+var _ quic.Stream = (*fakeBidiStream)(nil)
+var _ quic.SendStream = (*fakeSendStream)(nil)
+var _ quic.ReceiveStream = (*fakeReceiveStream)(nil)

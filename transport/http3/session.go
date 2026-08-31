@@ -9,7 +9,7 @@ import (
 	"goark.dev/gnalloy/channel"
 	codechttp3 "goark.dev/gnalloy/codec/http3"
 	"goark.dev/gnalloy/transport"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 // StreamKind 描述 HTTP/3 QUIC stream 的协议角色。
@@ -27,14 +27,14 @@ const (
 
 // Session 把 RFC9000 QUIC 连接装配为 HTTP/3 stream channel 工厂。
 type Session struct {
-	conn  rfc9000.Connection
+	conn  quic.Connection
 	cfg   Config
 	next  atomic.Uint64
 	stats *sessionStats
 }
 
 // NewSession 创建 HTTP/3 transport binding。
-func NewSession(conn rfc9000.Connection, cfg Config) (*Session, error) {
+func NewSession(conn quic.Connection, cfg Config) (*Session, error) {
 	if conn == nil {
 		return nil, ErrInvalidConnection
 	}
@@ -46,7 +46,7 @@ func NewSession(conn rfc9000.Connection, cfg Config) (*Session, error) {
 }
 
 // Connection 返回底层 RFC9000 QUIC 连接。
-func (s *Session) Connection() rfc9000.Connection {
+func (s *Session) Connection() quic.Connection {
 	if s == nil {
 		return nil
 	}
@@ -156,7 +156,7 @@ func (s *Session) newStreamChannel(kind StreamKind, reader streamReader, writer 
 	})
 }
 
-func validateConnection(conn rfc9000.Connection, cfg Config) error {
+func validateConnection(conn quic.Connection, cfg Config) error {
 	state := conn.ConnectionState()
 	if state.TLS.Version != cryptotls.VersionTLS13 {
 		return fmt.Errorf("%w: version %x", ErrInvalidTLSState, state.TLS.Version)

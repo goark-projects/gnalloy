@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 // DatagramMatcher 判断收到的 datagram 是否属于当前请求。
@@ -12,8 +12,8 @@ type DatagramMatcher func(request []byte, response []byte) bool
 
 // DatagramExchanger 在 QUIC datagram 能力上执行一次 request-response 交换。
 type DatagramExchanger struct {
-	Dialer  rfc9000.Dialer
-	Config  rfc9000.Config
+	Dialer  quic.Dialer
+	Config  quic.Config
 	Timeout time.Duration
 	Match   DatagramMatcher
 }
@@ -30,7 +30,7 @@ func (e DatagramExchanger) Exchange(ctx context.Context, address string, payload
 	}
 	dialer := e.Dialer
 	if dialer == nil {
-		dialer = rfc9000.DefaultDialer{}
+		dialer = quic.DefaultDialer{}
 	}
 	conn, err := dialer.DialAddr(ctx, address, e.Config)
 	if err != nil {

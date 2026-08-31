@@ -1,18 +1,18 @@
-package rfc9000
+package quic
 
-// NativeProvider 描述 RFC9000 适配层当前委托的底层 QUIC 实现。
-type NativeProvider string
+// NativeEngine 描述当前委托的底层 QUIC 协议引擎。
+type NativeEngine string
 
 const (
-	// NativeProviderQUICGo 表示当前生产适配层使用 quic-go 协议栈。
-	NativeProviderQUICGo NativeProvider = "quic-go"
+	// NativeEngineQUICGo 表示当前生产适配层使用 quic-go 协议栈。
+	NativeEngineQUICGo NativeEngine = "quic-go"
 )
 
-// NativeSupport 是底层 QUIC provider 暴露给上层的稳定能力快照。
+// NativeSupport 是底层 QUIC 协议引擎暴露给上层的稳定能力快照。
 type NativeSupport struct {
-	// Provider 是当前底层实现名称。
-	Provider NativeProvider
-	// RFC9000 表示 provider 支持 QUIC v1/RFC 9000。
+	// Engine 是当前底层协议引擎名称。
+	Engine NativeEngine
+	// RFC9000 表示协议引擎支持 QUIC v1/RFC 9000。
 	RFC9000 bool
 	// TLS13Only 表示 QUIC packet protection 固定在 TLS 1.3 语义。
 	TLS13Only bool
@@ -28,10 +28,10 @@ type NativeSupport struct {
 	ZeroRTT bool
 }
 
-// DetectNativeSupport 返回当前构建中 RFC9000 适配层的 provider 能力。
+// DetectNativeSupport 返回当前构建中 QUIC 协议引擎的能力。
 func DetectNativeSupport() NativeSupport {
 	return NativeSupport{
-		Provider:                   NativeProviderQUICGo,
+		Engine:                     NativeEngineQUICGo,
 		RFC9000:                    true,
 		TLS13Only:                  true,
 		ConnectionStats:            true,

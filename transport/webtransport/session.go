@@ -6,12 +6,12 @@ import (
 
 	"goark.dev/gnalloy/transport"
 	h3transport "goark.dev/gnalloy/transport/http3"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
+	"goark.dev/gnalloy/transport/quic"
 )
 
 // Session 表示一个通过 HTTP/3 extended CONNECT 建立的 WebTransport session。
 type Session struct {
-	conn            rfc9000.Connection
+	conn            quic.Connection
 	connect         *h3transport.StreamChannel
 	cfg             Config
 	sessionID       uint64
@@ -20,7 +20,7 @@ type Session struct {
 }
 
 // NewSession 把已完成 WebTransport extended CONNECT 的 HTTP/3 request stream 绑定为会话。
-func NewSession(conn rfc9000.Connection, connect *h3transport.StreamChannel, cfg Config) (*Session, error) {
+func NewSession(conn quic.Connection, connect *h3transport.StreamChannel, cfg Config) (*Session, error) {
 	if conn == nil {
 		return nil, ErrInvalidConnection
 	}
@@ -47,7 +47,7 @@ func NewSession(conn rfc9000.Connection, connect *h3transport.StreamChannel, cfg
 }
 
 // Connection 返回底层 RFC9000 QUIC 连接。
-func (s *Session) Connection() rfc9000.Connection {
+func (s *Session) Connection() quic.Connection {
 	if s == nil {
 		return nil
 	}
@@ -195,7 +195,7 @@ func (s *Session) newStream(kind StreamKind, reader streamReader, writer streamW
 	})
 }
 
-func validateCapabilities(state rfc9000.State) error {
+func validateCapabilities(state quic.State) error {
 	if !state.SupportsDatagrams.Local || !state.SupportsDatagrams.Remote {
 		return ErrUnsupportedDatagram
 	}

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	dnscodec "goark.dev/gnalloy/codec/dns"
+	"goark.dev/gnalloy/transport/quic"
 	"goark.dev/gnalloy/transport/quic/application"
-	"goark.dev/gnalloy/transport/quic/rfc9000"
 )
 
 func TestExchangerUsesDoQALPNAndLengthPrefixedStream(t *testing.T) {
@@ -38,7 +38,7 @@ func TestExchangerUsesDoQALPNAndLengthPrefixedStream(t *testing.T) {
 	dialer := &fakeDoQDialer{conn: &fakeDoQConnection{stream: stream}}
 	exchanger := Exchanger{
 		Dialer: dialer,
-		Config: rfc9000.Config{TLS: &tls.Config{InsecureSkipVerify: true}},
+		Config: quic.Config{TLS: &tls.Config{InsecureSkipVerify: true}},
 	}
 	query := dnscodec.NewQuery(7, "example.com", dnscodec.TypeA)
 	reply, err := exchanger.Exchange(context.Background(), "dns.example.com", query)
@@ -75,10 +75,10 @@ func frame(t *testing.T, payload []byte) []byte {
 type fakeDoQDialer struct {
 	conn *fakeDoQConnection
 	addr string
-	cfg  rfc9000.Config
+	cfg  quic.Config
 }
 
-func (d *fakeDoQDialer) DialAddr(_ context.Context, addr string, cfg rfc9000.Config) (rfc9000.Connection, error) {
+func (d *fakeDoQDialer) DialAddr(_ context.Context, addr string, cfg quic.Config) (quic.Connection, error) {
 	d.addr = addr
 	d.cfg = cfg
 	return d.conn, nil
@@ -96,18 +96,18 @@ func (c *fakeDoQConnection) HandshakeComplete() <-chan struct{} {
 	close(done)
 	return done
 }
-func (c *fakeDoQConnection) ConnectionState() rfc9000.State { return rfc9000.State{} }
-func (c *fakeDoQConnection) Stats() rfc9000.ConnectionStats { return rfc9000.ConnectionStats{} }
-func (c *fakeDoQConnection) OpenStreamSync(context.Context) (rfc9000.Stream, error) {
+func (c *fakeDoQConnection) ConnectionState() quic.State { return quic.State{} }
+func (c *fakeDoQConnection) Stats() quic.ConnectionStats { return quic.ConnectionStats{} }
+func (c *fakeDoQConnection) OpenStreamSync(context.Context) (quic.Stream, error) {
 	return c.stream, nil
 }
-func (c *fakeDoQConnection) AcceptStream(context.Context) (rfc9000.Stream, error) {
+func (c *fakeDoQConnection) AcceptStream(context.Context) (quic.Stream, error) {
 	return nil, io.EOF
 }
-func (c *fakeDoQConnection) OpenUniStreamSync(context.Context) (rfc9000.SendStream, error) {
+func (c *fakeDoQConnection) OpenUniStreamSync(context.Context) (quic.SendStream, error) {
 	return nil, io.EOF
 }
-func (c *fakeDoQConnection) AcceptUniStream(context.Context) (rfc9000.ReceiveStream, error) {
+func (c *fakeDoQConnection) AcceptUniStream(context.Context) (quic.ReceiveStream, error) {
 	return nil, io.EOF
 }
 func (c *fakeDoQConnection) SendDatagram([]byte) error {
@@ -116,7 +116,7 @@ func (c *fakeDoQConnection) SendDatagram([]byte) error {
 func (c *fakeDoQConnection) ReceiveDatagram(context.Context) ([]byte, error) {
 	return nil, io.EOF
 }
-func (c *fakeDoQConnection) CloseWithError(rfc9000.ApplicationErrorCode, string) error {
+func (c *fakeDoQConnection) CloseWithError(quic.ApplicationErrorCode, string) error {
 	c.closed = true
 	return nil
 }
@@ -131,7 +131,7 @@ func newFakeDoQStream(read []byte) *fakeDoQStream {
 	return &fakeDoQStream{read: bytes.NewReader(read)}
 }
 
-func (s *fakeDoQStream) ID() rfc9000.StreamID { return 1 }
+func (s *fakeDoQStream) ID() quic.StreamID { return 1 }
 func (s *fakeDoQStream) Read(p []byte) (int, error) {
 	return s.read.Read(p)
 }
@@ -145,10 +145,10 @@ func (s *fakeDoQStream) Close() error {
 func (s *fakeDoQStream) SetDeadline(time.Time) error      { return nil }
 func (s *fakeDoQStream) SetReadDeadline(time.Time) error  { return nil }
 func (s *fakeDoQStream) SetWriteDeadline(time.Time) error { return nil }
-func (s *fakeDoQStream) CancelRead(rfc9000.StreamErrorCode) {
+func (s *fakeDoQStream) CancelRead(quic.StreamErrorCode) {
 	s.closed = true
 }
-func (s *fakeDoQStream) CancelWrite(rfc9000.StreamErrorCode) {
+func (s *fakeDoQStream) CancelWrite(quic.StreamErrorCode) {
 	s.closed = true
 }
 

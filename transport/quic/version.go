@@ -1,4 +1,4 @@
-package rfc9000
+package quic
 
 import "fmt"
 

@@ -110,7 +110,7 @@ else
 fi
 
 if [ -n "${QUIC_INTEROP_ADDR}" ]; then
-    run_gate "external-quic-interop" "${GO_CMD}" test -count=1 ./transport/quic/rfc9000 -run TestExternalInteropHandshake
+    run_gate "external-quic-interop" "${GO_CMD}" test -count=1 ./transport/quic -run TestExternalInteropHandshake
 else
     echo "== external-quic-interop skipped: set GNALLOY_QUIC_INTEROP_ADDR"
 fi
