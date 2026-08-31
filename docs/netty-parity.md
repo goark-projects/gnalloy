@@ -84,7 +84,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `ByteBufAllocator` / `PooledByteBufAllocator` | `buffer.Allocator` / `buffer.PooledAllocator` | done | heap、跨平台 size-class pooled allocator、stat allocator、Linux mmap slab allocator。 |
 | 基础 codec 模板 | `codec` | done | `ByteToMessageDecoder`、message-to-message、message-to-byte 和 duplex 组合。 |
 | 常用帧 decoder/encoder | `codec` | done | length-field、line、delimiter、fixed-length。 |
-| 协议 codec | `codec/*` | done | HTTP/1、HTTP/2、HTTP/3 frame、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
+| 协议 codec | `codec/*` | done | HTTP/1、HTTP/2、HTTP/3 frame、SCTP、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
 
 完整 codec 细分矩阵见 `docs/netty-codec-parity.md`。
 
@@ -117,6 +117,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | native epoll/kqueue | `transport/poller/epoll`, `transport/poller/kqueue` | done | 平台原生 readiness backend。 |
 | io_uring/IOCP completion | `transport/poller/iouring`, `transport/poller/iocp` | done | accept/read/write/close 与 datagram completion 路径。 |
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
+| SCTP transport | `transport/sctp` | partial | Linux one-to-one SCTP stream socket 已接入 `ServerBootstrap`/`Dialer`；依赖内核 SCTP 支持，非 Linux 和 completion poller 明确返回 unsupported。 |
 | L2 frame transport | `transport/l2`、`transport/l2/bpf`、`transport/l2/npcap` | done | 和 TCP/UDP/raw/QUIC 一致接入 `ServerBootstrap`/`Dialer`；Linux AF_PACKET native，macOS/BSD BPF native，Windows Npcap native；BPF/Npcap 仍保留可注入 Driver 以便测试和定制部署。 |
 | QUIC packet/runtime | `transport/quic` | done | 提供 UDP 上的 QUIC packet/header/frame、连接 ID 路由、ACK tracking、packet-threshold loss recovery、Reno 风格 congestion、stream flow-control 和 path validation/migration 基础。 |
 | QUIC RFC9000 connection stack | `transport/quic/rfc9000` | done | 通过生产级 QUIC 实现承接 RFC 9000 QUIC v1、TLS 1.3 packet protection、ALPN、双向 stream、单向 stream、datagram、localhost 互通和显式启用的外部互通测试。 |
@@ -151,6 +152,6 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | TLS cipher suite catalog/name conversion/config | `handler/tls` done | 基于 Go 运行时目录提供 IANA/Java/OpenSSL/hex 名称解析、insecure 显式 opt-in、TLS 1.0-1.2 配置应用和 TLS 1.3 不可配置边界。 |
 | OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS provider 需要平台依赖、复制预算和安全审计独立切片。 |
 | true sendfile/splice 零拷贝文件传输 | `transport/zerocopy` done | Linux/macOS `sendfile` 和 Windows `TransmitFile` 可直接传输 `DefaultFileRegion` backed by `*os.File`；TCP `Unsafe` 出站默认接入该 writer，非原生 region 明确返回 unsupported，保留 `Copy` 与 `FileRegionEncoder` fallback。 |
-| SCTP、UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
+| UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
 | in-VM local transport | defer | Go 里可用 memory backend 与嵌入式测试替代；无需复制 Netty 的 JVM 内本地传输模型。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |

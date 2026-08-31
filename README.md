@@ -35,15 +35,16 @@ blocks:
 - `codec/compression`: gzip and zlib ByteBuf encoders/decoders backed by the
   Go standard library, with explicit decoded-size limits.
 - `codec/dns`, `codec/http1`, `codec/http1/cookie`,
-  `codec/http1/multipart`, `codec/http2`, `codec/http3`,
+  `codec/http1/multipart`, `codec/http2`, `codec/http3`, `codec/sctp`,
   `codec/protobuf`, `codec/mqtt`, `codec/redis`, `codec/websocket`, and
   `codec/websocket/deflate`:
   protocol codec coverage for DNS, HTTP/1.x, HTTP/2 binary frames, HPACK
   header blocks, HTTP/1 Cookie/Set-Cookie values, HTTP/2 stream child channel
   flow, bounded multipart/form-data decode/encode, HTTP/3 frames, QPACK header
-  blocks, HTTP/3 control/QPACK stream pipelines, WebTransport SETTINGS and
-  extended CONNECT helpers, Protobuf varint32 frames, MQTT frames, Redis RESP
-  frames, WebSocket frames, and permessage-deflate extension compression.
+  blocks, HTTP/3 control/QPACK stream pipelines, SCTP stream messages and
+  byte-stream adapters, WebTransport SETTINGS and extended CONNECT helpers,
+  Protobuf varint32 frames, MQTT frames, Redis RESP frames, WebSocket frames,
+  and permessage-deflate extension compression.
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`,
   direct `FileRegion` outbound writes through a pluggable native writer, and
   fallback chunk encoding with optional native source metadata; the `Unsafe`
@@ -111,6 +112,9 @@ blocks:
 - `transport/raw`: custom IP protocol transport with server endpoints,
   connected client `Dialer` endpoints, typed `Packet` messages, protocol
   defaults, and explicit elevated-permission runtime boundaries.
+- `transport/sctp`: Linux SCTP one-to-one stream socket transport for
+  `ServerBootstrap` and `Dialer`; non-Linux platforms and completion pollers
+  return explicit unsupported errors.
 - `transport/zerocopy`: Linux/macOS `sendfile` and Windows `TransmitFile`
   `FileRegion` transfer primitive with explicit unsupported and copy-fallback
   boundaries.
