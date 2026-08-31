@@ -20,6 +20,7 @@
 | TCP | `epoll`, `kqueue`, `std` | `iouring`, `iocp`, `memory` | Completion path covers accept, connected read/write, close, and existing write-buffer backpressure. |
 | UDP | `epoll`, `kqueue`, `std` | `iouring`, `iocp`, `memory` | Completion path uses datagram `IORequest` and is covered by the UDP echo integration test on the platform default backend. |
 | raw | `epoll`, `kqueue`, `std` where OS raw socket is available | `iouring`, `iocp`, `memory` where raw socket and datagram completion are available | Runtime success still depends on administrator or `CAP_NET_RAW` permission and OS raw-socket policy. |
+| Unix domain socket | Linux `epoll`/`std`; macOS/BSD `kqueue`/`std` | unsupported | Stream sockets integrate with `ServerBootstrap`/`Dialer`; datagram endpoints expose AF_UNIX datagram send/receive. Linux additionally exposes SO_PEERCRED peer credentials and SCM_RIGHTS file-descriptor passing. |
 | SCTP | Linux `epoll` and `std` when kernel SCTP is available | unsupported | `transport/sctp` exposes one-to-one stream sockets through `ServerBootstrap`/`Dialer`; runtime validation checks platform, numeric address, config, every boss/worker/client poller, and kernel SCTP socket availability before opening SCTP sockets. Linux sockets apply `SCTP_INITMSG` and `SCTP_NODELAY`; non-Linux platforms and completion pollers fail fast with explicit unsupported errors. |
 | local in-VM | in-process | in-process | `transport/local` pairs client and server child `Channel` pipelines without OS fd registration; EventLoop ownership, read-complete events, close propagation, and ByteBuf ownership are covered by unit tests. |
 | L2 frame transport | Linux AF_PACKET native driver; macOS/BSD BPF native driver; Windows Npcap native driver | driver-provided | `transport/l2` exposes `ServerBootstrap`/`Dialer` over injectable `Driver`/`Endpoint` contracts. BPF/Npcap native details live in core under `transport/l2/internal/nativeframe`; Npcap uses runtime DLL loading and no cgo. |
@@ -33,6 +34,7 @@
 - Do not claim a transport is production-complete from cross compilation alone.
 - UDP completion support is validated through `transport/udp` integration tests because it exercises real socket bind, datagram read, write, and pipeline echo.
 - raw integration is not a default gate because it requires elevated privileges on common platforms.
+- Unix domain socket validation covers non-Unix unsupported errors on Windows and compile-time Linux syscall compatibility by default; native datagram/fd-passing runtime tests must run on a Linux host.
 - SCTP validation covers startup capability snapshots, kernel socket probing, invalid config/address checks, readiness-only poller enforcement, `SCTP_INITMSG`, and `SCTP_NODELAY` option mapping. Linux native smoke still requires a host with kernel SCTP support.
 - local transport validation is a unit-test gate because it intentionally has no native fd, kernel readiness, or completion backend.
 - UDT/RXTX are intentionally excluded from the transport matrix because Netty has removed or stopped maintaining those transports; gnalloy does not keep core adapter packages for them.

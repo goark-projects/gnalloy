@@ -121,6 +121,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | native epoll/kqueue | `transport/poller/epoll`, `transport/poller/kqueue` | done | 平台原生 readiness backend。 |
 | io_uring/IOCP completion | `transport/poller/iouring`, `transport/poller/iocp` | done | accept/read/write/close 与 datagram completion 路径。 |
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
+| Unix domain socket transport | `transport/unix` | done | Stream socket 接入 `ServerBootstrap`/`Dialer`；datagram endpoint 支持本机 AF_UNIX datagram 收发；Linux 支持 SO_PEERCRED peer credentials 和 SCM_RIGHTS fd passing；非 Unix 或不支持平台显式返回 unsupported。 |
 | SCTP transport | `transport/sctp` | partial | Linux one-to-one SCTP stream socket 已接入 `ServerBootstrap`/`Dialer`；启动前校验平台、数值地址、config、poller 和内核 SCTP socket 能力，Linux socket 应用 `SCTP_INITMSG` 与 `SCTP_NODELAY`，非 Linux 和 completion poller 明确返回 unsupported。 |
 | in-VM local transport | `transport/local` | done | 提供进程内 client/server 成对 Channel，接入 `ServerBootstrap`/`Dialer`，保留 ChannelOption/Attribute、ByteBuf 所有权、read-complete、关闭传播和出站水位线语义。 |
 | L2 frame transport | `transport/l2`、`transport/l2/bpf`、`transport/l2/npcap` | done | 和 TCP/UDP/raw/QUIC 一致接入 `ServerBootstrap`/`Dialer`；Linux AF_PACKET native，macOS/BSD BPF native，Windows Npcap native；BPF/Npcap 仍保留可注入 Driver 以便测试和定制部署。 |

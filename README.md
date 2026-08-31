@@ -138,6 +138,10 @@ blocks:
   `Channel` pipelines, Bootstrap/Dialer integration, ChannelOption/Attribute
   application, ByteBuf ownership transfer, read-complete events, close
   propagation, and outbound watermark reporting.
+- `transport/unix`: Unix domain stream socket transport with
+  `ServerBootstrap`/`Dialer` integration, plus lightweight datagram endpoint,
+  Linux peer credential lookup, and Linux SCM_RIGHTS file-descriptor passing.
+  Non-Unix platforms and unsupported native features return explicit errors.
 - `transport/zerocopy`: Linux/macOS `sendfile` and Windows `TransmitFile`
   `FileRegion` transfer primitive with explicit unsupported and copy-fallback
   boundaries.

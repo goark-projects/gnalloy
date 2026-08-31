@@ -142,6 +142,10 @@ func cleanupSocket(addr Address) error {
 	return err
 }
 
+func chmodSocket(addr Address, mode os.FileMode) error {
+	return os.Chmod(addr.Path, mode)
+}
+
 func closeFD(fd transport.FDRef) error {
 	if !fd.Valid() {
 		return nil
