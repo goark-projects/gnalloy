@@ -16,6 +16,7 @@ func ApplyQPACKDecoderStreamPipeline(p *channel.Pipeline) error {
 func ApplyLocalQPACKEncoderStreamPipeline(p *channel.Pipeline) error {
 	return addPipelineHandlers(p, []pipelineHandlerSpec{
 		{name: HandlerNameHTTP3StreamTypeEncoder, handler: NewStreamTypeEncoder(StreamTypeQPACKEncoder)},
+		{name: HandlerNameHTTP3QPACKEncoderStreamCodec, handler: NewQPACKEncoderStreamEncoder()},
 	})
 }
 
@@ -23,6 +24,7 @@ func ApplyLocalQPACKEncoderStreamPipeline(p *channel.Pipeline) error {
 func ApplyLocalQPACKDecoderStreamPipeline(p *channel.Pipeline) error {
 	return addPipelineHandlers(p, []pipelineHandlerSpec{
 		{name: HandlerNameHTTP3StreamTypeEncoder, handler: NewStreamTypeEncoder(StreamTypeQPACKDecoder)},
+		{name: HandlerNameHTTP3QPACKDecoderStreamCodec, handler: NewQPACKDecoderStreamEncoder()},
 	})
 }
 
@@ -31,6 +33,7 @@ func ApplyRemoteQPACKEncoderStreamPipeline(p *channel.Pipeline) error {
 	return addPipelineHandlers(p, []pipelineHandlerSpec{
 		{name: HandlerNameHTTP3StreamTypeDecoder, handler: NewStreamTypeDecoder()},
 		{name: HandlerNameHTTP3StreamTypeGuard, handler: NewStreamTypeGuard(StreamTypeQPACKEncoder)},
+		{name: HandlerNameHTTP3QPACKEncoderStreamCodec, handler: NewQPACKEncoderStreamDecoder()},
 	})
 }
 
@@ -39,5 +42,6 @@ func ApplyRemoteQPACKDecoderStreamPipeline(p *channel.Pipeline) error {
 	return addPipelineHandlers(p, []pipelineHandlerSpec{
 		{name: HandlerNameHTTP3StreamTypeDecoder, handler: NewStreamTypeDecoder()},
 		{name: HandlerNameHTTP3StreamTypeGuard, handler: NewStreamTypeGuard(StreamTypeQPACKDecoder)},
+		{name: HandlerNameHTTP3QPACKDecoderStreamCodec, handler: NewQPACKDecoderStreamDecoder()},
 	})
 }

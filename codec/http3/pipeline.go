@@ -17,6 +17,10 @@ const (
 	HandlerNameHTTP3StreamTypeEncoder = "http3-stream-type-encoder"
 	// HandlerNameHTTP3StreamTypeGuard 是 HTTP/3 单向 stream type 校验器的默认名称。
 	HandlerNameHTTP3StreamTypeGuard = "http3-stream-type-guard"
+	// HandlerNameHTTP3QPACKEncoderStreamCodec 是 QPACK encoder stream 指令 codec 的默认名称。
+	HandlerNameHTTP3QPACKEncoderStreamCodec = "http3-qpack-encoder-stream-codec"
+	// HandlerNameHTTP3QPACKDecoderStreamCodec 是 QPACK decoder stream 指令 codec 的默认名称。
+	HandlerNameHTTP3QPACKDecoderStreamCodec = "http3-qpack-decoder-stream-codec"
 	// HandlerNameHTTP3ControlStream 是 HTTP/3 control stream 入站校验器的默认名称。
 	HandlerNameHTTP3ControlStream = "http3-control-stream"
 	// HandlerNameHTTP3LocalControlStream 是 HTTP/3 control stream 本端 SETTINGS 写入器的默认名称。
