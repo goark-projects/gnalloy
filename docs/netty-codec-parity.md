@@ -58,7 +58,7 @@
 | `ProtobufVarint32LengthFieldPrepender` | `codec/protobuf.ProtobufVarint32LengthFieldPrepender` | done | 出站 varint32 header + payload 零拷贝。 |
 | `HAProxyMessageDecoder/Encoder` | `codec/haproxy` | done | 支持 PROXY protocol v1/v2、TCP/UDP IPv4/IPv6、UNIX 地址和 TLV。 |
 | `SpdyFrameDecoder/Encoder` | `codec/spdy` | done | 支持 SPDY/3 data、SYN、RST、SETTINGS、PING、GOAWAY、HEADERS、WINDOW_UPDATE 和未知控制帧。 |
-| `HttpObjectDecoder/Encoder` | `codec/http1` | done | 支持请求/响应、Content-Length、chunked、trailers、聚合器、100-continue 和 chunked 出站。 |
+| `HttpObjectDecoder/Encoder`、`QueryStringDecoder/Encoder`、`HttpContentCompressor/Decompressor`、`HttpClientUpgradeHandler/HttpServerUpgradeHandler` helpers | `codec/http1` | done | 支持请求/响应、Content-Length、chunked、trailers、聚合器、100-continue、chunked 出站、query string 有序参数、gzip/deflate full-message content 编解码和 Upgrade 请求/101 响应 helper。 |
 | `ClientCookieEncoder/Decoder`、`ServerCookieEncoder/Decoder` | `codec/http1/cookie` | done | 支持 Cookie 请求多值、Set-Cookie 响应属性、Expires、Max-Age、SameSite、Secure、HttpOnly、Partitioned 和 Append 热路径。 |
 | `HttpPostRequestDecoder/Encoder` | `codec/http1/multipart` | done | Go 化 boundary 解析、受限流式 part 消费、ByteBuf/Request 适配和 append-style form-data 输出。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |

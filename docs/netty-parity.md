@@ -84,7 +84,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `ByteBufAllocator` / `PooledByteBufAllocator` | `buffer.Allocator` / `buffer.PooledAllocator` | done | heap、跨平台 size-class pooled allocator、stat allocator、Linux mmap slab allocator。 |
 | 基础 codec 模板 | `codec` | done | `ByteToMessageDecoder`、message-to-message、message-to-byte 和 duplex 组合。 |
 | 常用帧 decoder/encoder | `codec` | done | length-field、line、delimiter、fixed-length。 |
-| 协议 codec | `codec/*` | done | HTTP/1、HTTP/2、HTTP/3 frame、SCTP、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
+| 协议 codec | `codec/*` | done | HTTP/1 object/query/compression/upgrade、HTTP/2、HTTP/3 frame、SCTP、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
 
 完整 codec 细分矩阵见 `docs/netty-codec-parity.md`。
 

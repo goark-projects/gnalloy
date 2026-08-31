@@ -38,13 +38,14 @@ blocks:
   `codec/http1/multipart`, `codec/http2`, `codec/http3`, `codec/sctp`,
   `codec/protobuf`, `codec/mqtt`, `codec/redis`, `codec/websocket`, and
   `codec/websocket/deflate`:
-  protocol codec coverage for DNS, HTTP/1.x, HTTP/2 binary frames, HPACK
-  header blocks, HTTP/1 Cookie/Set-Cookie values, HTTP/2 stream child channel
-  flow, bounded multipart/form-data decode/encode, HTTP/3 frames, QPACK header
-  blocks, HTTP/3 control/QPACK stream pipelines, SCTP stream messages and
-  byte-stream adapters, WebTransport SETTINGS and extended CONNECT helpers,
-  Protobuf varint32 frames, MQTT frames, Redis RESP frames, WebSocket frames,
-  and permessage-deflate extension compression.
+  protocol codec coverage for DNS, HTTP/1.x, HTTP/1 query string helpers,
+  HTTP/1 content compression/decompression, HTTP/1 Upgrade helpers, HTTP/2
+  binary frames, HPACK header blocks, HTTP/1 Cookie/Set-Cookie values, HTTP/2
+  stream child channel flow, bounded multipart/form-data decode/encode,
+  HTTP/3 frames, QPACK header blocks, HTTP/3 control/QPACK stream pipelines,
+  SCTP stream messages and byte-stream adapters, WebTransport SETTINGS and
+  extended CONNECT helpers, Protobuf varint32 frames, MQTT frames, Redis RESP
+  frames, WebSocket frames, and permessage-deflate extension compression.
 - `channel`: inbound/outbound pipeline contracts, `Group`/`GroupHandler`,
   direct `FileRegion` outbound writes through a pluggable native writer, and
   fallback chunk encoding with optional native source metadata; the `Unsafe`
