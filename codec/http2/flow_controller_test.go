@@ -70,6 +70,45 @@ func TestOutboundFlowControllerQueuesDataUntilWindowUpdate(t *testing.T) {
 	sink.release()
 }
 
+func TestOutboundFlowControllerAppliesInitialWindowSettings(t *testing.T) {
+	sink := &flowSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("flow", NewOutboundFlowController(OutboundFlowControlConfig{
+		InitialConnectionWindow: 20,
+		InitialStreamWindow:     8,
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ch.Write(HeadersFrame{StreamID: 1, HeaderBlock: testHTTP2Buf(t, "h")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Write(DataFrame{StreamID: 1, Data: testHTTP2Buf(t, "123456")}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, ok := ch.Pipeline().Context("flow")
+	if !ok {
+		t.Fatal("missing flow context")
+	}
+	controller := ctx.Handler().(*OutboundFlowController)
+	ch.Pipeline().FireChannelRead(SettingsFrame{Settings: []Setting{{ID: SettingInitialWindowSize, Value: 4}}})
+	if controller.StreamWindow(1) != -2 {
+		t.Fatalf("stream window=%d, want -2", controller.StreamWindow(1))
+	}
+
+	if err := ch.Write(DataFrame{StreamID: 1, Data: testHTTP2Buf(t, "x")}); err != nil {
+		t.Fatal(err)
+	}
+	if controller.PendingFrames() != 1 {
+		t.Fatalf("pending=%d, want 1", controller.PendingFrames())
+	}
+	ch.Pipeline().FireChannelRead(WindowUpdateFrame{StreamID: 1, Increment: 3})
+	if controller.PendingFrames() != 0 || controller.StreamWindow(1) != 0 {
+		t.Fatalf("pending=%d stream window=%d, want drained/0", controller.PendingFrames(), controller.StreamWindow(1))
+	}
+	sink.release()
+}
+
 type flowSink struct {
 	messages []any
 	flushes  int

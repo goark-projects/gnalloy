@@ -41,10 +41,11 @@ blocks:
   `codec/websocket/deflate`:
   protocol codec coverage for DNS, HTTP/1.x, HTTP/1 query string helpers,
   HTTP/1 content compression/decompression, HTTP/1 Upgrade helpers, HTTP/2
-  binary frames, client preface, SETTINGS ACK lifecycle, outbound DATA
-  flow-control queuing, h2c Upgrade settings, HPACK header blocks, HTTP/1
-  object bridge, HTTP/1 Cookie/Set-Cookie values, HTTP/2 stream child channel
-  flow, bounded multipart/form-data decode/encode,
+  binary frames, client preface, SETTINGS ACK lifecycle, connection-level
+  SETTINGS/GOAWAY/receive-window control, outbound DATA flow-control queuing,
+  h2c Upgrade settings, HPACK header blocks, HTTP/1 object bridge, HTTP/1
+  Cookie/Set-Cookie values, HTTP/2 stream child channel flow, bounded
+  multipart/form-data decode/encode,
   HTTP/3 frames, lifecycle events, low-cardinality frame stats, QPACK header
   blocks, HTTP/3 control/QPACK stream pipelines,
   SCTP stream messages and byte-stream adapters, WebTransport SETTINGS and

@@ -97,7 +97,8 @@ func (c *OutboundFlowController) Flush(ctx *channel.HandlerContext) error {
 
 // ChannelRead 消费 WINDOW_UPDATE 更新发送窗口，并按原始顺序释放可写 DATA。
 func (c *OutboundFlowController) ChannelRead(ctx *channel.HandlerContext, msg any) {
-	if frame, ok := msg.(WindowUpdateFrame); ok {
+	switch frame := msg.(type) {
+	case WindowUpdateFrame:
 		if err := c.applyWindowUpdate(frame); err != nil {
 			ctx.FireExceptionCaught(err)
 			return
@@ -105,6 +106,17 @@ func (c *OutboundFlowController) ChannelRead(ctx *channel.HandlerContext, msg an
 		if err := c.drain(ctx); err != nil {
 			ctx.FireExceptionCaught(err)
 			return
+		}
+	case SettingsFrame:
+		if !frame.Ack {
+			if err := c.applySettings(frame.Settings); err != nil {
+				ctx.FireExceptionCaught(err)
+				return
+			}
+			if err := c.drain(ctx); err != nil {
+				ctx.FireExceptionCaught(err)
+				return
+			}
 		}
 	}
 	ctx.FireChannelRead(msg)
@@ -210,6 +222,28 @@ func (c *OutboundFlowController) applyWindowUpdate(frame WindowUpdateFrame) erro
 		return ErrFlowControl
 	}
 	c.streamWindows[frame.StreamID] = window
+	return nil
+}
+
+func (c *OutboundFlowController) applySettings(settings []Setting) error {
+	for _, setting := range settings {
+		if setting.ID != SettingInitialWindowSize {
+			continue
+		}
+		if setting.Value > uint32(maxStreamID) {
+			return ErrFlowControl
+		}
+		nextInitial := int32(setting.Value)
+		delta := nextInitial - c.initialStreamWindow
+		for id, window := range c.streamWindows {
+			next := int64(window) + int64(delta)
+			if next > int64(maxStreamID) || next < -int64(maxStreamID) {
+				return ErrFlowControl
+			}
+			c.streamWindows[id] = int32(next)
+		}
+		c.initialStreamWindow = nextInitial
+	}
 	return nil
 }
 
