@@ -122,6 +122,16 @@ blocks:
 - `transport/sctp`: Linux SCTP one-to-one stream socket transport for
   `ServerBootstrap` and `Dialer`; non-Linux platforms and completion pollers
   return explicit unsupported errors.
+- `transport/local`: in-process local transport with paired client/server child
+  `Channel` pipelines, Bootstrap/Dialer integration, ChannelOption/Attribute
+  application, ByteBuf ownership transfer, read-complete events, close
+  propagation, and outbound watermark reporting.
+- `transport/udt`: UDT transport extension boundary for pluggable external
+  drivers. The core package preserves Bootstrap/Dialer contracts and returns a
+  deterministic unsupported error when no driver is supplied.
+- `transport/rxtx`: RXTX/serial client transport extension boundary with
+  normalized serial settings and a pluggable driver contract; the core package
+  does not bind platform serial libraries.
 - `transport/zerocopy`: Linux/macOS `sendfile` and Windows `TransmitFile`
   `FileRegion` transfer primitive with explicit unsupported and copy-fallback
   boundaries.

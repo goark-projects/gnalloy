@@ -29,7 +29,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 任何“超过 Netty”的表述都必须引用矩阵报告中的具体平台、后端、payload、连接数、
 延迟分位和错误率。
 
-## P0-P7 完成面
+## P0-P8 完成面
 
 | 优先级 | 范围 | 当前状态 | 验证入口 |
 | --- | --- | --- | --- |
@@ -41,6 +41,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | P5 | Netty HTTP Cookie/Set-Cookie 编解码体验，含请求多 Cookie、响应属性、SameSite、Expires、Max-Age 和 Append 热路径 | done | `go test ./codec/http1/cookie` |
 | P6 | Netty `CorsHandler` 风格 HTTP/1 CORS 策略 handler，含 Origin 匹配、预检短路、credentials 安全 wildcard 和响应头修饰 | done | `go test ./handler/cors` |
 | P7 | Netty `FileRegion` 风格文件区域直接出站，TCP 默认接入 Linux/macOS `sendfile` 和 Windows `TransmitFile` writer，同时保留 fallback encoder | done | `go test ./channel ./transport/zerocopy ./transport/tcp` |
+| P8 | in-VM local transport、UDT driver boundary、RXTX/serial driver boundary | done | `go test ./transport/local ./transport/udt ./transport/rxtx` |
 
 ## Bootstrap 与 Channel
 
@@ -119,6 +120,9 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | io_uring/IOCP completion | `transport/poller/iouring`, `transport/poller/iocp` | done | accept/read/write/close 与 datagram completion 路径。 |
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
 | SCTP transport | `transport/sctp` | partial | Linux one-to-one SCTP stream socket 已接入 `ServerBootstrap`/`Dialer`；依赖内核 SCTP 支持，非 Linux 和 completion poller 明确返回 unsupported。 |
+| in-VM local transport | `transport/local` | done | 提供进程内 client/server 成对 Channel，接入 `ServerBootstrap`/`Dialer`，保留 ChannelOption/Attribute、ByteBuf 所有权、read-complete、关闭传播和出站水位线语义。 |
+| UDT transport boundary | `transport/udt` | partial | 核心包提供 Bootstrap/Dialer 和可注入 Driver 合同；默认无 driver 时明确返回 unsupported，native UDT 由独立扩展承接。 |
+| RXTX/serial transport boundary | `transport/rxtx` | partial | 提供串口 client transport、波特率/数据位/停止位/校验位默认归一和可注入 Driver 合同；不在核心绑定平台串口库。 |
 | L2 frame transport | `transport/l2`、`transport/l2/bpf`、`transport/l2/npcap` | done | 和 TCP/UDP/raw/QUIC 一致接入 `ServerBootstrap`/`Dialer`；Linux AF_PACKET native，macOS/BSD BPF native，Windows Npcap native；BPF/Npcap 仍保留可注入 Driver 以便测试和定制部署。 |
 | QUIC packet/runtime | `transport/quic` | done | 提供 UDP 上的 QUIC packet/header/frame、连接 ID 路由、ACK tracking、packet-threshold loss recovery、Reno 风格 congestion、stream flow-control 和 path validation/migration 基础。 |
 | QUIC RFC9000 connection stack | `transport/quic/rfc9000` | done | 通过生产级 QUIC 实现承接 RFC 9000 QUIC v1、TLS 1.3 packet protection、ALPN、双向 stream、单向 stream、datagram、localhost 互通和显式启用的外部互通测试。 |
@@ -153,6 +157,6 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | TLS cipher suite catalog/name conversion/config | `handler/tls` done | 基于 Go 运行时目录提供 IANA/Java/OpenSSL/hex 名称解析、insecure 显式 opt-in、TLS 1.0-1.2 配置应用、TLS 1.3 不可配置边界、ClientHello provider 和 Optional TLS 探测。 |
 | OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；native TLS provider 需要平台依赖、复制预算和安全审计独立切片。 |
 | true sendfile/splice 零拷贝文件传输 | `transport/zerocopy` done | Linux/macOS `sendfile` 和 Windows `TransmitFile` 可直接传输 `DefaultFileRegion` backed by `*os.File`；TCP `Unsafe` 出站默认接入该 writer，非原生 region 明确返回 unsupported，保留 `Copy` 与 `FileRegionEncoder` fallback。 |
-| UDT、RXTX/serial transport | defer | 依赖平台模块或过时协议生态，适合独立 transport 扩展，不绑定核心发布节奏。 |
-| in-VM local transport | defer | Go 里可用 memory backend 与嵌入式测试替代；无需复制 Netty 的 JVM 内本地传输模型。 |
+| UDT native driver | defer | `transport/udt` 已提供核心扩展边界；具体 native/第三方实现需要独立依赖、兼容性和维护性评估。 |
+| RXTX/serial native driver | defer | `transport/rxtx` 已提供核心扩展边界；具体串口驱动应在独立扩展中处理平台权限、设备名和系统库差异。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |
