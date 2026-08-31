@@ -38,7 +38,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | P0 | Bootstrap/Channel option、TCP socket option、connect timeout、Future listener EventLoop 归属、读循环公平性和平台 completion 行为 | done | `go test ./bootstrap ./channel ./transport/tcp`、`go test ./channel ./transport` |
 | P1 | 业务 handler executor group、流量整形、DNS resolver cache/TCP fallback/search/hosts/CNAME、Simple/Fixed/Map ChannelPool、IP filter、pcap、轻量观测延迟指标和 Prometheus 文本导出 | done | `go test ./handler/executor ./handler/traffic ./resolver/dns ./channel/pool ./handler/ipfilter ./handler/pcap ./observability ./handler/metrics` |
 | P2 | LoggingHandler、FlushConsolidationHandler、协议 fuzz smoke、Netty parity 文档、性能预算 benchmark 和回归脚本 | done | `go test ./handler/logging ./handler/flush ./codec/dns ./codec/redis ./codec/http2 ./codec/http3`、`scripts/verify-regression.*` |
-| P3 | QUIC Gnalloy 包、RFC9000 QUIC v1 适配、TLS 1.3 packet protection、0-RTT/session resumption、HPACK、HTTP/2 child-channel、HTTP/3 QPACK/control stream、HTTP/3 transport binding、WebTransport session binding、QUIC application exchanger、DNS-over-QUIC exchanger、L2 transport 抽象、同机/外部 benchmark baseline、TLS copy reduction/native TLS 评估、ClientHello provider、Optional TLS handler、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter、跨平台验证矩阵 | done | `go test ./transport/quic ./transport/quic/application ./resolver/dns/quic ./transport/http3 ./transport/webtransport ./codec/http2 ./codec/http3 ./handler/tls ./channel/embedded ./resolver/dns ./transport/l2 ./transport/unix ./observability/otel ./benchmarks/parity ./validation/platformmatrix`、`scripts/verify-platform.ps1 -SkipBench`、`go test ./...` |
+| P3 | QUIC Gnalloy 包、RFC9000 QUIC v1 适配、TLS 1.3 packet protection、0-RTT/session resumption、HPACK、HTTP/2 child-channel、HTTP/2 对象桥接/调度/防御/chunked DATA、HTTP/3 QPACK/control stream、HTTP/3 对象桥接/push stream、HTTP/3 transport binding、WebTransport session binding、QUIC application exchanger、DNS-over-QUIC exchanger、L2 transport 抽象、同机/外部 benchmark baseline、TLS copy reduction/native TLS 评估、ClientHello provider、Optional TLS handler、EmbeddedChannel、resolver group、Unix domain socket、OpenTelemetry adapter、跨平台验证矩阵 | done | `go test ./transport/quic ./transport/quic/application ./resolver/dns/quic ./transport/http3 ./transport/webtransport ./codec/http2 ./codec/http2/chunked ./codec/http2/defense ./codec/http2/http1bridge ./codec/http2/scheduler ./codec/http3 ./codec/http3/http1bridge ./handler/tls ./channel/embedded ./resolver/dns ./transport/l2 ./transport/unix ./observability/otel ./benchmarks/parity ./validation/platformmatrix`、`scripts/verify-platform.ps1 -SkipBench`、`go test ./...` |
 | P4 | Netty `FlowControlHandler` 风格入站暂停/恢复、有限队列、AutoRead 同步、溢出释放和 read-complete 合并 | done | `go test ./handler/flow` |
 | P5 | Netty HTTP Cookie/Set-Cookie 编解码体验，含请求多 Cookie、响应属性、SameSite、Expires、Max-Age 和 Append 热路径 | done | `go test ./codec/http1/cookie` |
 | P6 | Netty `CorsHandler` 风格 HTTP/1 CORS 策略 handler，含 Origin 匹配、预检短路、credentials 安全 wildcard 和响应头修饰 | done | `go test ./handler/cors` |
@@ -73,7 +73,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `LoggingHandler` | `handler/logging` | done | 基于标准库 `slog`，记录生命周期、读写、flush、close 和异常事件，不接管消息所有权。 |
 | `FlushConsolidationHandler` | `handler/flush` | done | 读循环内合并 flush，支持阈值强制下发、无读循环延迟合并和 Future 完成传播。 |
 | `SslHandler` OCSP stapling | `handler/tls.OCSPConfig` | done | 支持要求 stapled OCSP 响应、握手后 `OCSPEvent`、自定义 validator 和证书 staple helper；在线 OCSP 查询仍由业务或扩展包控制，避免阻塞 I/O 热路径。 |
-| `SniHandler` / `OptionalSslHandler` | `handler/tls` | done | 支持 ClientHello SNI/ALPN/cipher/version inspection、provider-based 配置选择、Optional TLS 探测事件和 StartTLS 触发，便于明文/TLS 共享端口装配。 |
+| `SniHandler` / `OptionalSslHandler` | `handler/tls` | done | 支持 ClientHello SNI/ALPN/cipher/version inspection、SNI 配置选择、Optional TLS 探测事件和 StartTLS 触发，便于明文/TLS 共享端口装配。 |
 | `HttpProxyHandler` / `Socks4ProxyHandler` / `Socks5ProxyHandler` | `handler/proxy` | done | HTTP CONNECT、SOCKS4/SOCKS4a CONNECT 和 SOCKS5 CONNECT 都提供 pipeline client handler；SOCKS4/SOCKS5 支持半包握手累积、失败语义、成功事件和握手剩余数据透传，SOCKS5 另支持 no-auth、username/password 子协商、BIND/UDP ASSOCIATE wire helper。 |
 | Netty 风格 pipeline initializer | `recipes` | done | 使用 per-channel handler factory 装配 ByteBuf echo、length-field、HTTP/1、HTTP/2、WebSocket、MQTT 和 HTTP/3 stream pipeline，避免复用有状态 codec。 |
 | `RuleBasedIpFilter` | `handler/ipfilter` | done | 支持有序 allow/deny 规则、CIDR、单 IP、UDP/raw typed message 和业务 RemoteIPProvider。 |
@@ -88,7 +88,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `ByteBufAllocator` / `PooledByteBufAllocator` | `buffer.Allocator` / `buffer.PooledAllocator` | done | heap、跨平台 size-class pooled allocator、stat allocator、Linux mmap slab allocator。 |
 | 基础 codec 模板 | `codec` | done | `ByteToMessageDecoder`、message-to-message、message-to-byte 和 duplex 组合。 |
 | 常用帧 decoder/encoder | `codec` | done | length-field、line、delimiter、fixed-length。 |
-| 协议 codec | `codec/*` | done | HTTP/1 object/query/compression/upgrade、HTTP/2 preface/settings ACK/h2c/http1 bridge/outbound flow helper、HTTP/3 frame/lifecycle/stats、SCTP、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
+| 协议 codec | `codec/*` | done | HTTP/1 object/query/compression/upgrade、HTTP/2 preface/settings ACK/h2c/http1 bridge/object stream bridge/stream buffering encoder/weighted fair scheduler/RST flood 与 control frame 防御/chunked DATA、HTTP/3 frame/object bridge/push stream/lifecycle/stats、SCTP、WebSocket、MQTT、Redis、DNS、Memcache、SMTP、SOCKS、STOMP、RTSP、XML、JSON、ICMP/IP 等。 |
 
 完整 codec 细分矩阵见 `docs/netty-codec-parity.md`。
 
@@ -121,12 +121,12 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | native epoll/kqueue | `transport/poller/epoll`, `transport/poller/kqueue` | done | 平台原生 readiness backend。 |
 | io_uring/IOCP completion | `transport/poller/iouring`, `transport/poller/iocp` | done | accept/read/write/close 与 datagram completion 路径。 |
 | TCP/UDP/raw transport | `transport/tcp`, `transport/udp`, `transport/raw` | done | 原生 socket 生命周期、回压水位线和 platform helper。 |
-| SCTP transport | `transport/sctp` | partial | Linux one-to-one SCTP stream socket 已接入 `ServerBootstrap`/`Dialer`；提供启动前 runtime/config/address 校验和能力快照，依赖内核 SCTP 支持，非 Linux 和 completion poller 明确返回 unsupported。 |
+| SCTP transport | `transport/sctp` | partial | Linux one-to-one SCTP stream socket 已接入 `ServerBootstrap`/`Dialer`；启动前校验平台、数值地址、config、poller 和内核 SCTP socket 能力，Linux socket 应用 `SCTP_INITMSG` 与 `SCTP_NODELAY`，非 Linux 和 completion poller 明确返回 unsupported。 |
 | in-VM local transport | `transport/local` | done | 提供进程内 client/server 成对 Channel，接入 `ServerBootstrap`/`Dialer`，保留 ChannelOption/Attribute、ByteBuf 所有权、read-complete、关闭传播和出站水位线语义。 |
 | L2 frame transport | `transport/l2`、`transport/l2/bpf`、`transport/l2/npcap` | done | 和 TCP/UDP/raw/QUIC 一致接入 `ServerBootstrap`/`Dialer`；Linux AF_PACKET native，macOS/BSD BPF native，Windows Npcap native；BPF/Npcap 仍保留可注入 Driver 以便测试和定制部署。 |
 | QUIC RFC9000 connection stack | `transport/quic` | done | `transport/quic` 是 Gnalloy 唯一 QUIC 生产包，生产协议栈全部委托 quic-go 承接 RFC 9000 QUIC v1、TLS 1.3 packet protection、ALPN、双向 stream、单向 stream、datagram、能力快照、localhost 互通和显式启用的外部互通测试；不保留自研 packet/frame/runtime 栈，也不暴露独立 provider 子包。 |
 | QUIC application assembly | `transport/quic/application` | done | 提供 stream request/response 和 datagram request/response 装配，当前覆盖 length-prefixed stream codec 和 datagram matcher。 |
-| HTTP/3 transport binding | `transport/http3` | done | 把 RFC9000 QUIC request、control、QPACK stream 绑定为 gnalloy `Channel` pipeline，复用 `codec/http3` 的 frame/header/control/QPACK 初始化器，并提供 stream 生命周期和读写字节 session 快照。 |
+| HTTP/3 transport binding | `transport/http3` | done | 把 RFC9000 QUIC request、control、QPACK 和 push stream 绑定为 gnalloy `Channel` pipeline，复用 `codec/http3` 的 frame/header/control/QPACK/push 初始化器，提供 `OpenPushStream`/`AcceptPushStream`、stream 生命周期和读写字节 session 快照。 |
 | WebTransport over HTTP/3 | `transport/webtransport` + `codec/http3` | done | 提供 SETTINGS/extended CONNECT helper、CONNECT stream session ID、WT_STREAM/单向 stream 前缀、HTTP Datagram Quarter Stream ID 映射和 QUIC datagram/reset capability 校验。 |
 
 完整 transport 边界见 `docs/transport-completion-matrix.md`。
@@ -152,9 +152,9 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | --- | --- | --- |
 | HTTP multipart 高级工具 | `codec/http1/multipart` done | 提供 Content-Type boundary 提取、受限流式解码、ByteBuf/Request 适配和 append-style form-data 编码；part 数量、头部、单 part 和总正文都有预算保护。 |
 | WebSocket extension compression | `codec/websocket/deflate` done | 支持 permessage-deflate 协商参数、RSV1 显式 decoder 配置、data message 压缩/解压、分片最终聚合、控制帧透传和解压膨胀预算。 |
-| brotli/snappy/lz4/FastLZ/LZF 等压缩 codec | `codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4`、`codec/compression/fastlz`、`codec/compression/lzf` done | 外部算法依赖隔离在独立子包；保留 ByteBuf pipeline handler、writer/reader 复用、Netty chunk/frame 兼容和最大解压大小限制。 |
-| TLS cipher suite catalog/name conversion/config/provider | `handler/tls`、`handler/tls/provider/standard` done | 基于 Go 运行时目录提供 IANA/Java/OpenSSL/hex 名称解析、insecure 显式 opt-in、TLS 1.0-1.2 配置应用、TLS 1.3 不可配置边界、ClientHello provider、Optional TLS 探测和纯 Go 标准库 provider。 |
-| OpenSSL/native TLS、证书热更新等高级 TLS 能力 | planned | `handler/tls` 保持标准库 TLS 主路径；OpenSSL/native provider 需要平台依赖、复制预算和安全审计独立切片。 |
+| brotli/snappy/lz4/FastLZ/LZF 等压缩 codec | `codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4`、`codec/compression/fastlz`、`codec/compression/lzf` done | 外部算法依赖隔离在独立子包；保留 ByteBuf pipeline handler、writer/reader 复用、Snappy stream、Netty Snappy framed dialect、Netty FastLZ frame、Netty LZF chunk 和最大解压大小限制。 |
+| TLS cipher suite catalog/name conversion/config | `handler/tls`、`handler/tls/provider/standard` done | 基于 Go 运行时目录提供 IANA/Java/OpenSSL/hex 名称解析、insecure 显式 opt-in、TLS 1.0-1.2 配置应用、TLS 1.3 不可配置边界、ClientHello inspection、Optional TLS 探测和纯 Go 标准库 provider。 |
+| OpenSSL/native TLS provider | excluded | `handler/tls` 以 Go 标准库 `crypto/tls` 为生产主路径；当前不引入 OpenSSL/native provider。证书热更新可由业务配置选择器或后续轻量扩展承接，不作为核心 TLS provider 缺口。 |
 | true sendfile/splice 零拷贝文件传输 | `transport/zerocopy` done | Linux/macOS `sendfile` 和 Windows `TransmitFile` 可直接传输 `DefaultFileRegion` backed by `*os.File`；TCP `Unsafe` 出站默认接入该 writer，非原生 region 明确返回 unsupported，保留 `Copy` 与 `FileRegionEncoder` fallback。 |
 | UDT/RXTX transport | excluded | Netty UDT/RXTX 已移除或长期不维护；gnalloy 核心不再提供对应包，也不把它们计入 Netty 对标缺口。 |
 | 对象序列化/marshalling | defer | Go 网络核心不应绑定 Java 风格对象序列化框架。 |

@@ -47,7 +47,7 @@
 | `StringEncoder` | `codec.StringEncoder` | done | 使用只读 string view 写入 `ByteBuf`。 |
 | `Base64Encoder` | `codec.Base64Encoder` | done | 支持标准和 URL dialect。 |
 | `Base64Decoder` | `codec.Base64Decoder` | done | 解码失败走 `ExceptionCaught`。 |
-| `JdkZlibEncoder/JdkZlibDecoder`、brotli/snappy/lz4/zstd/bzip2/lzma/FastLZ/LZF compression codecs | `codec/compression`、`codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4`、`codec/compression/zstd`、`codec/compression/bzip2`、`codec/compression/lzma`、`codec/compression/fastlz`、`codec/compression/lzf` | done | 根包支持标准库 gzip/zlib；扩展子包支持 Brotli、Snappy stream、LZ4 stream、Zstandard、BZip2、classic LZMA、Netty FastLZ frame 和 Netty LZF chunk，解码器提供最大解压大小限制。 |
+| `JdkZlibEncoder/JdkZlibDecoder`、brotli/snappy/lz4/zstd/bzip2/lzma/FastLZ/LZF compression codecs | `codec/compression`、`codec/compression/brotli`、`codec/compression/snappy`、`codec/compression/lz4`、`codec/compression/zstd`、`codec/compression/bzip2`、`codec/compression/lzma`、`codec/compression/fastlz`、`codec/compression/lzf` | done | 根包支持标准库 gzip/zlib；扩展子包支持 Brotli、Snappy stream、Netty `SnappyFrame*`/`SnappyFramed*` dialect、LZ4 stream、Zstandard、BZip2、classic LZMA、Netty FastLZ frame 和 Netty LZF chunk，解码器提供最大解压大小限制。 |
 | `ByteBufUtil` | `buffer` 工具函数 | done | 覆盖 hex dump、equals、compare、index 等基础能力。 |
 
 ## 协议 codec
@@ -64,9 +64,9 @@
 | `HttpPostRequestDecoder/Encoder` | `codec/http1/multipart` | done | Go 化 boundary 解析、受限流式 part 消费、ByteBuf/Request 适配和 append-style form-data 输出。 |
 | `WebSocketFrameDecoder/Encoder` | `codec/websocket` | done | 支持握手、mask policy、控制帧、close 握手、UTF-8 校验、fragment 聚合和 idle ping/close。 |
 | `PerMessageDeflate*ExtensionHandshaker`、`WebSocketClient/ServerCompressionHandler` | `codec/websocket/deflate` | done | 支持 permessage-deflate 参数解析、RSV1 承载、无上下文复用压缩/解压、分片最终聚合和解压大小限制。 |
-| `Http2FrameCodec` / `Http2ConnectionHandler` helpers | `codec/http2`、`codec/http2/h2c`、`codec/http2/http1bridge` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame、client preface、SETTINGS ACK、连接级 SETTINGS/GOAWAY/receive-window controller、h2c HTTP2-Settings header、HPACK header block 编解码和 HTTP/1 对象语义桥接；已覆盖 fuzz smoke。 |
-| `Http2MultiplexHandler` / `DefaultHttp2RemoteFlowController` helper | `codec/http2.StreamMultiplexer` / `StreamChildChannel` / `OutboundFlowController` | done | 支持 stream 生命周期事件、奇偶性校验、END_STREAM 半关闭、RST/GOAWAY、连接/stream 窗口校验、SETTINGS_INITIAL_WINDOW_SIZE 动态调整、出站 DATA 有界排队和 Netty 风格 child-channel 入站体验。 |
-| `Http3FrameCodec` | `codec/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE、未知扩展帧、QPACK header block、control stream 顺序校验、连接级 SETTINGS/GOAWAY/server push 状态管理、QUIC 单向 stream type 前缀、生命周期事件和低基数 frame stats；已覆盖 fuzz smoke。 |
+| `Http2FrameCodec` / `Http2ConnectionHandler` helpers | `codec/http2`、`codec/http2/h2c`、`codec/http2/http1bridge`、`codec/http2/defense`、`codec/http2/chunked` | done | 支持 HTTP/2 通用帧和 DATA/HEADERS/SETTINGS/PING/GOAWAY 等 typed frame、client preface、SETTINGS ACK、连接级 SETTINGS/GOAWAY/receive-window controller、h2c HTTP2-Settings header、HPACK header block 编解码、完整 stream-frame 到 HTTP 对象桥接、RST flood 防御、control frame 写入上限和 chunked DATA 输入。 |
+| `Http2MultiplexHandler` / `DefaultHttp2RemoteFlowController` / `StreamBufferingEncoder` / `WeightedFairQueueByteDistributor` helper | `codec/http2.StreamMultiplexer` / `StreamChildChannel` / `OutboundFlowController` / `StreamBufferingEncoder` / `codec/http2/scheduler` | done | 支持 stream 生命周期事件、奇偶性校验、END_STREAM 半关闭、RST/GOAWAY、连接/stream 窗口校验、SETTINGS_INITIAL_WINDOW_SIZE 动态调整、出站 DATA 有界排队、remote max concurrent stream 下的出站 stream 缓冲和按权重分配发送预算。 |
+| `Http3FrameCodec` / `Http3FrameToHttpObjectCodec` / push stream helpers | `codec/http3`、`codec/http3/http1bridge`、`transport/http3` | done | 支持 HTTP/3 DATA、HEADERS、SETTINGS、PUSH_PROMISE、GOAWAY、MAX_PUSH_ID、PRIORITY_UPDATE、未知扩展帧、QPACK header block、HTTP 对象桥接、push stream ID 前缀、push stream 初始化/校验/manager、control stream 顺序校验、连接级 SETTINGS/GOAWAY/server push 状态管理、QUIC 单向 stream type 前缀、生命周期事件和低基数 frame stats。 |
 | `SctpInboundByteStreamHandler` / `SctpOutboundByteStreamHandler` / `SctpMessageCompletionHandler` | `codec/sctp` | done | 支持 SCTP stream 元数据、按 protocol/stream 的 ByteBuf 适配和分片聚合；payload 通过 `ByteBuf` 引用计数传递，避免额外复制。 |
 | `BinaryMemcache*` | `codec/memcache` | done | 支持 Memcached binary request/response frame、Full request/response 对象、零拷贝对象聚合、client/server 方向 codec helper、extras/key/value、opaque 和 CAS。 |
 | `Redis RESP` | `codec/redis` | done | Netty 无一一对应核心类，但提供协议帧和值解码能力；已覆盖 fuzz smoke。 |
@@ -79,14 +79,14 @@
 | `XmlFrameDecoder/XmlDecoder` | `codec/xml` | done | 支持完整 XML document 切帧和 Go 化 token 流。 |
 | `JsonObjectDecoder` | `codec.JsonObjectDecoder` | done | 按对象/数组边界切帧，不做完整 JSON 语义校验。 |
 | `ICMP/IP` | `codec/icmp`, `codec/ip` | done | 为 raw socket 和自定义 IP 协议提供基础帧。 |
-| `SslHandler` | `handler/tls`、`handler/tls/provider/standard` | done | 默认基于 `crypto/tls` 的 pipeline TLS handler，并提供可插拔 TLS provider 边界、标准库 provider 子包、handler 级 TLS1.3/ALPN/SNI 能力校验、握手事件和 stapled OCSP required/event/validator 边界；QUIC packet protection 由 `transport/quic` 的 quic-go 引擎能力快照独立评估。 |
-| `SniHandler` / `StartTls` / `OptionalSslHandler` | `handler/tls` | done | 支持 StartTLS 事件启动、SNI 配置选择、ClientHello SNI/ALPN/cipher/version inspection、provider-based 配置选择、Optional TLS 探测事件、握手事件和握手后主机名校验。 |
+| `SslHandler` | `handler/tls`、`handler/tls/provider/standard` | done | 默认基于 `crypto/tls` 的 pipeline TLS handler，并提供标准库 provider 子包、handler 级 TLS1.3/ALPN/SNI 能力校验、握手事件和 stapled OCSP required/event/validator 边界；QUIC packet protection 由 `transport/quic` 的 quic-go 引擎能力快照独立评估。 |
+| `SniHandler` / `StartTls` / `OptionalSslHandler` | `handler/tls` | done | 支持 StartTLS 事件启动、SNI 配置选择、ClientHello SNI/ALPN/cipher/version inspection、Optional TLS 探测事件、握手事件和握手后主机名校验。 |
 
 ## 延后或独立扩展
 
 | Netty 模块 | 状态 | 原因 |
 | --- | --- | --- |
-| compression (`brotli`, `snappy`, `lz4`, `zstd`, `bzip2`, `lzma`, `fastlz`, `lzf`) | done | 已拆到独立 `codec/compression/*` 子包，避免根包直接绑定外部算法依赖或 JVM Unsafe 选择项。 |
+| compression (`brotli`, `snappy`, `lz4`, `zstd`, `bzip2`, `lzma`, `fastlz`, `lzf`) | done | 已拆到独立 `codec/compression/*` 子包，Snappy 同时覆盖 stream 与 Netty framed dialect，避免根包直接绑定外部算法依赖或 JVM Unsafe 选择项。 |
 | serialization/marshalling | skip | Go 生态不应在核心网络层绑定对象序列化框架。 |
 
 ## 热路径约束
@@ -102,5 +102,5 @@
 | --- | --- | --- |
 | 基础帧 | `FuzzLengthFieldBasedFrameDecoder`、`FuzzLineBasedFrameDecoder`、`FuzzDelimiterBasedFrameDecoder` | 覆盖半包、超长帧和分隔符边界。 |
 | HTTP/WebSocket/MQTT | `FuzzHTTP1RequestDecoder`、`FuzzWebSocketFrameDecoder`、`FuzzMQTTFramePipeline` | 覆盖常用应用层协议 pipeline。 |
-| DNS/Redis/HTTP2/HTTP3 | `FuzzDNSParseMessage`、`FuzzRedisFramePipeline`、`FuzzHTTP2FramePipeline`、`FuzzHTTP3FramePipeline` | 覆盖 P2 新增的 Netty 常用协议 smoke。 |
+| DNS/Redis/HTTP2/HTTP3 | `FuzzDNSParseMessage`、`FuzzRedisFramePipeline`、`FuzzHTTP2FramePipeline`、`FuzzHTTP3FramePipeline` | 覆盖 P2 新增的 Netty 常用协议 smoke；HTTP/2 对象桥接、调度、防御、chunked DATA 和 HTTP/3 对象桥接、push stream 另有 focused unit tests。 |
 | QUIC | `TestListenDialAddrEchoOverRFC9000QUIC`、`TestFacadeExposesQUICGoBackedTransport` | 覆盖 quic-go-backed RFC9000/TLS1.3 本机互通连接栈和 Gnalloy QUIC 门面边界。 |

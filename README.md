@@ -35,6 +35,8 @@ blocks:
 - `codec/compression`: gzip and zlib ByteBuf encoders/decoders backed by the
   Go standard library, plus isolated brotli, snappy, lz4, zstd, bzip2, lzma,
   FastLZ, and LZF extension subpackages with explicit decoded-size limits.
+  Snappy includes both the Go stream codec and the Netty
+  `SnappyFrame*`/`SnappyFramed*` dialect.
 - `codec/dns`, `codec/http1`, `codec/http1/cookie`,
   `codec/http1/multipart`, `codec/http2`, `codec/http3`, `codec/sctp`,
   `codec/protobuf`, `codec/mqtt`, `codec/redis`, `codec/websocket`, and
@@ -43,12 +45,15 @@ blocks:
   HTTP/1 content compression/decompression, HTTP/1 Upgrade helpers, HTTP/2
   binary frames, client preface, SETTINGS ACK lifecycle, connection-level
   SETTINGS/GOAWAY/receive-window control, outbound DATA flow-control queuing,
-  h2c Upgrade settings, HPACK header blocks, HTTP/1 object bridge, HTTP/1
+  h2c Upgrade settings, HPACK header blocks, HTTP/1 object bridge,
+  HTTP/2 stream object bridge, stream buffering encoder, weighted fair byte
+  distributor, RST/control-frame defenses, chunked DATA input, HTTP/1
   Cookie/Set-Cookie values, HTTP/2 stream child channel flow, bounded
   multipart/form-data decode/encode,
   HTTP/3 frames, lifecycle events, low-cardinality frame stats, QPACK header
   blocks, connection-level SETTINGS/GOAWAY/server-push state, HTTP/3
-  control/QPACK stream pipelines,
+  HTTP object bridge, control/QPACK stream pipelines, and push stream
+  initializers/validation,
   SCTP stream messages and byte-stream adapters, WebTransport SETTINGS and
   extended CONNECT helpers, Protobuf object adapters and varint32 frames, MQTT
   frames, Redis RESP frames, Memcached binary full request/response objects,
@@ -64,15 +69,14 @@ blocks:
 - `handler/timeout`: time-wheel based `IdleStateHandler`,
   `ReadTimeoutHandler`, and `WriteTimeoutHandler` without per-connection
   `time.Timer` allocation.
-- `handler/tls`: Go-native TLS handler backed by `crypto/tls` by default, with
-  an injectable TLS provider boundary for native engines. It exposes plaintext
-  `ByteBuf` to business handlers while preserving SNI and ALPN negotiation
-  events; StartTLS, SNI-driven config selection, stable ByteBuf copy reduction,
-  ClientHello inspection/provider-based config selection, Optional TLS
+- `handler/tls`: Go-native TLS handler backed by `crypto/tls` as the production
+  path. It exposes plaintext `ByteBuf` to business handlers while preserving
+  SNI and ALPN negotiation events; StartTLS, SNI-driven config selection,
+  stable ByteBuf copy reduction, ClientHello inspection, Optional TLS
   detection, TLS 1.0-1.2 cipher-suite catalog/name parsing/configuration,
-  stapled OCSP response policy/events, standard-library provider package,
-  handler-level provider capability validation, and separate QUIC
-  packet-protection capability evaluation are handled as explicit pipeline controls.
+  stapled OCSP response policy/events, standard-library provider package, and
+  separate QUIC packet-protection capability evaluation are handled as explicit
+  pipeline controls.
 - `handler/ipfilter`: ordered allow/deny rules for CIDR, single IP, UDP/raw
   messages, and custom remote-address providers.
 - `handler/cors`: HTTP/1 CORS Pipeline handler with request Origin matching,
@@ -127,8 +131,9 @@ blocks:
 - `transport/sctp`: Linux SCTP one-to-one stream socket transport for
   `ServerBootstrap` and `Dialer`; non-Linux platforms and completion pollers
   return explicit unsupported errors. Runtime validation checks platform,
-  address, config, and boss/worker/client poller model before opening SCTP
-  sockets.
+  address, config, boss/worker/client poller model, and kernel SCTP socket
+  availability before opening SCTP sockets; Linux sockets apply `SCTP_INITMSG`
+  and `SCTP_NODELAY`.
 - `transport/local`: in-process local transport with paired client/server child
   `Channel` pipelines, Bootstrap/Dialer integration, ChannelOption/Attribute
   application, ByteBuf ownership transfer, read-complete events, close
@@ -159,8 +164,8 @@ blocks:
   exchangers, including length-prefixed stream request/response framing and
   datagram response matching for protocols such as DNS-over-QUIC.
 - `transport/http3`: HTTP/3 transport binding that maps RFC9000 QUIC request,
-  control, and QPACK streams into gnalloy `Channel` pipelines with stream
-  lifecycle and byte-count session snapshots.
+  control, QPACK, and push streams into gnalloy `Channel` pipelines with
+  push ID prefix handling, stream lifecycle, and byte-count session snapshots.
 - `transport/webtransport`: WebTransport over HTTP/3 session binding with
   CONNECT stream session IDs, bidirectional/unidirectional stream prefixes,
   QUIC datagram mapping, and negotiated capability validation.
@@ -365,8 +370,9 @@ Current validation boundary:
   installed and an explicit interface selected.
 - SCTP runtime validation is Linux-only and readiness-poller-only. Client
   addresses must use a non-zero numeric port, and completion pollers fail before
-  socket creation; actual bind/connect success still depends on kernel SCTP
-  module availability.
+  socket creation; capability snapshots probe kernel SCTP socket availability,
+  and actual bind/connect success still depends on kernel SCTP module
+  availability.
 - `mmap` allocator refuses to close while buffers are still in use. This is
   intentional: unmapping memory that an active `ByteBuf` still references is
   unsafe.
