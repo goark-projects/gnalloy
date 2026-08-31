@@ -69,6 +69,113 @@ func TestCommandRequestDecodeEncodeDomain(t *testing.T) {
 	}
 }
 
+func TestCommandRequestHelpers(t *testing.T) {
+	if req := NewConnectRequest("example.com:443"); req.Version != Version5 || req.Command != CommandConnect || req.Address != "example.com:443" {
+		t.Fatalf("connect req=%+v", req)
+	}
+	if req := NewBindRequest("127.0.0.1:1080"); req.Version != Version5 || req.Command != CommandBind || req.Address != "127.0.0.1:1080" {
+		t.Fatalf("bind req=%+v", req)
+	}
+	if req := NewUDPAssociateRequest("[::1]:1080"); req.Version != Version5 || req.Command != CommandUDPAssociate || req.Address != "[::1]:1080" {
+		t.Fatalf("udp req=%+v", req)
+	}
+}
+
+func TestUsernamePasswordAuthDecodeEncode(t *testing.T) {
+	wire := []byte{0x01, 0x04, 'u', 's', 'e', 'r', 0x04, 'p', 'a', 's', 's'}
+	collector := &captureInbound{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("auth", NewUsernamePasswordAuthRequestDecoder()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("collector", collector); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelRead(testBuf(wire))
+	req := collector.msgs[0].(UsernamePasswordAuthRequest)
+	if req.Username != "user" || req.Password != "pass" {
+		t.Fatalf("req=%+v", req)
+	}
+
+	sink := &captureSink{}
+	outCh := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), sink)
+	if err := outCh.Pipeline().AddLast("auth", NewUsernamePasswordAuthRequestEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+	if err := outCh.Write(req); err != nil {
+		t.Fatal(err)
+	}
+	if got := sink.writes[0].(buffer.ByteBuf).Bytes(); string(got) != string(wire) {
+		t.Fatalf("wire=%v want=%v", got, wire)
+	}
+}
+
+func TestUsernamePasswordAuthResponseDecodeEncode(t *testing.T) {
+	collector := &captureInbound{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("auth", NewUsernamePasswordAuthResponseDecoder()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("collector", collector); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x01, 0x00}))
+	resp := collector.msgs[0].(UsernamePasswordAuthResponse)
+	if resp.Status != AuthStatusSuccess {
+		t.Fatalf("resp=%+v", resp)
+	}
+
+	sink := &captureSink{}
+	outCh := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), sink)
+	if err := outCh.Pipeline().AddLast("auth", NewUsernamePasswordAuthResponseEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+	if err := outCh.Write(UsernamePasswordAuthResponse{Status: AuthStatusFailure}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sink.writes[0].(buffer.ByteBuf).Bytes(); string(got) != string([]byte{0x01, 0x01}) {
+		t.Fatalf("wire=%v", got)
+	}
+}
+
+func TestPrivateAuthResponseDecodeEncode(t *testing.T) {
+	if !IsPrivateMethod(0x80) || !IsPrivateMethod(0xfe) || IsPrivateMethod(MethodUserPassword) || IsPrivateMethod(MethodNoAcceptable) {
+		t.Fatal("private method range mismatch")
+	}
+
+	collector := &captureInbound{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	if err := ch.Pipeline().AddLast("private-auth", NewPrivateAuthResponseDecoder()); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("collector", collector); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte{0x01, 0xff}))
+	resp := collector.msgs[0].(PrivateAuthResponse)
+	if resp.Status != PrivateAuthStatusFailure {
+		t.Fatalf("resp=%+v", resp)
+	}
+
+	sink := &captureSink{}
+	outCh := channel.NewLocalChannel(2, buffer.NewHeapAllocator(), sink)
+	if err := outCh.Pipeline().AddLast("private-auth", NewPrivateAuthResponseEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+	if err := outCh.Write(PrivateAuthResponse{Status: PrivateAuthStatusSuccess}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sink.writes[0].(buffer.ByteBuf).Bytes(); string(got) != string([]byte{0x01, 0x00}) {
+		t.Fatalf("wire=%v", got)
+	}
+}
+
 func TestCommandReplyDecodeIPv4(t *testing.T) {
 	collector := &captureInbound{}
 	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)

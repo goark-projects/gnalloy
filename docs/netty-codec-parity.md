@@ -72,7 +72,7 @@
 | `MQTT` | `codec/mqtt` | done | 支持 MQTT 3.1.1/MQTT5 固定头、结构化包、属性、原因码、AUTH 和零拷贝 PUBLISH payload。 |
 | `DnsQueryEncoder/DnsResponseDecoder` | `codec/dns`, `resolver/dns` | done | 支持 DNS wire message、name 压缩、A/AAAA/NS/CNAME/PTR/MX/TXT/SRV/SOA/OPT 常用记录和 resolver；已覆盖 fuzz smoke。 |
 | `SmtpRequest/ResponseEncoder/Decoder` | `codec/smtp` | done | 支持 SMTP request、multiline response 和 DATA dot-stuffing。 |
-| `Socks4/Socks5` | `codec/socks` | done | 支持 SOCKS4a、SOCKS5 greeting、method selection、command request/reply 和 IPv4/domain/IPv6 地址。 |
+| `Socks4/Socks5` | `codec/socks` | done | 支持 SOCKS4a、SOCKS5 greeting、method selection、RFC1929 username/password auth、private auth response、command request/reply 和 IPv4/domain/IPv6 地址。 |
 | `StompSubframeDecoder/Encoder` | `codec/stomp` | done | 支持 STOMP 1.2 frame、heartbeat、header escape、content-length 和 NUL body。 |
 | `RtspRequest/ResponseDecoder/Encoder` | `codec/rtsp` | done | 支持 RTSP/1.0 请求、响应、header 和 Content-Length body。 |
 | `XmlFrameDecoder/XmlDecoder` | `codec/xml` | done | 支持完整 XML document 切帧和 Go 化 token 流。 |

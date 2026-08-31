@@ -14,6 +14,7 @@ type socks5ClientState uint8
 
 const (
 	socks5StateGreeting socks5ClientState = iota
+	socks5StateAuth
 	socks5StateConnect
 	socks5StateComplete
 )
@@ -24,10 +25,17 @@ type SOCKS5Event struct {
 	Reply  SOCKS5Reply
 }
 
+// SOCKS5UsernamePassword 保存 RFC1929 用户名密码认证材料。
+type SOCKS5UsernamePassword struct {
+	Username string
+	Password string
+}
+
 // SOCKS5Client 在 Channel 激活后执行 SOCKS5 CONNECT 握手。
 type SOCKS5Client struct {
 	target  string
 	methods []byte
+	auth    *SOCKS5UsernamePassword
 	state   socks5ClientState
 	pending []byte
 	method  byte
@@ -38,8 +46,29 @@ func NewSOCKS5Client(target string, methods ...byte) (*SOCKS5Client, error) {
 	if len(methods) == 0 {
 		methods = []byte{SOCKS5MethodNoAuth}
 	}
+	return newSOCKS5Client(target, nil, methods)
+}
+
+// NewSOCKS5UsernamePasswordClient 创建带 username/password 子协商的 CONNECT client handler。
+func NewSOCKS5UsernamePasswordClient(target string, username string, password string, methods ...byte) (*SOCKS5Client, error) {
+	if len(methods) == 0 {
+		methods = []byte{SOCKS5MethodUserPassword}
+	}
+	auth := &SOCKS5UsernamePassword{Username: username, Password: password}
+	return newSOCKS5Client(target, auth, methods)
+}
+
+func newSOCKS5Client(target string, auth *SOCKS5UsernamePassword, methods []byte) (*SOCKS5Client, error) {
 	if _, err := AppendSOCKS5Greeting(nil, methods...); err != nil {
 		return nil, err
+	}
+	if auth != nil {
+		if !containsMethod(methods, SOCKS5MethodUserPassword) {
+			return nil, ErrInvalidMessage
+		}
+		if _, err := AppendSOCKS5UsernamePasswordAuth(nil, auth.Username, auth.Password); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := AppendSOCKS5Connect(nil, target); err != nil {
 		return nil, err
@@ -47,6 +76,7 @@ func NewSOCKS5Client(target string, methods ...byte) (*SOCKS5Client, error) {
 	return &SOCKS5Client{
 		target:  target,
 		methods: append([]byte(nil), methods...),
+		auth:    cloneSOCKS5UsernamePassword(auth),
 	}, nil
 }
 
@@ -85,6 +115,8 @@ func (h *SOCKS5Client) advance(ctx *channel.HandlerContext) error {
 		switch h.state {
 		case socks5StateGreeting:
 			err = h.readGreeting(ctx)
+		case socks5StateAuth:
+			err = h.readAuth(ctx)
 		case socks5StateConnect:
 			err = h.readConnectReply(ctx)
 		default:
@@ -112,6 +144,29 @@ func (h *SOCKS5Client) readGreeting(ctx *channel.HandlerContext) error {
 		return fmt.Errorf("%w: socks5 method 0x%02x", ErrHandshakeFailed, method)
 	}
 	h.method = method
+	h.pending = h.pending[consumed:]
+	if method == SOCKS5MethodUserPassword {
+		if h.auth == nil {
+			return fmt.Errorf("%w: socks5 username/password credentials missing", ErrHandshakeFailed)
+		}
+		h.state = socks5StateAuth
+		return h.writeAuth(ctx)
+	}
+	h.state = socks5StateConnect
+	return h.writeConnect(ctx)
+}
+
+func (h *SOCKS5Client) readAuth(ctx *channel.HandlerContext) error {
+	status, consumed, err := ParseSOCKS5UsernamePasswordAuthResponse(h.pending)
+	if errors.Is(err, ErrNeedMore) {
+		return ErrNeedMore
+	}
+	if err != nil {
+		return err
+	}
+	if status != SOCKS5AuthStatusSuccess {
+		return fmt.Errorf("%w: socks5 username/password status 0x%02x", ErrHandshakeFailed, status)
+	}
 	h.pending = h.pending[consumed:]
 	h.state = socks5StateConnect
 	return h.writeConnect(ctx)
@@ -159,6 +214,14 @@ func (h *SOCKS5Client) writeConnect(ctx *channel.HandlerContext) error {
 	return writeProxyPayload(ctx, payload)
 }
 
+func (h *SOCKS5Client) writeAuth(ctx *channel.HandlerContext) error {
+	payload, err := AppendSOCKS5UsernamePasswordAuth(nil, h.auth.Username, h.auth.Password)
+	if err != nil {
+		return err
+	}
+	return writeProxyPayload(ctx, payload)
+}
+
 func (h *SOCKS5Client) fireRemaining(ctx *channel.HandlerContext) error {
 	if len(h.pending) == 0 {
 		h.pending = nil
@@ -175,4 +238,21 @@ func (h *SOCKS5Client) fireRemaining(ctx *channel.HandlerContext) error {
 	h.pending = nil
 	ctx.FireChannelRead(out)
 	return nil
+}
+
+func containsMethod(methods []byte, method byte) bool {
+	for _, offered := range methods {
+		if offered == method {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneSOCKS5UsernamePassword(auth *SOCKS5UsernamePassword) *SOCKS5UsernamePassword {
+	if auth == nil {
+		return nil
+	}
+	clone := *auth
+	return &clone
 }

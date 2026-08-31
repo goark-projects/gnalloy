@@ -11,6 +11,8 @@ const (
 	MethodNoAuth       byte = 0x00
 	MethodGSSAPI       byte = 0x01
 	MethodUserPassword byte = 0x02
+	MethodPrivateStart byte = 0x80
+	MethodPrivateEnd   byte = 0xfe
 	MethodNoAcceptable byte = 0xff
 )
 
@@ -24,6 +26,16 @@ const (
 	AddressIPv4   byte = 0x01
 	AddressDomain byte = 0x03
 	AddressIPv6   byte = 0x04
+)
+
+const (
+	AuthVersionUserPassword byte = 0x01
+
+	AuthStatusSuccess byte = 0x00
+	AuthStatusFailure byte = 0x01
+
+	PrivateAuthStatusSuccess byte = 0x00
+	PrivateAuthStatusFailure byte = 0xff
 )
 
 type Greeting struct {
@@ -46,6 +58,19 @@ type CommandReply struct {
 	Address string
 }
 
+type UsernamePasswordAuthRequest struct {
+	Username string
+	Password string
+}
+
+type UsernamePasswordAuthResponse struct {
+	Status byte
+}
+
+type PrivateAuthResponse struct {
+	Status byte
+}
+
 type SOCKS4Request struct {
 	Command byte
 	Address string
@@ -55,6 +80,26 @@ type SOCKS4Request struct {
 type SOCKS4Reply struct {
 	Status  byte
 	Address string
+}
+
+func NewCommandRequest(command byte, address string) CommandRequest {
+	return CommandRequest{Version: Version5, Command: command, Address: address}
+}
+
+func NewConnectRequest(address string) CommandRequest {
+	return NewCommandRequest(CommandConnect, address)
+}
+
+func NewBindRequest(address string) CommandRequest {
+	return NewCommandRequest(CommandBind, address)
+}
+
+func NewUDPAssociateRequest(address string) CommandRequest {
+	return NewCommandRequest(CommandUDPAssociate, address)
+}
+
+func IsPrivateMethod(method byte) bool {
+	return method >= MethodPrivateStart && method <= MethodPrivateEnd
 }
 
 func splitHostPort(address string) (string, int, error) {

@@ -96,6 +96,95 @@ func TestSOCKS5GreetingConnectAndReply(t *testing.T) {
 	}
 }
 
+func TestSOCKS5UsernamePasswordAuthHelpers(t *testing.T) {
+	auth, err := AppendSOCKS5UsernamePasswordAuth(nil, "user", "pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(auth, []byte{0x01, 0x04, 'u', 's', 'e', 'r', 0x04, 'p', 'a', 's', 's'}) {
+		t.Fatalf("auth=%v", auth)
+	}
+	status, consumed, err := ParseSOCKS5UsernamePasswordAuthResponse([]byte{0x01, 0x00, 'x'})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status != SOCKS5AuthStatusSuccess || consumed != 2 {
+		t.Fatalf("status=%d consumed=%d", status, consumed)
+	}
+	if _, err := AppendSOCKS5UsernamePasswordAuth(nil, "", "pass"); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("err=%v, want invalid message", err)
+	}
+}
+
+func TestSOCKS5CommandHelpersEncodeBindAndUDPAssociate(t *testing.T) {
+	bind, err := AppendSOCKS5Bind(nil, "127.0.0.1:1080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(bind, []byte{0x05, 0x02, 0x00, 0x01, 127, 0, 0, 1, 0x04, 0x38}) {
+		t.Fatalf("bind=%v", bind)
+	}
+	udp, err := AppendSOCKS5UDPAssociate(nil, "example.com:5353")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []byte{0x05, 0x03, 0x00, 0x03, 0x0b}; !bytes.Equal(udp[:5], want) {
+		t.Fatalf("udp=%v", udp)
+	}
+}
+
+func TestSOCKS5ClientUsernamePasswordAuth(t *testing.T) {
+	sink := &proxyCaptureSink{}
+	events := &proxyEventCapture{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	client, err := NewSOCKS5UsernamePasswordClient("example.com:443", "user", "pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("socks5", client); err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Pipeline().AddLast("events", events); err != nil {
+		t.Fatal(err)
+	}
+
+	ch.Pipeline().FireChannelActive()
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want greeting", len(sink.writes))
+	}
+	if !bytes.Equal(sink.writes[0].(buffer.ByteBuf).Bytes(), []byte{0x05, 0x01, 0x02}) {
+		t.Fatalf("greeting=%v", sink.writes[0].(buffer.ByteBuf).Bytes())
+	}
+
+	ch.Pipeline().FireChannelRead(byteBufWithBytes([]byte{0x05, 0x02}))
+	if len(sink.writes) != 2 {
+		t.Fatalf("writes=%d, want auth request", len(sink.writes))
+	}
+	if !bytes.Equal(sink.writes[1].(buffer.ByteBuf).Bytes(), []byte{0x01, 0x04, 'u', 's', 'e', 'r', 0x04, 'p', 'a', 's', 's'}) {
+		t.Fatalf("auth=%v", sink.writes[1].(buffer.ByteBuf).Bytes())
+	}
+
+	ch.Pipeline().FireChannelRead(byteBufWithBytes([]byte{0x01, 0x00}))
+	if len(sink.writes) != 3 {
+		t.Fatalf("writes=%d, want connect request", len(sink.writes))
+	}
+	connect := sink.writes[2].(buffer.ByteBuf)
+	if want := []byte{0x05, 0x01, 0x00, 0x03, 0x0b}; !bytes.Equal(connect.Bytes()[:5], want) {
+		t.Fatalf("connect=%v", connect.Bytes())
+	}
+
+	reply := []byte{0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0x01, 0xbb}
+	ch.Pipeline().FireChannelRead(byteBufWithBytes(reply))
+	if len(events.events) != 1 {
+		t.Fatalf("events=%d, want SOCKS5 event", len(events.events))
+	}
+	event := events.events[0].(SOCKS5Event)
+	if event.Method != SOCKS5MethodUserPassword || event.Reply.Status != 0 {
+		t.Fatalf("event=%+v", event)
+	}
+	sink.release()
+}
+
 func TestSOCKS5ClientWritesGreetingConnectAndEmitsEvent(t *testing.T) {
 	sink := &proxyCaptureSink{}
 	events := &proxyEventCapture{}

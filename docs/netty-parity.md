@@ -70,7 +70,7 @@ Netty 对标需要同时看 API 体验、运行时事实和同机场景数据。
 | `LoggingHandler` | `handler/logging` | done | 基于标准库 `slog`，记录生命周期、读写、flush、close 和异常事件，不接管消息所有权。 |
 | `FlushConsolidationHandler` | `handler/flush` | done | 读循环内合并 flush，支持阈值强制下发、无读循环延迟合并和 Future 完成传播。 |
 | `SslHandler` OCSP stapling | `handler/tls.OCSPConfig` | done | 支持要求 stapled OCSP 响应、握手后 `OCSPEvent`、自定义 validator 和证书 staple helper；在线 OCSP 查询仍由业务或扩展包控制，避免阻塞 I/O 热路径。 |
-| `HttpProxyHandler` / `Socks5ProxyHandler` | `handler/proxy` | done | HTTP CONNECT 和 SOCKS5 CONNECT 都提供 pipeline client handler；SOCKS5 支持半包握手累积、method/reply 失败语义、成功事件和握手剩余数据透传。 |
+| `HttpProxyHandler` / `Socks5ProxyHandler` | `handler/proxy` | done | HTTP CONNECT 和 SOCKS5 CONNECT 都提供 pipeline client handler；SOCKS5 支持 no-auth 与 username/password 子协商、BIND/UDP ASSOCIATE wire helper、半包握手累积、method/reply 失败语义、成功事件和握手剩余数据透传。 |
 | Netty 风格 pipeline initializer | `recipes` | done | 使用 per-channel handler factory 装配 ByteBuf echo、length-field、HTTP/1、HTTP/2、WebSocket、MQTT 和 HTTP/3 stream pipeline，避免复用有状态 codec。 |
 | `RuleBasedIpFilter` | `handler/ipfilter` | done | 支持有序 allow/deny 规则、CIDR、单 IP、UDP/raw typed message 和业务 RemoteIPProvider。 |
 | `PcapWriteHandler` | `handler/pcap` | done | 支持 Pipeline 级 libpcap 捕获，默认 LINKTYPE_USER0，不接管消息所有权。 |

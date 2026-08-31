@@ -73,7 +73,8 @@ blocks:
   close.
 - `handler/pcap`: pipeline-level libpcap capture for inbound and outbound
   payloads without taking message ownership.
-- `handler/proxy`: HTTP CONNECT and SOCKS5 client handlers plus SOCKS5 and
+- `handler/proxy`: HTTP CONNECT and SOCKS5 client handlers plus SOCKS5
+  no-auth, username/password auth, CONNECT/BIND/UDP ASSOCIATE helpers, and
   HAProxy v1/v2 wire helpers for proxy negotiation and source-address
   metadata.
 - `handler/metrics` and `observability`: vendor-neutral Channel metrics
