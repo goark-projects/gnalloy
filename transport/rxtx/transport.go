@@ -23,7 +23,7 @@ func (t *Transport) Dial(ctx context.Context, cfg bootstrap.ClientConfig) (chann
 	if cfg.Initializer == nil {
 		cfg.Initializer = func(channel.Channel) error { return nil }
 	}
-	if t == nil || t.cfg.Driver == nil {
+	if t == nil || driverMissing(t.cfg.Driver) {
 		return nil, ErrUnsupportedRXTX
 	}
 	serialCfg := normalizeConfig(t.cfg, cfg.Address)

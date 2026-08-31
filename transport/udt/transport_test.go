@@ -38,6 +38,18 @@ func TestDefaultTransportReportsUnsupportedUDT(t *testing.T) {
 	}
 }
 
+func TestTransportReportsUnsupportedForTypedNilDriver(t *testing.T) {
+	var driver *fakeUDTDriver
+	group := newUDTTestGroup(t)
+	_, err := bootstrap.NewDialer().
+		Group(group).
+		Transport(NewTransport(Config{Driver: driver})).
+		Dial("127.0.0.1:9000")
+	if !errors.Is(err, ErrUnsupportedUDT) {
+		t.Fatalf("err=%v, want %v", err, ErrUnsupportedUDT)
+	}
+}
+
 func TestTransportDelegatesToDriverWithNormalizedConfig(t *testing.T) {
 	group := newUDTTestGroup(t)
 	driver := &fakeUDTDriver{}

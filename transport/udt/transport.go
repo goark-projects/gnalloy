@@ -23,7 +23,7 @@ func (t *Transport) Bind(ctx context.Context, cfg bootstrap.ServerConfig) (boots
 	if cfg.ChildInitializer == nil {
 		return nil, bootstrap.ErrMissingChildHandler
 	}
-	if t == nil || t.cfg.Driver == nil {
+	if t == nil || driverMissing(t.cfg.Driver) {
 		return nil, ErrUnsupportedUDT
 	}
 	return t.cfg.Driver.Bind(ctx, cfg, t.cfg)
@@ -36,7 +36,7 @@ func (t *Transport) Dial(ctx context.Context, cfg bootstrap.ClientConfig) (chann
 	if cfg.Initializer == nil {
 		cfg.Initializer = func(channel.Channel) error { return nil }
 	}
-	if t == nil || t.cfg.Driver == nil {
+	if t == nil || driverMissing(t.cfg.Driver) {
 		return nil, ErrUnsupportedUDT
 	}
 	return t.cfg.Driver.Dial(ctx, cfg, t.cfg)

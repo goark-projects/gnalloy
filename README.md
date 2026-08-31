@@ -133,10 +133,13 @@ blocks:
   propagation, and outbound watermark reporting.
 - `transport/udt`: UDT transport extension boundary for pluggable external
   drivers. The core package preserves Bootstrap/Dialer contracts and returns a
-  deterministic unsupported error when no driver is supplied.
+  deterministic unsupported error when no driver is supplied; `transport/udt/driver`
+  provides `Backend` and function-based adapter helpers for third-party UDT
+  implementations.
 - `transport/rxtx`: RXTX/serial client transport extension boundary with
   normalized serial settings and a pluggable driver contract; the core package
-  does not bind platform serial libraries.
+  does not bind platform serial libraries. `transport/rxtx/driver` provides the
+  same adapter helper shape for external serial implementations.
 - `transport/zerocopy`: Linux/macOS `sendfile` and Windows `TransmitFile`
   `FileRegion` transfer primitive with explicit unsupported and copy-fallback
   boundaries.
@@ -187,6 +190,9 @@ go run ./examples/protocol-exchange -transport udp -addr 127.0.0.1:9002 -message
 go run ./examples/protocol-exchange -transport raw -addr 127.0.0.1 -raw-protocol 253 -message ping
 go run ./examples/protocol-exchange -transport l2 -addr eth0 -payload-hex 00112233445566778899aabb88b570696e67
 ```
+
+Driver adapter examples for UDT and RXTX live in the Go doc examples under
+`transport/udt/driver` and `transport/rxtx/driver`.
 
 Netty parity:
 

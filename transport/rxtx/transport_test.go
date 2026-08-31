@@ -27,6 +27,18 @@ func TestDefaultTransportReportsUnsupportedRXTX(t *testing.T) {
 	}
 }
 
+func TestTransportReportsUnsupportedForTypedNilDriver(t *testing.T) {
+	var driver *fakeRXTXDriver
+	group := newRXTXTestGroup(t)
+	_, err := bootstrap.NewDialer().
+		Group(group).
+		Transport(NewTransport(Config{Driver: driver})).
+		Dial("COM1")
+	if !errors.Is(err, ErrUnsupportedRXTX) {
+		t.Fatalf("err=%v, want %v", err, ErrUnsupportedRXTX)
+	}
+}
+
 func TestTransportDelegatesToDriverWithNormalizedSerialConfig(t *testing.T) {
 	group := newRXTXTestGroup(t)
 	driver := &fakeRXTXDriver{}
