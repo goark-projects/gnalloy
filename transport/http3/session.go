@@ -23,6 +23,8 @@ const (
 	StreamKindLocalQPACKDecoder
 	StreamKindRemoteQPACKEncoder
 	StreamKindRemoteQPACKDecoder
+	StreamKindLocalPush
+	StreamKindRemotePush
 )
 
 // Session 把 RFC9000 QUIC 连接装配为 HTTP/3 stream channel 工厂。
@@ -83,6 +85,16 @@ func (s *Session) AcceptRequestStream(ctx context.Context) (*StreamChannel, erro
 		return nil, err
 	}
 	return s.newStreamChannel(StreamKindRequest, stream, stream, codechttp3.RequestStreamInitializer(s.cfg.Pipeline), false)
+}
+
+// OpenPushStream 打开本端 HTTP/3 server push stream，并写出 stream type 和 push ID 前缀。
+func (s *Session) OpenPushStream(ctx context.Context, pushID uint64) (*StreamChannel, error) {
+	return s.openSendStream(ctx, StreamKindLocalPush, codechttp3.LocalPushStreamInitializer(s.cfg.Pipeline, pushID))
+}
+
+// AcceptPushStream 接受对端 HTTP/3 server push stream。
+func (s *Session) AcceptPushStream(ctx context.Context) (*StreamChannel, error) {
+	return s.acceptReceiveStream(ctx, StreamKindRemotePush, codechttp3.RemotePushStreamInitializer(s.cfg.Pipeline))
 }
 
 // OpenLocalControlStream 打开本端 HTTP/3 control stream，并在 active 时写出 SETTINGS。

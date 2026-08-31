@@ -21,6 +21,12 @@ const (
 	HandlerNameHTTP3ControlStream = "http3-control-stream"
 	// HandlerNameHTTP3LocalControlStream 是 HTTP/3 control stream 本端 SETTINGS 写入器的默认名称。
 	HandlerNameHTTP3LocalControlStream = "http3-local-control-stream"
+	// HandlerNameHTTP3PushIDDecoder 是 HTTP/3 push stream push ID 入站解码器的默认名称。
+	HandlerNameHTTP3PushIDDecoder = "http3-push-id-decoder"
+	// HandlerNameHTTP3PushIDEncoder 是 HTTP/3 push stream push ID 出站编码器的默认名称。
+	HandlerNameHTTP3PushIDEncoder = "http3-push-id-encoder"
+	// HandlerNameHTTP3LocalPushID 是 HTTP/3 本端 push stream push ID 写入器的默认名称。
+	HandlerNameHTTP3LocalPushID = "http3-local-push-id"
 	// HandlerNameHTTP3StateManager 是 HTTP/3 连接级状态管理器的默认名称。
 	HandlerNameHTTP3StateManager = "http3-state-manager"
 )

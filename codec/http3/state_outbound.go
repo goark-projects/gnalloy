@@ -44,6 +44,13 @@ func (m *StateManager) writeState(msg any) error {
 			return nil
 		}
 		return m.writePushPromise(frame.PushID)
+	case PushIDFrame:
+		return m.writePushID(frame.PushID)
+	case *PushIDFrame:
+		if frame == nil {
+			return nil
+		}
+		return m.writePushID(frame.PushID)
 	case PriorityUpdateFrame:
 		return m.writePriorityUpdate(frame)
 	case *PriorityUpdateFrame:
@@ -114,6 +121,19 @@ func (m *StateManager) writeCancelPush(frame CancelPushFrame) error {
 }
 
 func (m *StateManager) writePushPromise(pushID uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if pushID > maxVarInt {
+		return ErrInvalidVarInt
+	}
+	if !m.cfg.Server || !m.validRemotePush(pushID) || m.pushCanceled(pushID) {
+		return ErrInvalidFrame
+	}
+	m.markPush(pushID, PushStatePromised)
+	return nil
+}
+
+func (m *StateManager) writePushID(pushID uint64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if pushID > maxVarInt {
