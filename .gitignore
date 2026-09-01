@@ -9,3 +9,6 @@ dist/
 build/
 benchmarks/external/bin/
 benchmarks/external/netty-bench/target/
+
+.tmp_bench/*
+.tmp_bench/
